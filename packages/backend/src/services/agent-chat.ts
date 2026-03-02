@@ -53,8 +53,9 @@ function buildCliCommand(model: string, prompt: string, systemPrompt?: string): 
     const args = ['--output-format', 'text'];
     // Always run without interactive approvals.
     args.push('--approval-mode', 'yolo');
-    args.push('--');
-    args.push(prompt);
+    // Use explicit prompt flag for compatibility with CLI variants that don't
+    // accept positional prompt input in non-interactive mode.
+    args.push('--prompt', prompt);
     return { bin: 'qwen', args };
   }
 
