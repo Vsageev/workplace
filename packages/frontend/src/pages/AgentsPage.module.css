@@ -107,7 +107,7 @@
 
 /* ── Sidebar group headers ── */
 .sidebarGroup {
-  border-bottom: 1px solid var(--color-border-subtle);
+  border-bottom: none;
 }
 
 .sidebarGroup:last-child {
@@ -118,19 +118,19 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  padding: var(--space-2) var(--space-4);
+  margin-top: var(--space-1);
+  padding: 6px 16px;
   cursor: pointer;
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.03em;
   color: var(--color-text-tertiary);
-  transition: background var(--transition-fast);
+  background: var(--color-surface);
+  transition: color var(--transition-fast), background var(--transition-fast);
   user-select: none;
 }
 
 .sidebarGroupHeader:hover {
-  background: var(--color-surface);
   color: var(--color-text-secondary);
 }
 
@@ -154,20 +154,17 @@
 .sidebarGroupCount {
   flex-shrink: 0;
   font-size: 10px;
-  min-width: 18px;
-  height: 18px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius-pill);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
+  font-weight: 600;
   color: var(--color-text-tertiary);
+  background: var(--color-border);
+  padding: 1px 6px;
+  border-radius: var(--radius-full, 9999px);
+  line-height: 1.4;
 }
 
 .sidebarGroupAddBtn {
   flex-shrink: 0;
-  display: none;
+  display: flex;
   align-items: center;
   justify-content: center;
   width: 20px;
@@ -178,6 +175,9 @@
   color: var(--color-text-tertiary);
   cursor: pointer;
   padding: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--transition-fast);
 }
 
 .sidebarGroupAddBtn:hover {
@@ -186,7 +186,8 @@
 }
 
 .sidebarGroupHeader:hover .sidebarGroupAddBtn {
-  display: flex;
+  opacity: 1;
+  pointer-events: auto;
 }
 
 /* ── Manage groups panel ── */
@@ -330,7 +331,8 @@
 
 /* Agent group */
 .agentGroup {
-  border-bottom: 1px solid var(--color-border-subtle);
+  border-bottom: none;
+  margin-bottom: 1px;
 }
 
 .agentAvatarWrapper {
@@ -341,12 +343,12 @@
 .agentUnreadDot,
 .agentStreamingDot {
   position: absolute;
-  bottom: 1px;
-  right: 1px;
-  width: 9px;
-  height: 9px;
+  bottom: -2px;
+  right: -2px;
+  width: 12px;
+  height: 12px;
   border-radius: 50%;
-  border: 1.5px solid var(--color-bg);
+  border: 2px solid var(--color-card);
 }
 
 .agentStreamingDot {
@@ -358,6 +360,16 @@
   background: var(--color-info);
 }
 
+.agentStatusDot {
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 2px solid var(--color-card);
+}
+
 .agentGroup:last-child {
   border-bottom: none;
 }
@@ -366,6 +378,12 @@
   flex-shrink: 0;
   color: var(--color-text-tertiary);
   transition: transform var(--transition-fast);
+  opacity: 0;
+}
+
+.agentGroupHeader:hover .agentGroupChevron,
+.agentGroupChevronOpen {
+  opacity: 1;
 }
 
 .agentGroupChevronOpen {
@@ -375,14 +393,31 @@
 .agentGroupHeader {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
+  gap: 10px;
+  padding: 10px 16px;
+  margin: 0;
+  border-radius: 0;
   cursor: pointer;
-  transition: background var(--transition-fast);
+  transition: background var(--transition-fast), box-shadow var(--transition-fast);
+  position: relative;
 }
 
 .agentGroupHeader:hover {
   background: var(--color-surface);
+}
+
+.agentGroupHeaderActive {
+  background: var(--color-surface);
+  box-shadow: inset 3px 0 0 0 var(--color-primary-brand);
+}
+
+.agentGroupHeaderActive:hover {
+  background: var(--color-border-subtle);
+}
+
+.agentGroupHeaderActive .agentGroupName {
+  font-weight: 600;
+  color: var(--color-text);
 }
 
 .agentGroupInfo {
@@ -391,12 +426,35 @@
 }
 
 .agentGroupName {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--color-text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.agentQueueBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-width: 24px;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-warning) 14%, transparent);
+  color: var(--color-warning);
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+  animation: queuePulse 2s ease-in-out infinite;
+}
+
+@keyframes queuePulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.65; }
 }
 
 .agentGroupMeta {
@@ -407,7 +465,7 @@
 .agentGroupActions {
   display: flex;
   align-items: center;
-  gap: var(--space-1);
+  gap: 2px;
   flex-shrink: 0;
   opacity: 0;
   transition: opacity var(--transition-fast);
@@ -433,23 +491,31 @@
 
 .agentGroupIconBtn:hover {
   color: var(--color-text);
-  background: var(--color-surface);
+  background: var(--color-border);
 }
+
 
 /* Conversations inside agent group */
 .convList {
   display: flex;
   flex-direction: column;
+  padding: 0 0 var(--space-1) 0;
+  margin-left: 0;
+  margin-right: 0;
+  border-left: none;
 }
 
 .convItem {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  padding: var(--space-2) var(--space-4) var(--space-2) calc(var(--space-4) + 40px + var(--space-3));
+  padding: 6px 16px 6px 52px;
+  margin: 0;
+  border-radius: 0;
   cursor: pointer;
-  transition: background var(--transition-fast);
-  border-bottom: 1px solid var(--color-border-subtle);
+  transition: all var(--transition-fast);
+  border-bottom: none;
+  position: relative;
 }
 
 .convItem:last-child {
@@ -461,13 +527,12 @@
 }
 
 .convItemActive {
-  background: rgba(59, 130, 246, 0.06);
-  border-left: 3px solid var(--color-link);
-  padding-left: calc(var(--space-4) + 40px + var(--space-3) - 3px);
+  background: var(--color-surface);
+  box-shadow: inset 3px 0 0 0 var(--color-primary-brand);
 }
 
 .convItemActive:hover {
-  background: rgba(59, 130, 246, 0.08);
+  background: var(--color-border-subtle);
 }
 
 .convItemInfo {
@@ -477,19 +542,42 @@
 
 .convItemTitle {
   font-size: 13px;
-  font-weight: 500;
-  color: var(--color-text);
+  font-weight: 400;
+  color: var(--color-text-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.convItemActive .convItemTitle {
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+.convQueueBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 20px;
+  height: 17px;
+  padding: 0 5px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-warning) 14%, transparent);
+  color: var(--color-warning);
+  font-size: 9px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+  animation: queuePulse 2s ease-in-out infinite;
 }
 
 /* Conversation status dots */
 .convStreamingDot,
 .convUnreadDot {
   display: inline-block;
-  width: 10px;
-  height: 10px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   flex-shrink: 0;
 }
@@ -509,10 +597,11 @@
 }
 
 .convItemTime {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--color-text-tertiary);
   white-space: nowrap;
   flex-shrink: 0;
+  opacity: 0.5;
 }
 
 .convItemDelete {
@@ -545,8 +634,10 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  padding: var(--space-2) var(--space-4) var(--space-2) calc(var(--space-4) + 40px + var(--space-3));
-  font-size: 13px;
+  padding: 4px 16px 4px 52px;
+  margin: 0;
+  border-radius: 0;
+  font-size: 11px;
   color: var(--color-text-tertiary);
   background: none;
   border: none;
@@ -554,11 +645,13 @@
   transition: all var(--transition-fast);
   width: 100%;
   text-align: left;
+  opacity: 0.6;
 }
 
 .newConvBtn:hover {
   color: var(--color-text-secondary);
   background: var(--color-surface);
+  opacity: 1;
 }
 
 /* ── Right panel: Chat ── */
@@ -601,6 +694,16 @@
   font-size: 11px;
   font-weight: 500;
   color: var(--color-text-tertiary);
+}
+
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.spinIcon {
+  animation: spin 1s linear infinite;
 }
 
 .chatHeaderActions {
@@ -768,6 +871,7 @@
   padding: 0 0 var(--space-2);
 }
 
+
 /* ── Staged image preview ── */
 .stagedImagePreview {
   display: flex;
@@ -812,47 +916,6 @@
   color: #ef4444;
 }
 
-/* ── Queued message indicator ── */
-.queuedMessageIndicator {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  margin-bottom: var(--space-2);
-  background: var(--color-bg-tertiary);
-  border-radius: var(--radius-sm);
-  border-left: 3px solid var(--color-primary);
-}
-
-.queuedMessageText {
-  flex: 1;
-  font-size: 12px;
-  color: var(--color-text-secondary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.queuedMessageCancel {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--color-text-tertiary);
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: background var(--transition-fast), color var(--transition-fast);
-}
-
-.queuedMessageCancel:hover {
-  background: rgba(239, 68, 68, 0.1);
-  color: #ef4444;
-}
-
 /* ── Reply box ── */
 .replyBox {
   border-top: 1px solid var(--color-border);
@@ -868,7 +931,7 @@
 .replyRow {
   display: flex;
   align-items: flex-end;
-  gap: var(--space-2);
+  gap: var(--space-3);
 }
 
 .hiddenFileInput {
@@ -879,10 +942,10 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
+  width: 44px;
+  height: 44px;
   border: none;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   background: transparent;
   color: var(--color-text-tertiary);
   cursor: pointer;
@@ -903,10 +966,10 @@
 .replyInput {
   flex: 1;
   min-height: 44px;
-  max-height: 200px;
-  padding: 10px 12px;
+  max-height: 400px;
+  padding: 10px 14px;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   font-size: 14px;
   color: var(--color-text);
   background: var(--color-card);
@@ -931,14 +994,15 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
+  width: 44px;
+  height: 44px;
   border: none;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   background: var(--color-primary-brand);
   color: var(--color-text-inverse);
   cursor: pointer;
   transition: opacity var(--transition-fast);
+  flex-shrink: 0;
 }
 
 .sendBtn:hover {
@@ -948,6 +1012,209 @@
 .sendBtn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+
+/* ── Streaming queue info ── */
+.streamingQueueInfo {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.streamingQueueCount {
+  opacity: 0.7;
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+}
+
+.streamingQueueCount:hover {
+  opacity: 1;
+}
+
+/* ── Queue panel ── */
+.queuePanel {
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg-secondary, var(--color-bg-subtle, #f8f8fa));
+  flex-shrink: 0;
+  padding: 8px 12px;
+}
+
+.queuePanelHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.queueClearAllBtn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: 5px;
+  padding: 2px 8px;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.queueClearAllBtn:hover {
+  color: var(--color-danger, #e53e3e);
+  border-color: var(--color-danger, #e53e3e);
+}
+
+.queueItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 4px;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.queuePanelToggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.queuePanelToggle:hover {
+  color: var(--color-text);
+}
+
+.queuePanelChevron {
+  margin-left: auto;
+  transition: transform 0.15s ease;
+}
+
+.queuePanelChevronOpen {
+  transform: rotate(90deg);
+}
+
+.queuePanelItems {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.queueItemIndex {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--color-bg-hover, rgba(0, 0, 0, 0.06));
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  margin-top: 1px;
+}
+
+.queueItemPrompt {
+  flex: 1;
+  min-width: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--color-text);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.queueItemActions {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+
+.queueItem:hover .queueItemActions {
+  opacity: 1;
+}
+
+.queueItemEditWrap {
+  flex: 1;
+  min-width: 0;
+}
+
+.queueItemEditInput {
+  width: 100%;
+  min-height: 50px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 13px;
+  font-family: inherit;
+  resize: vertical;
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+.queueItemEditInput:focus {
+  outline: none;
+  border-color: var(--color-primary, #3b82f6);
+}
+
+.queueItemEditActions {
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.queueItemSaveBtn,
+.queueItemCancelBtn,
+.queueItemEditBtn,
+.queueItemDeleteBtn {
+  background: none;
+  border: none;
+  padding: 3px;
+  cursor: pointer;
+  border-radius: 4px;
+  color: var(--color-text-secondary);
+  display: flex;
+  align-items: center;
+}
+
+.queueItemSaveBtn:hover {
+  background: var(--color-bg-hover, rgba(0, 0, 0, 0.06));
+  color: var(--color-success, #22c55e);
+}
+
+.queueItemCancelBtn:hover {
+  background: var(--color-bg-hover, rgba(0, 0, 0, 0.06));
+  color: var(--color-text);
+}
+
+.queueItemEditBtn:hover {
+  background: var(--color-bg-hover, rgba(0, 0, 0, 0.06));
+  color: var(--color-text);
+}
+
+.queueItemDeleteBtn:hover {
+  background: var(--color-bg-hover, rgba(0, 0, 0, 0.06));
+  color: var(--color-danger, #e53e3e);
 }
 
 /* ── Empty / loading states ── */
@@ -2065,15 +2332,15 @@ button.filesColName:hover .filesFileName {
   }
 
   .convItem {
-    padding-left: var(--space-4);
+    padding-left: 40px;
   }
 
   .convItemActive {
-    padding-left: calc(var(--space-4) - 3px);
+    padding-left: 40px;
   }
 
   .newConvBtn {
-    padding-left: var(--space-4);
+    padding-left: 40px;
   }
 }
 
@@ -2082,4 +2349,3 @@ button.filesColName:hover .filesFileName {
     height: calc(100vh - var(--mobile-header-height) - var(--space-3) * 2);
   }
 }
-

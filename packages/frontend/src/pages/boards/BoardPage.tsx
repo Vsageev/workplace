@@ -1,11 +1,9 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
-import { Plus, Trash2, Bot, FolderOpen, ChevronDown, Check, Clock, Search, X, ExternalLink, ArrowRight, MoveRight, Copy, CopyPlus, SearchX, ChevronsLeft, ChevronsRight, SlidersHorizontal, CalendarDays, Star, Tag, Users, AlertCircle, Circle, CircleCheck, ArrowUpDown, Flag, ListChecks, GripVertical, RefreshCw, MoreHorizontal, Layers } from 'lucide-react';
+import { Plus, Trash2, Bot, FolderOpen, ChevronDown, Check, Clock, Search, X, ExternalLink, ArrowRight, MoveRight, Copy, CopyPlus, SearchX, ChevronsLeft, ChevronsRight, SlidersHorizontal, Star, Tag, Users, ArrowUpDown, ListChecks, GripVertical, RefreshCw, MoreHorizontal, Layers, User, AlignLeft } from 'lucide-react';
 import { Button, EntitySwitcher, CreateCardModal } from '../../ui';
 import { AgentAvatar } from '../../components/AgentAvatar';
-import { PriorityBadge } from '../../components/PriorityBadge';
-import { QuickDateButtons } from '../../components/QuickDateButtons';
-import type { Priority } from '../../components/PriorityBadge';
+
 import { useAuth } from '../../stores/useAuth';
 import { api, ApiError } from '../../lib/api';
 import { toast } from '../../stores/toast';
@@ -40,6 +38,12 @@ interface AgentEntry {
   avatarIcon: string;
   avatarBgColor: string;
   avatarLogoColor: string;
+}
+
+interface UserEntry {
+  id: string;
+  firstName: string;
+  lastName: string;
 }
 
 interface CardTag {
@@ -119,8 +123,6 @@ interface SavedFilterState {
   text: string;
   tagIds: string[];
   assigneeIds: string[];
-  dueDateFilters: string[];
-  priorityFilters: string[];
 }
 
 function getFilterState(boardId: string): SavedFilterState {
@@ -128,12 +130,12 @@ function getFilterState(boardId: string): SavedFilterState {
     const raw = localStorage.getItem(`board-filters-${boardId}`);
     if (raw) return JSON.parse(raw) as SavedFilterState;
   } catch { /* ignore */ }
-  return { text: '', tagIds: [], assigneeIds: [], dueDateFilters: [], priorityFilters: [] };
+  return { text: '', tagIds: [], assigneeIds: [] };
 }
 
 function saveFilterState(boardId: string, state: SavedFilterState) {
   try {
-    if (!state.text && !state.tagIds.length && !state.assigneeIds.length && !state.dueDateFilters.length && !state.priorityFilters.length) {
+    if (!state.text && !state.tagIds.length && !state.assigneeIds.length) {
       localStorage.removeItem(`board-filters-${boardId}`);
     } else {
       localStorage.setItem(`board-filters-${boardId}`, JSON.stringify(state));
@@ -141,16 +143,12 @@ function saveFilterState(boardId: string, state: SavedFilterState) {
   } catch { /* ignore */ }
 }
 
-const VALID_DUE_FILTERS = new Set(['overdue', 'due-today', 'due-week', 'no-due-date']);
-
-type ColumnSortOption = 'position' | 'name-asc' | 'name-desc' | 'due-asc' | 'due-desc' | 'newest' | 'oldest';
+type ColumnSortOption = 'position' | 'name-asc' | 'name-desc' | 'newest' | 'oldest';
 
 const SORT_LABELS: Record<ColumnSortOption, string> = {
   'position': 'Manual order',
   'name-asc': 'Name A\u2013Z',
   'name-desc': 'Name Z\u2013A',
-  'due-asc': 'Due date (earliest)',
-  'due-desc': 'Due date (latest)',
   'newest': 'Newest first',
   'oldest': 'Oldest first',
 };
@@ -184,26 +182,6 @@ function sortCards(cards: BoardCardEntry[], sortOption: ColumnSortOption): Board
     case 'name-desc':
       sorted.sort((a, b) => (b.card?.name ?? '').localeCompare(a.card?.name ?? ''));
       break;
-    case 'due-asc':
-      sorted.sort((a, b) => {
-        const da = (a.card?.customFields?.dueDate as string) ?? '';
-        const db = (b.card?.customFields?.dueDate as string) ?? '';
-        if (!da && !db) return 0;
-        if (!da) return 1;
-        if (!db) return -1;
-        return da.localeCompare(db);
-      });
-      break;
-    case 'due-desc':
-      sorted.sort((a, b) => {
-        const da = (a.card?.customFields?.dueDate as string) ?? '';
-        const db = (b.card?.customFields?.dueDate as string) ?? '';
-        if (!da && !db) return 0;
-        if (!da) return 1;
-        if (!db) return -1;
-        return db.localeCompare(da);
-      });
-      break;
     case 'newest':
       sorted.sort((a, b) => b.position - a.position);
       break;
@@ -233,7 +211,6 @@ export function BoardPage() {
   const [showCollectionPicker, setShowCollectionPicker] = useState(false);
   const [showCronPanel, setShowCronPanel] = useState(false);
   const [showBatchRunPanel, setShowBatchRunPanel] = useState(false);
-  type DueDateFilter = 'overdue' | 'due-today' | 'due-week' | 'no-due-date';
   const [filterText, setFilterText] = useState(() => id ? getFilterState(id).text : '');
   const [selectedTagIds, setSelectedTagIds] = useState<Set<string>>(() => {
     if (!id) return new Set();
@@ -243,18 +220,6 @@ export function BoardPage() {
     if (!id) return new Set();
     return new Set(getFilterState(id).assigneeIds);
   });
-  const [selectedDueDateFilters, setSelectedDueDateFilters] = useState<Set<DueDateFilter>>(() => {
-    if (!id) return new Set();
-    return new Set(getFilterState(id).dueDateFilters.filter((v) => VALID_DUE_FILTERS.has(v)) as DueDateFilter[]);
-  });
-  const [selectedPriorityFilters, setSelectedPriorityFilters] = useState<Set<Priority>>(() => {
-    if (!id) return new Set();
-    const saved = getFilterState(id).priorityFilters ?? [];
-    return new Set(saved.filter((v) => ['high', 'medium', 'low'].includes(v)) as Priority[]);
-  });
-  const [hideCompleted, setHideCompleted] = useState<boolean>(
-    () => localStorage.getItem('board-hide-completed') === 'true',
-  );
   const filterLoadedRef = useRef(id ?? null);
   const { user } = useAuth();
   useDocumentTitle(board?.name ?? 'Board');
@@ -397,12 +362,21 @@ export function BoardPage() {
     }
   }, [board, activeWorkspace, recoverFromMissingBoard]);
 
+  const [boardUsers, setBoardUsers] = useState<UserEntry[]>([]);
+  const [boardTags, setBoardTags] = useState<CardTag[]>([]);
+
   useEffect(() => {
     api<{ entries: AgentEntry[] }>('/agents?limit=100')
       .then((res) => setAgents(res.entries.filter((a) => a.status === 'active')))
       .catch(() => {});
     api<{ entries: { id: string; name: string }[] }>('/collections?limit=100')
       .then((res) => setCollections(res.entries))
+      .catch(() => {});
+    api<{ entries: UserEntry[] }>('/users')
+      .then((res) => setBoardUsers(res.entries))
+      .catch(() => {});
+    api<{ entries: CardTag[] }>('/tags')
+      .then((res) => setBoardTags(res.entries))
       .catch(() => {});
   }, []);
 
@@ -424,8 +398,6 @@ export function BoardPage() {
     setFilterText(saved.text);
     setSelectedTagIds(new Set(saved.tagIds));
     setSelectedAssigneeIds(new Set(saved.assigneeIds));
-    setSelectedDueDateFilters(new Set(saved.dueDateFilters.filter((v) => VALID_DUE_FILTERS.has(v)) as DueDateFilter[]));
-    setSelectedPriorityFilters(new Set((saved.priorityFilters ?? []).filter((v) => ['high', 'medium', 'low'].includes(v)) as Priority[]));
   }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Persist filter state to localStorage whenever filters change
@@ -436,10 +408,8 @@ export function BoardPage() {
       text: filterText,
       tagIds: [...selectedTagIds],
       assigneeIds: [...selectedAssigneeIds],
-      dueDateFilters: [...selectedDueDateFilters],
-      priorityFilters: [...selectedPriorityFilters],
     });
-  }, [filterText, selectedTagIds, selectedAssigneeIds, selectedDueDateFilters, selectedPriorityFilters]);
+  }, [filterText, selectedTagIds, selectedAssigneeIds]);
 
   const shouldOpenCreateCard = searchParams.get('newCard') === '1';
 
@@ -482,27 +452,6 @@ export function BoardPage() {
           if (!selectedAssigneeIds.has('__unassigned__')) continue;
         }
       }
-      // Hide completed filter
-      if (hideCompleted && bc.card?.customFields?.completed === true) continue;
-      // Priority filter
-      if (selectedPriorityFilters.size > 0) {
-        const cardPriority = bc.card?.customFields?.priority as Priority | undefined;
-        if (!cardPriority || !selectedPriorityFilters.has(cardPriority)) continue;
-      }
-      // Due date filter
-      if (selectedDueDateFilters.size > 0) {
-        const dueDateStr = bc.card?.customFields?.dueDate as string | undefined;
-        const matches = Array.from(selectedDueDateFilters).some((f) => {
-          if (f === 'no-due-date') return !dueDateStr;
-          if (!dueDateStr) return false;
-          const due = new Date(dueDateStr);
-          if (f === 'overdue') return due < today;
-          if (f === 'due-today') return due.toDateString() === today.toDateString();
-          if (f === 'due-week') return due >= today && due < weekFromNow;
-          return false;
-        });
-        if (!matches) continue;
-      }
       const arr = map.get(bc.columnId);
       if (arr) arr.push(bc);
       else map.set(bc.columnId, [bc]);
@@ -511,7 +460,7 @@ export function BoardPage() {
       arr.sort((a, b) => a.position - b.position);
     }
     return map;
-  }, [board, filterText, selectedTagIds, selectedAssigneeIds, selectedDueDateFilters, selectedPriorityFilters, hideCompleted]);
+  }, [board, filterText, selectedTagIds, selectedAssigneeIds]);
 
   const visibleCardCount = useMemo(() => {
     let count = 0;
@@ -530,12 +479,7 @@ export function BoardPage() {
   }, [sortedColumns, cardsByColumn]);
 
   const isFiltering = filterText.trim().length > 0;
-  const hasChipFilters = selectedTagIds.size > 0 || selectedAssigneeIds.size > 0 || selectedDueDateFilters.size > 0 || selectedPriorityFilters.size > 0;
-
-  const completedCount = useMemo(() => {
-    if (!board) return 0;
-    return board.cards.filter((bc) => bc.card?.customFields?.completed === true).length;
-  }, [board]);
+  const hasChipFilters = selectedTagIds.size > 0 || selectedAssigneeIds.size > 0;
 
   // Collect unique tags from all board cards
   const allBoardTags = useMemo(() => {
@@ -585,31 +529,11 @@ export function BoardPage() {
     });
   }
 
-  function toggleDueDateFilter(filter: DueDateFilter) {
-    setSelectedDueDateFilters((prev) => {
-      const next = new Set(prev);
-      if (next.has(filter)) next.delete(filter);
-      else next.add(filter);
-      return next;
-    });
-  }
-
-  function togglePriorityFilter(priority: Priority) {
-    setSelectedPriorityFilters((prev) => {
-      const next = new Set(prev);
-      if (next.has(priority)) next.delete(priority);
-      else next.add(priority);
-      return next;
-    });
-  }
-
   // Reset filter and load collapsed state when switching boards
   useEffect(() => {
     setFilterText('');
     setSelectedTagIds(new Set());
     setSelectedAssigneeIds(new Set());
-    setSelectedDueDateFilters(new Set());
-    setSelectedPriorityFilters(new Set());
     setLastRefreshedAt(null);
     if (id) {
       setCollapsedCols(getCollapsedColumns(id));
@@ -815,7 +739,7 @@ export function BoardPage() {
     }
   }
 
-  async function handleQuickAddCard(columnId: string, name: string) {
+  async function handleQuickAddCard(columnId: string, name: string, extra?: { description?: string | null; assigneeId?: string | null; tagIds?: string[] }) {
     if (!board) return;
     try {
       const card = await api<CardData>('/cards', {
@@ -823,13 +747,22 @@ export function BoardPage() {
         body: JSON.stringify({
           collectionId: board.defaultCollectionId,
           name,
-          description: null,
+          description: extra?.description || null,
+          assigneeId: extra?.assigneeId || null,
         }),
       });
       await api(`/boards/${board.id}/cards`, {
         method: 'POST',
         body: JSON.stringify({ cardId: card.id, columnId }),
       });
+      // Attach tags in parallel
+      if (extra?.tagIds?.length) {
+        await Promise.all(
+          extra.tagIds.map((tagId) =>
+            api(`/cards/${card.id}/tags`, { method: 'POST', body: JSON.stringify({ tagId }) }),
+          ),
+        );
+      }
       fetchBoard();
     } catch (err) {
       if (err instanceof ApiError) toast.error(err.message);
@@ -837,7 +770,7 @@ export function BoardPage() {
     }
   }
 
-  async function handleAddCard(data: { name: string; description: string | null; assigneeId: string | null; tagIds: string[]; linkedCardIds: string[]; dueDate?: string; priority?: Priority }) {
+  async function handleAddCard(data: { name: string; description: string | null; assigneeId: string | null; tagIds: string[]; linkedCardIds: string[] }) {
     if (!showAddCard || !board) return;
     try {
       // Create the card in the board's default collection
@@ -848,7 +781,6 @@ export function BoardPage() {
           name: data.name,
           description: data.description,
           assigneeId: data.assigneeId,
-          ...((() => { const cf: Record<string, unknown> = {}; if (data.dueDate) cf.dueDate = data.dueDate; if (data.priority) cf.priority = data.priority; return Object.keys(cf).length > 0 ? { customFields: cf } : {}; })()),
         }),
       });
 
@@ -1096,119 +1028,6 @@ export function BoardPage() {
     }
   }
 
-  async function handleSetPriority(cardId: string, priority: Priority | null) {
-    if (!board) return;
-    const entry = board.cards.find((c) => c.cardId === cardId);
-    if (!entry?.card) return;
-    const prevCustomFields = entry.card.customFields;
-    const newCustomFields = { ...prevCustomFields };
-    if (priority) newCustomFields.priority = priority;
-    else delete newCustomFields.priority;
-    setBoard({
-      ...board,
-      cards: board.cards.map((c) =>
-        c.cardId === cardId && c.card
-          ? { ...c, card: { ...c.card, customFields: newCustomFields } }
-          : c,
-      ),
-    });
-    try {
-      await api(`/cards/${cardId}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ customFields: newCustomFields }),
-      });
-    } catch (err) {
-      setBoard((prev) => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          cards: prev.cards.map((c) =>
-            c.cardId === cardId && c.card
-              ? { ...c, card: { ...c.card, customFields: prevCustomFields } }
-              : c,
-          ),
-        };
-      });
-      if (err instanceof ApiError) toast.error(err.message);
-      else toast.error('Failed to update priority');
-    }
-  }
-
-  async function handleSetDueDate(cardId: string, dueDate: string | null) {
-    if (!board) return;
-    const entry = board.cards.find((c) => c.cardId === cardId);
-    if (!entry?.card) return;
-    const prevCustomFields = entry.card.customFields;
-    const newCustomFields = { ...prevCustomFields, dueDate };
-    // Optimistic update
-    setBoard({
-      ...board,
-      cards: board.cards.map((c) =>
-        c.cardId === cardId && c.card
-          ? { ...c, card: { ...c.card, customFields: newCustomFields } }
-          : c,
-      ),
-    });
-    try {
-      await api(`/cards/${cardId}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ customFields: newCustomFields }),
-      });
-    } catch (err) {
-      // Revert
-      setBoard((prev) => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          cards: prev.cards.map((c) =>
-            c.cardId === cardId && c.card
-              ? { ...c, card: { ...c.card, customFields: prevCustomFields } }
-              : c,
-          ),
-        };
-      });
-      if (err instanceof ApiError) toast.error(err.message);
-      else toast.error('Failed to update due date');
-    }
-  }
-
-  async function handleToggleComplete(cardId: string, currentCompleted: boolean) {
-    if (!board) return;
-    const newCompleted = !currentCompleted;
-    // Optimistic update
-    setBoard({
-      ...board,
-      cards: board.cards.map((c) =>
-        c.cardId === cardId && c.card
-          ? { ...c, card: { ...c.card, customFields: { ...c.card.customFields, completed: newCompleted } } }
-          : c,
-      ),
-    });
-    try {
-      const entry = board.cards.find((c) => c.cardId === cardId);
-      const newCustomFields = { ...entry?.card?.customFields, completed: newCompleted };
-      await api(`/cards/${cardId}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ customFields: newCustomFields }),
-      });
-    } catch (err) {
-      // Revert
-      setBoard((prev) => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          cards: prev.cards.map((c) =>
-            c.cardId === cardId && c.card
-              ? { ...c, card: { ...c.card, customFields: { ...c.card.customFields, completed: currentCompleted } } }
-              : c,
-          ),
-        };
-      });
-      if (err instanceof ApiError) toast.error(err.message);
-      else toast.error('Failed to update card');
-    }
-  }
-
   async function handleDeleteColumn(columnId: string) {
     if (!board) return;
     const col = board.columns.find((c) => c.id === columnId);
@@ -1386,7 +1205,7 @@ export function BoardPage() {
             Batch run
           </Button>
           <span className={styles.cardCountInline}>
-            {isFiltering || hasChipFilters || hideCompleted
+            {isFiltering || hasChipFilters
               ? `${visibleCardCount} of ${board.cards.length} card${board.cards.length !== 1 ? 's' : ''}`
               : `${board.cards.length} card${board.cards.length !== 1 ? 's' : ''}`
             }
@@ -1399,21 +1218,6 @@ export function BoardPage() {
           >
             <RefreshCw size={13} />
           </button>
-          {completedCount > 0 && (
-            <button
-              className={`${styles.completedToggle}${hideCompleted ? '' : ` ${styles.completedToggleVisible}`}`}
-              onClick={() => {
-                setHideCompleted((v) => {
-                  localStorage.setItem('board-hide-completed', String(!v));
-                  return !v;
-                });
-              }}
-              title={hideCompleted ? `Show ${completedCount} completed card${completedCount !== 1 ? 's' : ''}` : 'Hide completed cards'}
-            >
-              <CircleCheck size={13} />
-              {hideCompleted ? `${completedCount} done` : 'Hide done'}
-            </button>
-          )}
           {!isGeneralBoard(board) && (
             <div className={styles.boardActionsWrap} ref={boardActionsRef}>
               <button
@@ -1506,55 +1310,10 @@ export function BoardPage() {
               )}
             </div>
           )}
-          <div className={styles.chipGroup}>
-            <CalendarDays size={13} className={styles.chipIcon} />
-            {([
-              { key: 'overdue' as DueDateFilter, label: 'Overdue', danger: true },
-              { key: 'due-today' as DueDateFilter, label: 'Due today', danger: false },
-              { key: 'due-week' as DueDateFilter, label: 'This week', danger: false },
-              { key: 'no-due-date' as DueDateFilter, label: 'No due date', danger: false },
-            ]).map(({ key, label, danger }) => {
-              const active = selectedDueDateFilters.has(key);
-              return (
-                <button
-                  key={key}
-                  className={`${styles.filterChip}${active ? ` ${styles.filterChipActive}` : ''}${danger && active ? ` ${styles.filterChipDanger}` : ''}`}
-                  onClick={() => toggleDueDateFilter(key)}
-                  title={active ? `Remove "${label}" filter` : `Filter by "${label}"`}
-                >
-                  {key === 'overdue' && <AlertCircle size={11} />}
-                  {label}
-                </button>
-              );
-            })}
-          </div>
-          {board.cards.some((bc) => bc.card?.customFields?.priority) && (
-            <div className={styles.chipGroup}>
-              <Flag size={13} className={styles.chipIcon} />
-              {([
-                { value: 'high' as Priority, label: 'High', color: '#EF4444' },
-                { value: 'medium' as Priority, label: 'Medium', color: '#F59E0B' },
-                { value: 'low' as Priority, label: 'Low', color: '#60A5FA' },
-              ]).map(({ value, label, color }) => {
-                const active = selectedPriorityFilters.has(value);
-                return (
-                  <button
-                    key={value}
-                    className={`${styles.filterChip}${active ? ` ${styles.filterChipPriorityActive}` : ''}`}
-                    style={active ? { background: color, borderColor: color, color: '#fff' } : { borderColor: color, color }}
-                    onClick={() => togglePriorityFilter(value)}
-                    title={active ? `Remove "${label}" filter` : `Filter by "${label}" priority`}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
-          )}
           {hasChipFilters && (
             <button
               className={styles.filterChipClear}
-              onClick={() => { setSelectedTagIds(new Set()); setSelectedAssigneeIds(new Set()); setSelectedDueDateFilters(new Set()); setSelectedPriorityFilters(new Set()); }}
+              onClick={() => { setSelectedTagIds(new Set()); setSelectedAssigneeIds(new Set()); }}
             >
               <X size={11} /> Clear filters
             </button>
@@ -1571,6 +1330,9 @@ export function BoardPage() {
               column={col}
               cards={colCards}
               agents={agents}
+              users={boardUsers}
+              tags={boardTags}
+              currentUserId={user?.id ?? null}
               allColumns={sortedColumns}
               isCollapsed={collapsedCols.has(col.id)}
               onToggleCollapse={() => toggleColumnCollapsed(col.id)}
@@ -1585,9 +1347,6 @@ export function BoardPage() {
               onDeleteCard={handleDeleteCard}
               onMoveCard={handleMoveCard}
               onDuplicateCard={handleDuplicateCard}
-              onToggleComplete={handleToggleComplete}
-              onSetDueDate={handleSetDueDate}
-              onSetPriority={handleSetPriority}
               onCardClick={setQuickViewCardId}
               sortOption={columnSorts[col.id] || 'position'}
               onSortChange={setColumnSort}
@@ -1611,7 +1370,7 @@ export function BoardPage() {
           </span>
           <button
             className={styles.filterNoResultsClear}
-            onClick={() => { setFilterText(''); setSelectedTagIds(new Set()); setSelectedAssigneeIds(new Set()); setSelectedDueDateFilters(new Set()); filterInputRef.current?.focus(); }}
+            onClick={() => { setFilterText(''); setSelectedTagIds(new Set()); setSelectedAssigneeIds(new Set()); filterInputRef.current?.focus(); }}
           >
             Clear all filters
           </button>
@@ -1660,6 +1419,9 @@ interface ColumnProps {
   column: BoardColumn;
   cards: BoardCardEntry[];
   agents: AgentEntry[];
+  users: UserEntry[];
+  tags: CardTag[];
+  currentUserId: string | null;
   allColumns: BoardColumn[];
   isCollapsed: boolean;
   onToggleCollapse: () => void;
@@ -1667,16 +1429,13 @@ interface ColumnProps {
   onDragEnd: (e: React.DragEvent) => void;
   onDrop: (e: React.DragEvent, columnId: string) => void;
   onAddCard: () => void;
-  onQuickAddCard: (columnId: string, name: string) => Promise<void>;
+  onQuickAddCard: (columnId: string, name: string, extra?: { description?: string | null; assigneeId?: string | null; tagIds?: string[] }) => Promise<void>;
   onBulkAddCards: (columnId: string, names: string[]) => Promise<void>;
   onUpdateColumn: (columnId: string, data: Record<string, unknown>) => void;
   onDeleteColumn: (columnId: string) => void;
   onDeleteCard: (cardId: string, cardName: string) => void;
   onMoveCard: (cardId: string, targetColumnId: string) => void;
   onDuplicateCard: (cardId: string, columnId: string) => void;
-  onToggleComplete: (cardId: string, currentCompleted: boolean) => void;
-  onSetDueDate: (cardId: string, dueDate: string | null) => void;
-  onSetPriority: (cardId: string, priority: Priority | null) => void;
   onCardClick: (cardId: string) => void;
   sortOption: ColumnSortOption;
   onSortChange: (columnId: string, sort: ColumnSortOption) => void;
@@ -1688,7 +1447,7 @@ interface ColumnProps {
   isColumnDropTarget: boolean;
 }
 
-function Column({ column, cards, agents, allColumns, isCollapsed, onToggleCollapse, onDragStart, onDragEnd, onDrop, onAddCard, onQuickAddCard, onBulkAddCards, onUpdateColumn, onDeleteColumn, onDeleteCard, onMoveCard, onDuplicateCard, onToggleComplete, onSetDueDate, onSetPriority, onCardClick, sortOption, onSortChange, onColumnDragStart, onColumnDragEnd, onColumnDragOver, onColumnDragLeave, onColumnDrop, isColumnDropTarget }: ColumnProps) {
+function Column({ column, cards, agents, users, tags, currentUserId, allColumns, isCollapsed, onToggleCollapse, onDragStart, onDragEnd, onDrop, onAddCard, onQuickAddCard, onBulkAddCards, onUpdateColumn, onDeleteColumn, onDeleteCard, onMoveCard, onDuplicateCard, onCardClick, sortOption, onSortChange, onColumnDragStart, onColumnDragEnd, onColumnDragOver, onColumnDragLeave, onColumnDrop, isColumnDropTarget }: ColumnProps) {
   const navigate = useNavigate();
   const [isDragOver, setIsDragOver] = useState(false);
   const [showAgentMenu, setShowAgentMenu] = useState(false);
@@ -1704,8 +1463,14 @@ function Column({ column, cards, agents, allColumns, isCollapsed, onToggleCollap
   const wipWrapRef = useRef<HTMLDivElement>(null);
   const [inlineAdd, setInlineAdd] = useState(false);
   const [inlineName, setInlineName] = useState('');
+  const [inlineDesc, setInlineDesc] = useState('');
+  const [inlineShowDesc, setInlineShowDesc] = useState(false);
+  const [inlineAssigneeId, setInlineAssigneeId] = useState<string | null>(null);
+  const [inlineSelectedTagIds, setInlineSelectedTagIds] = useState<Set<string>>(new Set());
+  const [inlineShowAssigneeMenu, setInlineShowAssigneeMenu] = useState(false);
   const [inlineSubmitting, setInlineSubmitting] = useState(false);
   const inlineInputRef = useRef<HTMLTextAreaElement>(null);
+  const inlineAssigneeMenuRef = useRef<HTMLDivElement>(null);
   const [pastedLines, setPastedLines] = useState<string[] | null>(null);
   const cardListRef = useRef<HTMLDivElement>(null);
   const agentMenuRef = useRef<HTMLDivElement>(null);
@@ -1788,22 +1553,57 @@ function Column({ column, cards, agents, allColumns, isCollapsed, onToggleCollap
     if (inlineAdd && inlineInputRef.current) {
       inlineInputRef.current.focus();
     }
-  }, [inlineAdd]);
+    if (inlineAdd && currentUserId && users.some((u) => u.id === currentUserId)) {
+      setInlineAssigneeId(currentUserId);
+    }
+  }, [inlineAdd]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!inlineShowAssigneeMenu) return;
+    function onClickOutside(e: MouseEvent) {
+      if (inlineAssigneeMenuRef.current && !inlineAssigneeMenuRef.current.contains(e.target as Node)) {
+        setInlineShowAssigneeMenu(false);
+      }
+    }
+    document.addEventListener('mousedown', onClickOutside);
+    return () => document.removeEventListener('mousedown', onClickOutside);
+  }, [inlineShowAssigneeMenu]);
 
   async function handleInlineSubmit() {
     const trimmed = inlineName.trim();
     if (!trimmed || inlineSubmitting) return;
     setInlineSubmitting(true);
     try {
-      await onQuickAddCard(column.id, trimmed);
+      await onQuickAddCard(column.id, trimmed, {
+        description: inlineDesc.trim() || null,
+        assigneeId: inlineAssigneeId,
+        tagIds: Array.from(inlineSelectedTagIds),
+      });
       setInlineName('');
+      setInlineDesc('');
+      setInlineShowDesc(false);
+      setInlineSelectedTagIds(new Set());
       setPastedLines(null);
-      // Keep inline input open for rapid consecutive creation
+      // Keep inline input open for rapid consecutive creation, keep assignee for batch flow
       inlineInputRef.current?.focus();
     } finally {
       setInlineSubmitting(false);
     }
   }
+
+  function resetInlineForm() {
+    setInlineName('');
+    setInlineDesc('');
+    setInlineShowDesc(false);
+    setInlineAssigneeId(null);
+    setInlineSelectedTagIds(new Set());
+    setInlineShowAssigneeMenu(false);
+    setPastedLines(null);
+    setInlineAdd(false);
+  }
+
+  const inlineAssigneeUser = users.find((u) => u.id === inlineAssigneeId);
+  const inlineAssigneeAgent = agents.find((a) => a.id === inlineAssigneeId);
 
   function handleInlinePaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
     const text = e.clipboardData.getData('text/plain');
@@ -2176,12 +1976,10 @@ function Column({ column, cards, agents, allColumns, isCollapsed, onToggleCollap
             <span className={styles.emptyColumnHint}>Drop a card here or click + below</span>
           </div>
         ) : (
-          displayCards.map((bc) => {
-            const isCompleted = bc.card?.customFields?.completed === true;
-            return (
+          displayCards.map((bc) => (
             <div
               key={bc.id}
-              className={`${styles.card}${isCompleted ? ` ${styles.cardCompleted}` : ''}`}
+              className={styles.card}
               draggable
               onDragStart={(e) => onDragStart(e, bc)}
               onDragEnd={onDragEnd}
@@ -2197,14 +1995,8 @@ function Column({ column, cards, agents, allColumns, isCollapsed, onToggleCollap
                 setContextMenu({ x: e.clientX, y: e.clientY, cardId: bc.cardId, cardName: bc.card?.name ?? 'Unknown card' });
               }}
             >
-              {(!!(bc.card?.tags?.length) || !!(bc.card?.customFields?.priority)) && (
+              {!!(bc.card?.tags?.length) && (
                 <div className={styles.cardTags}>
-                  {!!(bc.card?.customFields?.priority) && (
-                    <PriorityBadge
-                      priority={bc.card.customFields.priority as Priority}
-                      size="sm"
-                    />
-                  )}
                   {bc.card?.tags?.slice(0, 3).map((tag: CardTag) => (
                     <span
                       key={tag.id}
@@ -2221,15 +2013,7 @@ function Column({ column, cards, agents, allColumns, isCollapsed, onToggleCollap
                 </div>
               )}
               <div className={styles.cardTitleRow}>
-                <button
-                  className={`${styles.completeBtn}${isCompleted ? ` ${styles.completeBtnDone}` : ''}`}
-                  onClick={(e) => { e.stopPropagation(); onToggleComplete(bc.cardId, isCompleted); }}
-                  title={isCompleted ? 'Mark as incomplete' : 'Mark as complete'}
-                  aria-label={isCompleted ? 'Mark as incomplete' : 'Mark as complete'}
-                >
-                  {isCompleted ? <CircleCheck size={14} /> : <Circle size={14} />}
-                </button>
-                <div className={`${styles.cardTitle}${isCompleted ? ` ${styles.cardTitleCompleted}` : ''}`}>{bc.card?.name ?? 'Unknown card'}</div>
+                <div className={styles.cardTitle}>{bc.card?.name ?? 'Unknown card'}</div>
               </div>
               {bc.card?.description && (
                 <div className={styles.cardDesc}>{stripMarkdown(bc.card.description)}</div>
@@ -2255,91 +2039,34 @@ function Column({ column, cards, agents, allColumns, isCollapsed, onToggleCollap
                 );
               })()}
               {(() => {
-                const dueDate = bc.card?.customFields?.dueDate as string | undefined;
                 const assignee = bc.card?.assignee;
-                if (!dueDate && !assignee) return null;
-                const today = new Date();
-                today.setHours(0, 0, 0, 0);
-                const due = dueDate ? new Date(dueDate) : null;
-                const isOverdue = due && due < today;
-                const isSoon = due && !isOverdue && (due.getTime() - today.getTime()) <= 3 * 24 * 60 * 60 * 1000;
-                const dueDateLabel = due
-                  ? due.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
-                  : null;
+                if (!assignee) return null;
                 return (
                   <div className={styles.cardFooter}>
-                    {dueDate && (
-                      <span className={`${styles.cardDueDate}${isOverdue ? ` ${styles.cardDueDateOverdue}` : isSoon ? ` ${styles.cardDueDateSoon}` : ''}`}>
-                        <CalendarDays size={10} />
-                        {dueDateLabel}
+                    <div className={styles.cardAssignee}>
+                      <span className={styles.cardAssigneeName}>
+                        {assignee.firstName} {assignee.lastName}
                       </span>
-                    )}
-                    {assignee && (
-                      <div className={styles.cardAssignee}>
-                        <span className={styles.cardAssigneeName}>
-                          {assignee.firstName} {assignee.lastName}
-                        </span>
-                        {assignee.type === 'agent' ? (
-                          <AgentAvatar
-                            icon={assignee.avatarIcon || 'spark'}
-                            bgColor={assignee.avatarBgColor || '#1a1a2e'}
-                            logoColor={assignee.avatarLogoColor || '#e94560'}
-                            size={22}
-                          />
-                        ) : (
-                          <div className={styles.cardAvatar} title={`${assignee.firstName} ${assignee.lastName}`}>
-                            {assignee.firstName[0]}{assignee.lastName[0]}
-                          </div>
-                        )}
-                      </div>
-                    )}
+                      {assignee.type === 'agent' ? (
+                        <AgentAvatar
+                          icon={assignee.avatarIcon || 'spark'}
+                          bgColor={assignee.avatarBgColor || '#1a1a2e'}
+                          logoColor={assignee.avatarLogoColor || '#e94560'}
+                          size={22}
+                        />
+                      ) : (
+                        <div className={styles.cardAvatar} title={`${assignee.firstName} ${assignee.lastName}`}>
+                          {assignee.firstName[0]}{assignee.lastName[0]}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 );
               })()}
             </div>
-          );})
+          ))
         )}
       </div>
-
-      {/* Column summary stats */}
-      {(() => {
-        if (displayCards.length === 0) return null;
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        let overdueCount = 0;
-        let highPriorityCount = 0;
-        let completedCount = 0;
-        for (const bc of displayCards) {
-          const cf = bc.card?.customFields;
-          if (cf?.completed === true) { completedCount++; continue; }
-          const dueDate = cf?.dueDate as string | undefined;
-          if (dueDate && new Date(dueDate) < today) overdueCount++;
-          if (cf?.priority === 'high') highPriorityCount++;
-        }
-        if (overdueCount === 0 && highPriorityCount === 0 && completedCount === 0) return null;
-        return (
-          <div className={styles.columnSummary}>
-            {overdueCount > 0 && (
-              <span className={styles.columnSummaryOverdue} title={`${overdueCount} overdue card${overdueCount !== 1 ? 's' : ''}`}>
-                <AlertCircle size={10} />
-                {overdueCount} overdue
-              </span>
-            )}
-            {highPriorityCount > 0 && (
-              <span className={styles.columnSummaryHigh} title={`${highPriorityCount} high priority card${highPriorityCount !== 1 ? 's' : ''}`}>
-                <Flag size={10} />
-                {highPriorityCount} high
-              </span>
-            )}
-            {completedCount > 0 && (
-              <span className={styles.columnSummaryDone} title={`${completedCount} completed card${completedCount !== 1 ? 's' : ''}`}>
-                <CircleCheck size={10} />
-                {completedCount}/{displayCards.length}
-              </span>
-            )}
-          </div>
-        );
-      })()}
 
       {inlineAdd ? (
         <div className={styles.inlineAddCard}>
@@ -2350,26 +2077,39 @@ function Column({ column, cards, agents, allColumns, isCollapsed, onToggleCollap
             value={inlineName}
             onChange={(e) => {
               setInlineName(e.target.value);
-              // Clear multi-paste banner if user edits to single line
               if (pastedLines && e.target.value.split('\n').filter((l) => l.trim()).length <= 1) {
                 setPastedLines(null);
               }
             }}
             onPaste={handleInlinePaste}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault();
+                void handleInlineSubmit();
+              }
+              if (e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
                 e.preventDefault();
                 void handleInlineSubmit();
               }
               if (e.key === 'Escape') {
-                setInlineName('');
-                setPastedLines(null);
-                setInlineAdd(false);
+                resetInlineForm();
               }
             }}
-            rows={2}
+            rows={1}
             disabled={inlineSubmitting}
           />
+
+          {inlineShowDesc && (
+            <textarea
+              className={styles.inlineDescInput}
+              placeholder="Description (optional)"
+              value={inlineDesc}
+              onChange={(e) => setInlineDesc(e.target.value)}
+              rows={2}
+              disabled={inlineSubmitting}
+            />
+          )}
+
           {pastedLines && pastedLines.length > 1 && (
             <div className={styles.bulkPasteBanner}>
               <span className={styles.bulkPasteText}>
@@ -2392,7 +2132,116 @@ function Column({ column, cards, agents, allColumns, isCollapsed, onToggleCollap
               </button>
             </div>
           )}
-          <div className={styles.inlineAddActions}>
+
+          {/* Toolbar row: assignee, tags, description toggle */}
+          <div className={styles.inlineToolbar}>
+            {/* Assignee picker */}
+            <div className={styles.inlineAssigneeWrap} ref={inlineAssigneeMenuRef}>
+              <button
+                type="button"
+                className={`${styles.inlineToolbarBtn}${inlineAssigneeId ? ` ${styles.inlineToolbarBtnActive}` : ''}`}
+                onClick={() => setInlineShowAssigneeMenu(!inlineShowAssigneeMenu)}
+                title="Assign"
+              >
+                {inlineAssigneeAgent ? (
+                  <AgentAvatar
+                    icon={inlineAssigneeAgent.avatarIcon || 'spark'}
+                    bgColor={inlineAssigneeAgent.avatarBgColor || '#1a1a2e'}
+                    logoColor={inlineAssigneeAgent.avatarLogoColor || '#e94560'}
+                    size={16}
+                  />
+                ) : inlineAssigneeUser ? (
+                  <span className={styles.inlineAssigneeAvatar}>
+                    {inlineAssigneeUser.firstName[0]}{inlineAssigneeUser.lastName[0]}
+                  </span>
+                ) : (
+                  <User size={14} />
+                )}
+              </button>
+              {inlineShowAssigneeMenu && (
+                <div className={styles.inlineAssigneeDropdown}>
+                  {inlineAssigneeId && (
+                    <button
+                      className={styles.inlineAssigneeOption}
+                      onClick={() => { setInlineAssigneeId(null); setInlineShowAssigneeMenu(false); }}
+                    >
+                      <X size={12} /> Unassign
+                    </button>
+                  )}
+                  {agents.length > 0 && (
+                    <>
+                      <div className={styles.inlineAssigneeDivider}>Agents</div>
+                      {agents.map((a) => (
+                        <button
+                          key={a.id}
+                          className={`${styles.inlineAssigneeOption}${inlineAssigneeId === a.id ? ` ${styles.inlineAssigneeOptionActive}` : ''}`}
+                          onClick={() => { setInlineAssigneeId(a.id); setInlineShowAssigneeMenu(false); }}
+                        >
+                          <AgentAvatar
+                            icon={a.avatarIcon || 'spark'}
+                            bgColor={a.avatarBgColor || '#1a1a2e'}
+                            logoColor={a.avatarLogoColor || '#e94560'}
+                            size={18}
+                          />
+                          <span className={styles.inlineAssigneeName}>{a.name}</span>
+                          {inlineAssigneeId === a.id && <Check size={12} className={styles.inlineAssigneeCheck} />}
+                        </button>
+                      ))}
+                    </>
+                  )}
+                  {users.length > 0 && (
+                    <>
+                      <div className={styles.inlineAssigneeDivider}>Users</div>
+                      {[
+                        ...users.filter((u) => u.id === currentUserId),
+                        ...users.filter((u) => u.id !== currentUserId),
+                      ].map((u) => (
+                        <button
+                          key={u.id}
+                          className={`${styles.inlineAssigneeOption}${inlineAssigneeId === u.id ? ` ${styles.inlineAssigneeOptionActive}` : ''}`}
+                          onClick={() => { setInlineAssigneeId(u.id); setInlineShowAssigneeMenu(false); }}
+                        >
+                          <span className={styles.inlineAssigneeAvatar}>
+                            {u.firstName[0]}{u.lastName[0]}
+                          </span>
+                          <span className={styles.inlineAssigneeName}>
+                            {u.firstName} {u.lastName}
+                            {u.id === currentUserId && <span className={styles.inlineAssigneeYou}>(you)</span>}
+                          </span>
+                          {inlineAssigneeId === u.id && <Check size={12} className={styles.inlineAssigneeCheck} />}
+                        </button>
+                      ))}
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Description toggle */}
+            <button
+              type="button"
+              className={`${styles.inlineToolbarBtn}${inlineShowDesc ? ` ${styles.inlineToolbarBtnActive}` : ''}`}
+              onClick={() => setInlineShowDesc(!inlineShowDesc)}
+              title="Add description"
+            >
+              <AlignLeft size={14} />
+            </button>
+
+            {/* More options (full modal) */}
+            <button
+              type="button"
+              className={styles.inlineToolbarBtn}
+              onClick={() => {
+                resetInlineForm();
+                onAddCard();
+              }}
+              title="Full editor"
+            >
+              <SlidersHorizontal size={13} />
+            </button>
+
+            <div className={styles.inlineToolbarSpacer} />
+
             <button
               className={styles.inlineAddSubmit}
               onClick={() => void handleInlineSubmit()}
@@ -2401,24 +2250,40 @@ function Column({ column, cards, agents, allColumns, isCollapsed, onToggleCollap
               {inlineSubmitting ? 'Adding...' : 'Add'}
             </button>
             <button
-              className={styles.inlineAddMore}
-              onClick={() => {
-                setInlineAdd(false);
-                setInlineName('');
-                setPastedLines(null);
-                onAddCard();
-              }}
-              title="More options"
-            >
-              <SlidersHorizontal size={13} />
-            </button>
-            <button
               className={styles.inlineAddCancel}
-              onClick={() => { setInlineName(''); setPastedLines(null); setInlineAdd(false); }}
+              onClick={resetInlineForm}
             >
               <X size={14} />
             </button>
           </div>
+
+          {/* Tag pills */}
+          {tags.length > 0 && (
+            <div className={styles.inlineTagsRow}>
+              {tags.map((tag) => {
+                const selected = inlineSelectedTagIds.has(tag.id);
+                return (
+                  <button
+                    key={tag.id}
+                    type="button"
+                    className={`${styles.inlineTagPill}${selected ? ` ${styles.inlineTagPillSelected}` : ''}`}
+                    style={{ '--tag-color': tag.color } as React.CSSProperties}
+                    onClick={() => {
+                      setInlineSelectedTagIds((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(tag.id)) next.delete(tag.id);
+                        else next.add(tag.id);
+                        return next;
+                      });
+                    }}
+                  >
+                    {selected && <Check size={10} />}
+                    {tag.name}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
       ) : (
         <button className={styles.addCardBtn} onClick={() => setInlineAdd(true)}>
@@ -2478,81 +2343,6 @@ function Column({ column, cards, agents, allColumns, isCollapsed, onToggleCollap
             <CopyPlus size={13} />
             Duplicate
           </button>
-          <button
-            className={styles.cardContextMenuItemNeutral}
-            onClick={() => {
-              const bc = cards.find((c) => c.cardId === contextMenu.cardId);
-              const isComp = bc?.card?.customFields?.completed === true;
-              onToggleComplete(contextMenu.cardId, isComp);
-              setContextMenu(null);
-            }}
-          >
-            {cards.find((c) => c.cardId === contextMenu.cardId)?.card?.customFields?.completed === true
-              ? <><Circle size={13} /> Mark incomplete</>
-              : <><CircleCheck size={13} /> Mark complete</>
-            }
-          </button>
-          <div className={styles.cardContextMenuDivider} />
-          <div className={styles.cardContextMenuLabel}>
-            <CalendarDays size={12} />
-            Due date
-          </div>
-          <div className={styles.contextMenuDueDateRow}>
-            <input
-              type="date"
-              className={styles.contextMenuDueDateInput}
-              value={(cards.find((c) => c.cardId === contextMenu.cardId)?.card?.customFields?.dueDate as string) ?? ''}
-              onChange={(e) => {
-                onSetDueDate(contextMenu.cardId, e.target.value || null);
-              }}
-              onClick={(e) => e.stopPropagation()}
-            />
-            {!!(cards.find((c) => c.cardId === contextMenu.cardId)?.card?.customFields?.dueDate) && (
-              <button
-                className={styles.contextMenuDueDateClear}
-                onClick={() => {
-                  onSetDueDate(contextMenu.cardId, null);
-                }}
-                title="Clear due date"
-              >
-                <X size={12} />
-              </button>
-            )}
-          </div>
-          <div className={styles.contextMenuQuickDates}>
-            <QuickDateButtons
-              currentValue={(cards.find((c) => c.cardId === contextMenu.cardId)?.card?.customFields?.dueDate as string) ?? undefined}
-              onSelect={(value) => onSetDueDate(contextMenu.cardId, value)}
-            />
-          </div>
-          <div className={styles.cardContextMenuDivider} />
-          <div className={styles.cardContextMenuLabel}>
-            <Flag size={12} />
-            Priority
-          </div>
-          <div className={styles.contextMenuPriorityRow}>
-            {([
-              { value: null, label: 'None', color: 'var(--color-text-tertiary)' },
-              { value: 'high' as Priority, label: 'High', color: '#EF4444' },
-              { value: 'medium' as Priority, label: 'Medium', color: '#F59E0B' },
-              { value: 'low' as Priority, label: 'Low', color: '#60A5FA' },
-            ]).map(({ value, label, color }) => {
-              const current = cards.find((c) => c.cardId === contextMenu!.cardId)?.card?.customFields?.priority;
-              const isActive = (value === null && !current) || current === value;
-              return (
-                <button
-                  key={label}
-                  className={`${styles.priorityChip}${isActive ? ` ${styles.priorityChipActive}` : ''}`}
-                  style={{ '--chip-color': color } as React.CSSProperties}
-                  onClick={() => { onSetPriority(contextMenu!.cardId, value); setContextMenu(null); }}
-                  title={label}
-                >
-                  <span className={styles.priorityChipDot} />
-                  {label}
-                </button>
-              );
-            })}
-          </div>
           {allColumns.length > 1 && (
             <>
               <div className={styles.cardContextMenuDivider} />

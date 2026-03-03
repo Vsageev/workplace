@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import path from 'node:path';
-import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod/v4';
 import { requirePermission } from '../middleware/rbac.js';
@@ -17,46 +17,19 @@ import {
   renameAgentConversation,
   markAgentConversationRead,
   saveAgentConversationMessage,
-  executePrompt,
+  enqueueAgentPrompt,
+  getAgentQueuedPromptCount,
   executeRespondToLastMessage,
   isAgentBusy,
-  subscribeToRunOutput,
+  getConversationQueueItems,
+  updateQueueItem,
+  deleteQueueItem,
+  clearAgentConversationQueue,
+  reorderQueueItems,
 } from '../services/agent-chat.js';
 
 // Rate limiter for agent prompt execution — shared across all requests in this process
-const promptRateLimiter = createAgentRateLimiter();
-
-function attachSocketErrorHandler(request: FastifyRequest, reply: FastifyReply) {
-  reply.raw.socket?.on('error', (err: NodeJS.ErrnoException) => {
-    if (err.code !== 'EPIPE') request.log.error(err);
-  });
-}
-
-function safeSseWrite(request: FastifyRequest, reply: FastifyReply, payload: string) {
-  if (reply.raw.destroyed || reply.raw.writableEnded) return false;
-  try {
-    reply.raw.write(payload);
-    return true;
-  } catch (err) {
-    const socketErr = err as NodeJS.ErrnoException;
-    if (socketErr.code !== 'EPIPE' && socketErr.code !== 'ERR_STREAM_WRITE_AFTER_END') {
-      request.log.error(socketErr);
-    }
-    return false;
-  }
-}
-
-function safeSseEnd(request: FastifyRequest, reply: FastifyReply) {
-  if (reply.raw.destroyed || reply.raw.writableEnded) return;
-  try {
-    reply.raw.end();
-  } catch (err) {
-    const socketErr = err as NodeJS.ErrnoException;
-    if (socketErr.code !== 'EPIPE' && socketErr.code !== 'ERR_STREAM_WRITE_AFTER_END') {
-      request.log.error(socketErr);
-    }
-  }
-}
+export const promptRateLimiter = createAgentRateLimiter();
 
 export async function agentChatRoutes(app: FastifyInstance) {
   const typedApp = app.withTypeProvider<ZodTypeProvider>();
@@ -259,14 +232,14 @@ export async function agentChatRoutes(app: FastifyInstance) {
     },
   );
 
-  // Send a prompt (SSE streaming)
+  // Queue a prompt for backend processing
   typedApp.post(
     '/api/agents/:id/chat/message',
     {
       onRequest: [app.authenticate, requirePermission('settings:update')],
       schema: {
         tags: ['Agent Chat'],
-        summary: 'Send a prompt to the agent and stream the response via SSE',
+        summary: 'Queue a prompt for backend processing',
         params: z.object({ id: z.string() }),
         body: z.object({
           prompt: z.string().min(1).max(50000),
@@ -285,43 +258,174 @@ export async function agentChatRoutes(app: FastifyInstance) {
         return reply.tooManyRequests('Too many prompt requests. Please wait before sending another message.');
       }
 
-      if (isAgentBusy(request.params.id, request.body.conversationId)) {
-        return reply.status(409).send({
-          statusCode: 409,
-          error: 'Conflict',
-          message: 'Agent is already processing a prompt',
+      const conv = validateConversationOwnership(request.body.conversationId, request.params.id);
+      if (!conv) return reply.notFound('Conversation not found');
+
+      try {
+        const wasQueuedOrBusy =
+          isAgentBusy(request.params.id, request.body.conversationId) ||
+          getAgentQueuedPromptCount(request.params.id, request.body.conversationId) > 0;
+        const queued = enqueueAgentPrompt(
+          request.params.id,
+          request.body.conversationId,
+          request.body.prompt,
+        );
+        const statusCode = wasQueuedOrBusy ? 202 : 201;
+        return reply.status(statusCode).send({
+          status: 'queued',
+          queueItem: queued.queueItem,
+          queuedCount: queued.queuedCount,
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to queue prompt';
+        const statusCode = 500;
+        return reply.status(statusCode).send({
+          statusCode,
+          error: 'Internal Server Error',
+          message,
         });
       }
+    },
+  );
+
+  // List queued items for a conversation
+  typedApp.get(
+    '/api/agents/:id/chat/conversations/:cid/queue',
+    {
+      onRequest: [app.authenticate, requirePermission('settings:read')],
+      schema: {
+        tags: ['Agent Chat'],
+        summary: 'List pending queue items for a conversation',
+        params: z.object({ id: z.string(), cid: z.string() }),
+      },
+    },
+    async (request, reply) => {
+      const agent = getAgent(request.params.id);
+      if (!agent) return reply.notFound('Agent not found');
+
+      const conv = validateConversationOwnership(request.params.cid, request.params.id);
+      if (!conv) return reply.notFound('Conversation not found');
+
+      const items = getConversationQueueItems(request.params.id, request.params.cid);
+      return reply.send({ entries: items });
+    },
+  );
+
+  // Clear all queued items for a conversation
+  typedApp.delete(
+    '/api/agents/:id/chat/conversations/:cid/queue',
+    {
+      onRequest: [app.authenticate, requirePermission('settings:update')],
+      schema: {
+        tags: ['Agent Chat'],
+        summary: 'Clear all pending queue items for a conversation',
+        params: z.object({ id: z.string(), cid: z.string() }),
+      },
+    },
+    async (request, reply) => {
+      const agent = getAgent(request.params.id);
+      if (!agent) return reply.notFound('Agent not found');
+
+      const conv = validateConversationOwnership(request.params.cid, request.params.id);
+      if (!conv) return reply.notFound('Conversation not found');
+
+      const deleted = clearAgentConversationQueue(request.params.id, request.params.cid);
+      return reply.send({ deleted });
+    },
+  );
+
+  // Update a queued item (edit prompt)
+  typedApp.patch(
+    '/api/agents/:id/chat/queue/:itemId',
+    {
+      onRequest: [app.authenticate, requirePermission('settings:update')],
+      schema: {
+        tags: ['Agent Chat'],
+        summary: 'Edit a pending queue item',
+        params: z.object({ id: z.string(), itemId: z.string() }),
+        body: z.object({
+          conversationId: z.string(),
+          prompt: z.string().min(1).max(50000).optional(),
+        }),
+      },
+    },
+    async (request, reply) => {
+      const agent = getAgent(request.params.id);
+      if (!agent) return reply.notFound('Agent not found');
 
       const conv = validateConversationOwnership(request.body.conversationId, request.params.id);
       if (!conv) return reply.notFound('Conversation not found');
 
-      // Set SSE headers
-      reply.raw.writeHead(200, {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        Connection: 'keep-alive',
-        'X-Accel-Buffering': 'no',
-      });
-      attachSocketErrorHandler(request, reply);
-
-      executePrompt(request.params.id, request.body.prompt, request.body.conversationId, {
-        onChunk(text) {
-          safeSseWrite(request, reply, `data: ${JSON.stringify(text)}\n\n`);
-        },
-        onDone(message) {
-          safeSseWrite(request, reply, `event: done\ndata: ${JSON.stringify({ messageId: message.id })}\n\n`);
-          safeSseEnd(request, reply);
-        },
-        onError(error) {
-          safeSseWrite(request, reply, `event: error\ndata: ${JSON.stringify({ error })}\n\n`);
-          safeSseEnd(request, reply);
-        },
-      });
+      const updated = updateQueueItem(
+        request.params.itemId,
+        request.params.id,
+        request.body.conversationId,
+        { prompt: request.body.prompt },
+      );
+      if (!updated) return reply.notFound('Queue item not found or not editable');
+      return reply.send(updated);
     },
   );
 
-  // Trigger agent to respond to the latest message (e.g. after image upload) — SSE streaming
+  // Delete a queued item
+  typedApp.delete(
+    '/api/agents/:id/chat/queue/:itemId',
+    {
+      onRequest: [app.authenticate, requirePermission('settings:update')],
+      schema: {
+        tags: ['Agent Chat'],
+        summary: 'Remove a pending queue item',
+        params: z.object({ id: z.string(), itemId: z.string() }),
+        body: z.object({
+          conversationId: z.string(),
+        }),
+      },
+    },
+    async (request, reply) => {
+      const agent = getAgent(request.params.id);
+      if (!agent) return reply.notFound('Agent not found');
+
+      const conv = validateConversationOwnership(request.body.conversationId, request.params.id);
+      if (!conv) return reply.notFound('Conversation not found');
+
+      const deleted = deleteQueueItem(
+        request.params.itemId,
+        request.params.id,
+        request.body.conversationId,
+      );
+      if (!deleted) return reply.notFound('Queue item not found or not deletable');
+      return reply.status(204).send();
+    },
+  );
+
+  // Reorder queued items
+  typedApp.post(
+    '/api/agents/:id/chat/conversations/:cid/queue/reorder',
+    {
+      onRequest: [app.authenticate, requirePermission('settings:update')],
+      schema: {
+        tags: ['Agent Chat'],
+        summary: 'Reorder pending queue items',
+        params: z.object({ id: z.string(), cid: z.string() }),
+        body: z.object({
+          orderedIds: z.array(z.string()),
+        }),
+      },
+    },
+    async (request, reply) => {
+      const agent = getAgent(request.params.id);
+      if (!agent) return reply.notFound('Agent not found');
+
+      const conv = validateConversationOwnership(request.params.cid, request.params.id);
+      if (!conv) return reply.notFound('Conversation not found');
+
+      const ok = reorderQueueItems(request.params.id, request.params.cid, request.body.orderedIds);
+      if (!ok) return reply.badRequest('Invalid queue item IDs');
+      return reply.send({ ok: true });
+    },
+  );
+
+  // Trigger agent to respond to the latest message (e.g. after image upload) and wait for completion
   typedApp.post(
     '/api/agents/:id/chat/respond',
     {
@@ -357,88 +461,20 @@ export async function agentChatRoutes(app: FastifyInstance) {
       const conv = validateConversationOwnership(request.body.conversationId, request.params.id);
       if (!conv) return reply.notFound('Conversation not found');
 
-      // Set SSE headers
-      reply.raw.writeHead(200, {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        Connection: 'keep-alive',
-        'X-Accel-Buffering': 'no',
-      });
-      attachSocketErrorHandler(request, reply);
-
-      executeRespondToLastMessage(request.params.id, request.body.conversationId, {
-        onChunk(text) {
-          safeSseWrite(request, reply, `data: ${JSON.stringify(text)}\n\n`);
-        },
-        onDone(message) {
-          safeSseWrite(request, reply, `event: done\ndata: ${JSON.stringify({ messageId: message.id })}\n\n`);
-          safeSseEnd(request, reply);
-        },
-        onError(error) {
-          safeSseWrite(request, reply, `event: error\ndata: ${JSON.stringify({ error })}\n\n`);
-          safeSseEnd(request, reply);
-        },
-      });
-    },
-  );
-
-  // Reconnect to a running agent stream (SSE)
-  typedApp.get(
-    '/api/agents/:id/chat/stream',
-    {
-      onRequest: [app.authenticate, requirePermission('settings:read')],
-      schema: {
-        tags: ['Agent Chat'],
-        summary: 'Reconnect to a running agent stream via SSE',
-        params: z.object({ id: z.string() }),
-        querystring: z.object({
-          conversationId: z.string(),
-        }),
-      },
-    },
-    async (request, reply) => {
-      const agent = getAgent(request.params.id);
-      if (!agent) return reply.notFound('Agent not found');
-
-      if (!isAgentBusy(request.params.id, request.query.conversationId)) {
-        return reply.status(204).send();
-      }
-
-      // Set SSE headers
-      reply.raw.writeHead(200, {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        Connection: 'keep-alive',
-        'X-Accel-Buffering': 'no',
-      });
-      attachSocketErrorHandler(request, reply);
-
-      const subscribed = subscribeToRunOutput(
-        request.params.id,
-        request.query.conversationId,
-        {
-          onChunk(text) {
-            safeSseWrite(request, reply, `data: ${JSON.stringify(text)}\n\n`);
-          },
-          onDone(message) {
-            safeSseWrite(
-              request,
-              reply,
-              `event: done\ndata: ${JSON.stringify({ messageId: message?.id ?? null })}\n\n`,
-            );
-            safeSseEnd(request, reply);
-          },
-          onError(error) {
-            safeSseWrite(request, reply, `event: error\ndata: ${JSON.stringify({ error })}\n\n`);
-            safeSseEnd(request, reply);
-          },
-        },
-      );
-
-      if (!subscribed) {
-        // Race condition: process finished between check and subscribe
-        safeSseWrite(request, reply, `event: done\ndata: ${JSON.stringify({ messageId: null })}\n\n`);
-        safeSseEnd(request, reply);
+      try {
+        const message = await executeRespondToLastMessage(
+          request.params.id,
+          request.body.conversationId,
+        );
+        return reply.status(201).send(message);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to execute prompt';
+        const statusCode = message === 'Agent is already processing a prompt' ? 409 : 500;
+        return reply.status(statusCode).send({
+          statusCode,
+          error: statusCode === 409 ? 'Conflict' : 'Internal Server Error',
+          message,
+        });
       }
     },
   );

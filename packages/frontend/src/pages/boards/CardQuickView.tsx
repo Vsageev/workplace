@@ -2,14 +2,11 @@ import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import {
   X, ExternalLink, User, Send, Columns3, FileText,
-  Link2, MessageSquare, ChevronDown, Pencil, Check, Trash2, CalendarDays, Loader2, UserPlus,
+  Link2, MessageSquare, ChevronDown, Pencil, Check, Trash2, Loader2, UserPlus,
   ChevronLeft, ChevronRight, Copy, Circle, CircleCheck, ListChecks, Plus,
 } from 'lucide-react';
 import { Button, MarkdownContent, Tooltip } from '../../ui';
 import { AgentAvatar } from '../../components/AgentAvatar';
-import { PriorityBadge } from '../../components/PriorityBadge';
-import { QuickDateButtons } from '../../components/QuickDateButtons';
-import type { Priority } from '../../components/PriorityBadge';
 import { api, ApiError } from '../../lib/api';
 import { toast } from '../../stores/toast';
 import { TimeAgo } from '../../components/TimeAgo';
@@ -101,7 +98,6 @@ export function CardQuickView({ cardId, boardId, boardName, onClose, onCardUpdat
   const [editingDesc, setEditingDesc] = useState(false);
   const [descDraft, setDescDraft] = useState('');
   const [savingDesc, setSavingDesc] = useState(false);
-  const [savingDueDate, setSavingDueDate] = useState(false);
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
   const [editCommentDraft, setEditCommentDraft] = useState('');
   const [savingEditComment, setSavingEditComment] = useState(false);
@@ -115,8 +111,6 @@ export function CardQuickView({ cardId, boardId, boardName, onClose, onCardUpdat
   const titleInputRef = useRef<HTMLInputElement>(null);
   const descTextareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const [togglingComplete, setTogglingComplete] = useState(false);
-
   const [linkCopied, setLinkCopied] = useState(false);
 
   function copyCardLink() {
@@ -126,30 +120,6 @@ export function CardQuickView({ cardId, boardId, boardName, onClose, onCardUpdat
       setTimeout(() => setLinkCopied(false), 2000);
     });
   }
-
-  const handleToggleComplete = useCallback(async () => {
-    if (!card) return;
-    const currentCompleted = card.customFields?.completed === true;
-    const newCompleted = !currentCompleted;
-    const prevCustomFields = card.customFields;
-    const newCustomFields = { ...card.customFields, completed: newCompleted };
-    setCard({ ...card, customFields: newCustomFields });
-    setTogglingComplete(true);
-    try {
-      await api(`/cards/${cardId}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ customFields: newCustomFields }),
-      });
-      onCardUpdated?.(cardId, { customFields: newCustomFields });
-      toast.success(newCompleted ? 'Card marked complete' : 'Card reopened');
-    } catch (e) {
-      setCard({ ...card, customFields: prevCustomFields });
-      if (e instanceof ApiError) toast.error(e.message);
-      else toast.error('Failed to update card');
-    } finally {
-      setTogglingComplete(false);
-    }
-  }, [card, cardId, onCardUpdated]);
 
   // Navigation helpers
   const currentIndex = cardIds ? cardIds.indexOf(cardId) : -1;
@@ -250,16 +220,10 @@ export function CardQuickView({ cardId, boardId, boardName, onClose, onCardUpdat
         e.preventDefault();
         commentInputRef.current?.focus();
       }
-      // Press X to toggle card completion (consistent with Card Detail, Collection, My Cards)
-      if (e.key === 'x' || e.key === 'X') {
-        if (editingTitle || editingDesc || editingCommentId !== null) return;
-        e.preventDefault();
-        void handleToggleComplete();
-      }
     }
     document.addEventListener('keydown', handleKey);
     return () => document.removeEventListener('keydown', handleKey);
-  }, [onClose, editingTitle, editingDesc, editingCommentId, showAssignee, hasNext, hasPrev, navigateNext, navigatePrev, handleToggleComplete]);
+  }, [onClose, editingTitle, editingDesc, editingCommentId, showAssignee, hasNext, hasPrev, navigateNext, navigatePrev]);
 
   function startEditTitle() {
     if (!card) return;
@@ -363,47 +327,6 @@ export function CardQuickView({ cardId, boardId, boardName, onClose, onCardUpdat
     }
   }
 
-  async function saveDueDate(value: string) {
-    if (!card) return;
-    const dueDate = value || null;
-    const prevCustomFields = card.customFields;
-    const newCustomFields = { ...card.customFields, dueDate };
-    setCard({ ...card, customFields: newCustomFields });
-    setSavingDueDate(true);
-    try {
-      await api(`/cards/${cardId}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ customFields: newCustomFields }),
-      });
-    } catch (e) {
-      setCard({ ...card, customFields: prevCustomFields });
-      if (e instanceof ApiError) toast.error(e.message);
-      else toast.error('Failed to update due date');
-    } finally {
-      setSavingDueDate(false);
-    }
-  }
-
-  async function savePriority(value: Priority | null) {
-    if (!card) return;
-    const prevCustomFields = card.customFields;
-    const newCustomFields = { ...card.customFields };
-    if (value) newCustomFields.priority = value;
-    else delete newCustomFields.priority;
-    setCard({ ...card, customFields: newCustomFields });
-    try {
-      await api(`/cards/${cardId}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ customFields: newCustomFields }),
-      });
-      onCardUpdated?.(cardId, { customFields: newCustomFields });
-    } catch (e) {
-      setCard({ ...card, customFields: prevCustomFields });
-      if (e instanceof ApiError) toast.error(e.message);
-      else toast.error('Failed to update priority');
-    }
-  }
-
   // ── Checklist ───────────────────────────────────────
   interface ChecklistItem { id: string; text: string; done: boolean }
 
@@ -447,10 +370,8 @@ export function CardQuickView({ cardId, boardId, boardName, onClose, onCardUpdat
   function toggleChecklistItem(itemId: string) {
     const updated = checklist.map((i) => (i.id === itemId ? { ...i, done: !i.done } : i));
     void saveChecklist(updated);
-    if (updated.length > 0 && updated.every((i) => i.done) && card?.customFields?.completed !== true) {
-      toast.success('All checklist items done!', {
-        action: { label: 'Mark complete', onClick: () => void handleToggleComplete() },
-      });
+    if (updated.length > 0 && updated.every((i) => i.done)) {
+      toast.success('All checklist items done!');
     }
   }
 
@@ -602,22 +523,8 @@ export function CardQuickView({ cardId, boardId, boardName, onClose, onCardUpdat
           <div className={styles.loading}>Card not found</div>
         ) : (
           <div className={styles.body}>
-            {/* Completion toggle + Title */}
-            {(() => {
-              const isCompleted = card.customFields?.completed === true;
-              return (
-                <div className={styles.titleArea}>
-                  <button
-                    className={`${styles.completeBtn}${isCompleted ? ` ${styles.completeBtnDone}` : ''}`}
-                    onClick={() => void handleToggleComplete()}
-                    disabled={togglingComplete}
-                    title={isCompleted ? 'Mark as incomplete (D)' : 'Mark as complete (D)'}
-                    aria-label={isCompleted ? 'Mark as incomplete' : 'Mark as complete'}
-                  >
-                    {togglingComplete
-                      ? <Loader2 size={18} className={styles.spinner} />
-                      : isCompleted ? <CircleCheck size={18} /> : <Circle size={18} />}
-                  </button>
+            {/* Title */}
+            <div className={styles.titleArea}>
                   {editingTitle ? (
                     <div className={styles.titleEditRow}>
                       <input
@@ -647,15 +554,13 @@ export function CardQuickView({ cardId, boardId, boardName, onClose, onCardUpdat
                     </div>
                   ) : (
                     <div className={styles.titleRow} onClick={startEditTitle} title="Click to rename">
-                      <h2 className={`${styles.title}${isCompleted ? ` ${styles.titleCompleted}` : ''}`}>{card.name}</h2>
+                      <h2 className={styles.title}>{card.name}</h2>
                       <span className={styles.titleEditHint}>
                         <Pencil size={12} />
                       </span>
                     </div>
                   )}
                 </div>
-              );
-            })()}
 
             {/* Meta row */}
             <div className={styles.metaRow}>
@@ -750,58 +655,6 @@ export function CardQuickView({ cardId, boardId, boardName, onClose, onCardUpdat
                 ))}
               </div>
             )}
-
-            {/* Due date */}
-            {(() => {
-              const dueDate = card.customFields?.dueDate as string | undefined;
-              const today = new Date();
-              today.setHours(0, 0, 0, 0);
-              const due = dueDate ? new Date(dueDate) : null;
-              const isOverdue = due && due < today;
-              const isSoon = due && !isOverdue && (due.getTime() - today.getTime()) <= 3 * 24 * 60 * 60 * 1000;
-              return (
-                <div className={styles.dueDateRow}>
-                  <CalendarDays size={12} className={styles.dueDateIcon} />
-                  <span className={styles.dueDateLabel}>Due date</span>
-                  <div className={`${styles.dueDateField}${isOverdue ? ` ${styles.dueDateOverdue}` : isSoon ? ` ${styles.dueDateSoon}` : ''}`}>
-                    <input
-                      type="date"
-                      className={styles.dueDateInput}
-                      value={dueDate ?? ''}
-                      disabled={savingDueDate}
-                      onChange={(e) => saveDueDate(e.target.value)}
-                      aria-label="Due date"
-                    />
-                    {dueDate && (
-                      <button
-                        className={styles.dueDateClear}
-                        onClick={() => saveDueDate('')}
-                        disabled={savingDueDate}
-                        title="Clear due date"
-                      >
-                        <X size={10} />
-                      </button>
-                    )}
-                  </div>
-                  <QuickDateButtons
-                    currentValue={dueDate}
-                    onSelect={(v) => saveDueDate(v)}
-                    disabled={savingDueDate}
-                  />
-                </div>
-              );
-            })()}
-
-            {/* Priority */}
-            <div className={styles.dueDateRow}>
-              <span className={styles.dueDateLabel}>Priority</span>
-              <PriorityBadge
-                priority={(card.customFields?.priority as Priority) ?? null}
-                editable
-                onChange={savePriority}
-                size="sm"
-              />
-            </div>
 
             {/* Checklist */}
             <div className={styles.section}>

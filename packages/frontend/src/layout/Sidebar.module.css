@@ -11,6 +11,7 @@
   padding: var(--space-4);
   z-index: 100;
   transition: width 0.2s ease, padding 0.2s ease;
+  overflow: visible;
 }
 
 .sidebarCollapsed {
@@ -19,12 +20,18 @@
   align-items: center;
 }
 
+.logoRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
 .logo {
   font-size: 20px;
   font-weight: 700;
   color: var(--color-text);
-  padding: var(--space-2) var(--space-3);
-  margin-bottom: var(--space-4);
   letter-spacing: -0.01em;
 }
 
@@ -414,12 +421,12 @@
 
 .navBadge {
   margin-left: auto;
-  min-width: 20px;
-  height: 20px;
-  padding: 0 6px;
-  border-radius: var(--radius-pill);
-  background: var(--color-primary-brand);
-  color: #fff;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-primary-brand) 12%, transparent);
+  color: var(--color-primary-brand);
   font-size: 11px;
   font-weight: 600;
   display: flex;
@@ -430,12 +437,12 @@
 
 .navBadgeDanger {
   margin-left: auto;
-  min-width: 20px;
-  height: 20px;
-  padding: 0 6px;
-  border-radius: var(--radius-pill);
-  background: var(--color-error);
-  color: #fff;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-error) 12%, transparent);
+  color: var(--color-error);
   font-size: 11px;
   font-weight: 600;
   display: flex;
@@ -446,19 +453,18 @@
 
 .navBadgePulsing {
   margin-left: auto;
-  min-width: 20px;
-  height: 20px;
-  padding: 0 6px;
-  border-radius: var(--radius-pill);
-  background: #10B981;
-  color: #fff;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, #10B981 12%, transparent);
+  color: #10B981;
   font-size: 11px;
   font-weight: 600;
   display: flex;
   align-items: center;
   justify-content: center;
   line-height: 1;
-  animation: badgePulse 2s ease-in-out infinite;
 }
 
 .bottom {
@@ -654,14 +660,14 @@
   position: absolute;
   top: 2px;
   right: 2px;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 4px;
-  border-radius: var(--radius-pill);
-  background: var(--color-primary-brand);
-  color: #fff;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-primary-brand) 15%, transparent);
+  color: var(--color-primary-brand);
   font-size: 9px;
-  font-weight: 600;
+  font-weight: 700;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -672,33 +678,32 @@
   position: absolute;
   top: 2px;
   right: 2px;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 4px;
-  border-radius: var(--radius-pill);
-  background: #10B981;
-  color: #fff;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, #10B981 15%, transparent);
+  color: #10B981;
   font-size: 9px;
-  font-weight: 600;
+  font-weight: 700;
   display: flex;
   align-items: center;
   justify-content: center;
   line-height: 1;
-  animation: badgePulse 2s ease-in-out infinite;
 }
 
 .navBadgeDangerCollapsed {
   position: absolute;
   top: 2px;
   right: 2px;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 4px;
-  border-radius: var(--radius-pill);
-  background: var(--color-error);
-  color: #fff;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-error) 15%, transparent);
+  color: var(--color-error);
   font-size: 9px;
-  font-weight: 600;
+  font-weight: 700;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -756,20 +761,29 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
-  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
   border: none;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--color-text-tertiary);
   cursor: pointer;
-  border-radius: var(--radius-sm);
-  transition: all var(--transition-fast);
+  flex-shrink: 0;
+  transition: background var(--transition-fast), color var(--transition-fast);
 }
 
 .collapseToggle:hover {
   background: var(--color-surface);
-  color: var(--color-text-secondary);
+  color: var(--color-text);
+}
+
+.sidebarCollapsed .collapseToggle {
+  width: 40px;
+  height: 36px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  margin-bottom: var(--space-2);
 }
 
 .sidebarCollapsed .userSection {
@@ -818,12 +832,12 @@
 }
 
 .notificationBadge {
-  min-width: 20px;
-  height: 20px;
-  padding: 0 6px;
-  border-radius: var(--radius-pill);
-  background: var(--color-info);
-  color: #fff;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-info) 12%, transparent);
+  color: var(--color-info);
   font-size: 11px;
   font-weight: 600;
   display: flex;
@@ -836,14 +850,14 @@
   position: absolute;
   top: 0;
   right: 0;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 4px;
-  border-radius: var(--radius-pill);
-  background: var(--color-info);
-  color: #fff;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-info) 15%, transparent);
+  color: var(--color-info);
   font-size: 9px;
-  font-weight: 600;
+  font-weight: 700;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -870,7 +884,7 @@
   }
 
   .collapseToggle {
-    display: none;
+    display: none !important;
   }
 }
 

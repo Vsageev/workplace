@@ -80,9 +80,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [state.loading]);
 
   const login = useCallback(async (email: string, password: string) => {
+    const normalizedEmail = email.trim().toLowerCase();
     const data = await api<unknown>('/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ email: normalizedEmail, password }),
     });
     if (!isAuthResponse(data)) {
       clearTokens();
@@ -94,9 +95,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const register = useCallback(
     async (data: { email: string; password: string; firstName: string; lastName: string }) => {
+      const normalizedEmail = data.email.trim().toLowerCase();
       const res = await api<unknown>('/auth/register', {
         method: 'POST',
-        body: JSON.stringify(data),
+        body: JSON.stringify({ ...data, email: normalizedEmail }),
       });
       if (!isAuthResponse(res)) {
         clearTokens();

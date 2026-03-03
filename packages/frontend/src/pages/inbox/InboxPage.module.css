@@ -254,6 +254,7 @@
 
 .filterRow {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-3) var(--space-4);
@@ -263,6 +264,12 @@
 .searchWrap {
   position: relative;
   flex: 1;
+}
+
+.searchWrapFullRow {
+  flex: none;
+  flex-basis: 100%;
+  width: 100%;
 }
 
 .searchIcon {
@@ -396,6 +403,12 @@
   border-radius: 2px;
 }
 
+.conversationItemActive .convName,
+.conversationItemActive .convSubject {
+  color: #000;
+  font-weight: 600;
+}
+
 .conversationItemUnread .convName,
 .conversationItemUnread .convPreview {
   font-weight: 600;
@@ -430,9 +443,9 @@
 }
 
 .convName {
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 500;
-  color: var(--color-text);
+  color: var(--color-text-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -446,7 +459,7 @@
 }
 
 .convSubject {
-  font-size: 13px;
+  font-size: 14px;
   color: var(--color-text-secondary);
   white-space: nowrap;
   overflow: hidden;
@@ -587,42 +600,6 @@
   text-transform: uppercase;
 }
 
-/* ── Keyboard shortcut hints ── */
-.shortcutHints {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: 6px var(--space-4);
-  border-top: 1px solid var(--color-border-subtle);
-  background: var(--color-surface);
-  flex-shrink: 0;
-}
-
-.shortcutHint {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  font-size: 11px;
-  color: var(--color-text-tertiary);
-  white-space: nowrap;
-}
-
-.shortcutHint kbd {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 4px;
-  border: 1px solid var(--color-border);
-  border-radius: 3px;
-  background: var(--color-card);
-  font-family: inherit;
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--color-text-secondary);
-  line-height: 1;
-}
 
 /* ── Right panel: Thread view + Reply ── */
 .threadPanel {
@@ -1807,9 +1784,6 @@ a.inlineKeyboardBtn:hover {
     border-bottom: 1px solid var(--color-border);
   }
 
-  .shortcutHints {
-    display: none;
-  }
 
   .threadPanel {
     min-height: 0;

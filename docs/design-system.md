@@ -65,7 +65,14 @@ Communicate value visually. Prioritize scannability, clear hierarchy, and real-f
 - **Secondary:** White background, 1px border, dark text, 8px radius
 - **Ghost:** No background, text only with arrow
 - **Link:** Accent color text with underline on hover
-- **Icon-only buttons:** Always use the shared custom `Tooltip` component (`ui/Tooltip`) for hover/focus labels. Do not use native `title` tooltips. Keep an `aria-label` on the button for accessibility.
+- **Icon-only buttons:** Always use the shared custom `Tooltip` component (`ui/Tooltip`) for hover/focus labels. Keep an `aria-label` on the button for accessibility.
+
+### Tooltips
+
+- **Always use `<Tooltip>`** (`ui/Tooltip`) for all hover hints, helper text, and disabled-state explanations. Never use the native HTML `title` attribute — it renders inconsistently across browsers, cannot be styled, and has an unpredictable delay.
+- **Disabled buttons with tooltips:** Wrap the disabled button in `<Tooltip label="reason">` with a `<div style={{ cursor: 'not-allowed' }}>` inside. Set `pointerEvents: 'none'` on the `<Button>` itself so the wrapper receives hover events.
+- **Placement:** Default to `position="top"`. Use `bottom`, `left`, or `right` when the element is near the viewport edge or when `top` would obscure related content.
+- **Label text:** Keep tooltip labels short (under ~60 characters). Use sentence case, no trailing period. For disabled states, explain *why* the action is unavailable (e.g., "Select an agent first"), not just that it is disabled.
 
 ### Cards
 

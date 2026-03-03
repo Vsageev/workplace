@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
-import { X, Bot, Play, CheckCircle2 } from 'lucide-react';
-import { Button } from '../../ui';
+import { useState, useEffect, useRef } from 'react';
+import { X, Bot, Play, Check, CheckCircle2, Minus, Plus, Zap, Layers, ChevronDown } from 'lucide-react';
+import { Button, Tooltip } from '../../ui';
 import { api } from '../../lib/api';
 import { toast } from '../../stores/toast';
+import { AgentAvatar } from '../../components/AgentAvatar';
 import styles from './BoardBatchRunPanel.module.css';
 
 interface BoardColumn {
@@ -43,6 +44,8 @@ export function BoardBatchRunPanel({ boardId, columns, onClose }: BoardBatchRunP
   const [maxParallel, setMaxParallel] = useState(3);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<BatchResult | null>(null);
+  const [showAgentPicker, setShowAgentPicker] = useState(false);
+  const agentPickerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     api<{ entries: AgentEntry[] }>('/agents?limit=100').then((res) => {
@@ -59,6 +62,16 @@ export function BoardBatchRunPanel({ boardId, columns, onClose }: BoardBatchRunP
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [onClose]);
+
+  useEffect(() => {
+    function onClickOutside(e: MouseEvent) {
+      if (agentPickerRef.current && !agentPickerRef.current.contains(e.target as Node)) {
+        setShowAgentPicker(false);
+      }
+    }
+    document.addEventListener('mousedown', onClickOutside);
+    return () => document.removeEventListener('mousedown', onClickOutside);
+  }, []);
 
   function toggleColumn(id: string) {
     setSelectedColumnIds((prev) => {
@@ -120,13 +133,27 @@ export function BoardBatchRunPanel({ boardId, columns, onClose }: BoardBatchRunP
   }
 
   const allSelected = selectedColumnIds.size === columns.length;
+  const selectedAgent = agents.find((a) => a.id === agentId);
+
+  const canRun = !submitting && !!agentId && !!prompt.trim() && selectedColumnIds.size > 0;
+  const disabledReason = submitting
+    ? 'Batch run is starting…'
+    : !agentId
+      ? 'Select an agent first'
+      : !prompt.trim()
+        ? 'Enter a prompt'
+        : selectedColumnIds.size === 0
+          ? 'Select at least one column'
+          : undefined;
 
   return (
     <div className={styles.overlay} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className={styles.panel}>
         <div className={styles.header}>
           <div className={styles.headerLeft}>
-            <Bot size={16} />
+            <div className={styles.headerIcon}>
+              <Zap size={14} />
+            </div>
             <span className={styles.title}>Batch Run</span>
           </div>
           <button className={styles.closeBtn} onClick={onClose} aria-label="Close">
@@ -135,83 +162,152 @@ export function BoardBatchRunPanel({ boardId, columns, onClose }: BoardBatchRunP
         </div>
 
         <div className={styles.body}>
-          <p className={styles.description}>
-            Run an agent on every card in this board. Cards are processed with concurrency control — the agent starts immediately in the background.
-          </p>
-
-          <div className={styles.formField}>
-            <label className={styles.formLabel}>Agent</label>
-            <select
-              className={styles.selectInput}
-              value={agentId}
-              onChange={(e) => setAgentId(e.target.value)}
-            >
-              {agents.length === 0 && <option value="">No active agents</option>}
-              {agents.map((a) => (
-                <option key={a.id} value={a.id}>{a.name}</option>
-              ))}
-            </select>
+          {/* Agent Selection */}
+          <div className={styles.section}>
+            <div className={styles.sectionHeader}>
+              <Bot size={14} className={styles.sectionIcon} />
+              <span className={styles.sectionLabel}>Agent</span>
+            </div>
+            <div ref={agentPickerRef} className={styles.agentPicker}>
+              <button
+                type="button"
+                className={styles.agentTrigger}
+                onClick={() => setShowAgentPicker((v) => !v)}
+              >
+                {selectedAgent ? (
+                  <>
+                    <AgentAvatar
+                      icon={selectedAgent.avatarIcon || 'spark'}
+                      bgColor={selectedAgent.avatarBgColor || '#1a1a2e'}
+                      logoColor={selectedAgent.avatarLogoColor || '#e94560'}
+                      size={20}
+                    />
+                    <span className={styles.agentTriggerName}>{selectedAgent.name}</span>
+                  </>
+                ) : (
+                  <span className={styles.agentPlaceholder}>
+                    {agents.length === 0 ? 'No active agents' : 'Select an agent…'}
+                  </span>
+                )}
+                <ChevronDown size={13} className={styles.agentChevron} />
+              </button>
+              {showAgentPicker && (
+                <div className={styles.agentDropdown}>
+                  {agents.length === 0 ? (
+                    <div className={styles.agentDropdownEmpty}>No active agents available</div>
+                  ) : (
+                    agents.map((a) => (
+                      <button
+                        key={a.id}
+                        type="button"
+                        className={`${styles.agentOption} ${agentId === a.id ? styles.agentOptionActive : ''}`}
+                        onClick={() => { setAgentId(a.id); setShowAgentPicker(false); }}
+                      >
+                        <AgentAvatar
+                          icon={a.avatarIcon || 'spark'}
+                          bgColor={a.avatarBgColor || '#1a1a2e'}
+                          logoColor={a.avatarLogoColor || '#e94560'}
+                          size={20}
+                        />
+                        <span className={styles.agentOptionName}>{a.name}</span>
+                        {agentId === a.id && <Check size={12} className={styles.agentOptionCheck} />}
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
           </div>
 
-          <div className={styles.formField}>
-            <label className={styles.formLabel}>Prompt</label>
+          {/* Prompt */}
+          <div className={styles.section}>
+            <div className={styles.sectionHeader}>
+              <span className={styles.sectionLabel}>Prompt</span>
+              <span className={styles.charCount}>{prompt.length.toLocaleString()} / 10,000</span>
+            </div>
             <textarea
               className={styles.promptTextarea}
-              placeholder="What should the agent do with each card?"
+              placeholder="Describe what the agent should do with each card…"
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
-              rows={4}
+              maxLength={10000}
+              rows={5}
             />
           </div>
 
+          {/* Columns */}
           {columns.length > 0 && (
-            <div className={styles.formField}>
-              <div className={styles.selectAllRow}>
-                <span className={styles.formLabel}>Columns</span>
+            <div className={styles.section}>
+              <div className={styles.sectionHeader}>
+                <Layers size={14} className={styles.sectionIcon} />
+                <span className={styles.sectionLabel}>
+                  Columns
+                  <span className={styles.sectionCount}>
+                    {selectedColumnIds.size}/{columns.length}
+                  </span>
+                </span>
                 <button
-                  className={styles.selectAllBtn}
+                  className={styles.toggleAllBtn}
                   onClick={allSelected ? deselectAll : selectAll}
                   type="button"
                 >
-                  {allSelected ? 'Deselect all' : 'Select all'}
+                  {allSelected ? 'Clear' : 'All'}
                 </button>
               </div>
-              <div className={styles.columnList}>
-                {columns.map((col) => (
-                  <label key={col.id} className={styles.columnCheckbox}>
-                    <input
-                      type="checkbox"
-                      checked={selectedColumnIds.has(col.id)}
-                      onChange={() => toggleColumn(col.id)}
-                    />
-                    <span
-                      className={styles.columnDot}
-                      style={{ background: col.color }}
-                    />
-                    {col.name}
-                  </label>
-                ))}
+              <div className={styles.columnChips}>
+                {columns.map((col) => {
+                  const selected = selectedColumnIds.has(col.id);
+                  return (
+                    <button
+                      key={col.id}
+                      className={`${styles.columnChip} ${selected ? styles.columnChipSelected : ''}`}
+                      onClick={() => toggleColumn(col.id)}
+                      type="button"
+                    >
+                      <span
+                        className={styles.columnDot}
+                        style={{ background: col.color }}
+                      />
+                      {col.name}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}
 
-          <div className={styles.formField}>
-            <label className={styles.formLabel}>Max parallel agents</label>
-            <div className={styles.parallelRow}>
-              <input
-                type="number"
-                className={styles.parallelInput}
-                min={1}
-                max={10}
-                value={maxParallel}
-                onChange={(e) => setMaxParallel(Math.max(1, Math.min(10, Number(e.target.value))))}
-              />
-              <span className={styles.parallelHint}>
-                agents running at the same time (1–10)
-              </span>
+          {/* Concurrency */}
+          <div className={styles.section}>
+            <div className={styles.sectionHeader}>
+              <span className={styles.sectionLabel}>Concurrency</span>
+            </div>
+            <div className={styles.stepperRow}>
+              <div className={styles.stepper}>
+                <button
+                  className={styles.stepperBtn}
+                  onClick={() => setMaxParallel((v) => Math.max(1, v - 1))}
+                  disabled={maxParallel <= 1}
+                  type="button"
+                  aria-label="Decrease"
+                >
+                  <Minus size={14} />
+                </button>
+                <span className={styles.stepperValue}>{maxParallel}</span>
+                <button
+                  className={styles.stepperBtn}
+                  onClick={() => setMaxParallel((v) => Math.min(10, v + 1))}
+                  disabled={maxParallel >= 10}
+                  type="button"
+                  aria-label="Increase"
+                >
+                  <Plus size={14} />
+                </button>
+              </div>
+              <span className={styles.stepperHint}>parallel agents</span>
             </div>
           </div>
 
+          {/* Result */}
           {result && (
             <div className={`${styles.result} ${result.total === 0 ? styles.resultEmpty : styles.resultSuccess}`}>
               {result.total > 0 && <CheckCircle2 size={15} style={{ flexShrink: 0, marginTop: 1 }} />}
@@ -221,14 +317,40 @@ export function BoardBatchRunPanel({ boardId, columns, onClose }: BoardBatchRunP
         </div>
 
         <div className={styles.footer}>
-          <Button
-            variant="primary"
-            onClick={handleSubmit}
-            disabled={submitting || !agentId || !prompt.trim() || selectedColumnIds.size === 0}
-          >
-            <Play size={14} />
-            {submitting ? 'Starting…' : 'Run batch'}
-          </Button>
+          <div className={styles.footerMeta}>
+            {selectedAgent && (
+              <span className={styles.footerAgent}>
+                {selectedAgent.name}
+              </span>
+            )}
+            {selectedColumnIds.size > 0 && selectedColumnIds.size < columns.length && (
+              <span className={styles.footerColumns}>
+                {selectedColumnIds.size} column{selectedColumnIds.size !== 1 ? 's' : ''}
+              </span>
+            )}
+          </div>
+          {disabledReason ? (
+            <Tooltip label={disabledReason} position="top">
+              <div style={{ cursor: 'not-allowed' }}>
+                <Button
+                  variant="primary"
+                  disabled
+                  style={{ pointerEvents: 'none' }}
+                >
+                  <Play size={14} />
+                  {submitting ? 'Starting…' : 'Run batch'}
+                </Button>
+              </div>
+            </Tooltip>
+          ) : (
+            <Button
+              variant="primary"
+              onClick={handleSubmit}
+            >
+              <Play size={14} />
+              Run batch
+            </Button>
+          )}
         </div>
       </div>
     </div>

@@ -1,6 +1,5 @@
 import { lazy, Suspense } from 'react';
 import { createBrowserRouter } from 'react-router-dom';
-import { AppLayout, AuthLayout } from '../layout';
 import { RootLayout } from './RootLayout';
 import { RequireAuth, RequireGuest } from './guards';
 import { PageLoader } from '../ui';
@@ -51,6 +50,12 @@ const NotFoundPage = lazy(() =>
 const MyCardsPage = lazy(() =>
   import('../pages/MyCardsPage').then((m) => ({ default: m.MyCardsPage })),
 );
+const AuthLayout = lazy(() =>
+  import('../layout/AuthLayout').then((m) => ({ default: m.AuthLayout })),
+);
+const AppLayout = lazy(() =>
+  import('../layout/AppLayout').then((m) => ({ default: m.AppLayout })),
+);
 
 function SuspenseWrapper({ children }: { children: React.ReactNode }) {
   return <Suspense fallback={<PageLoader />}>{children}</Suspense>;
@@ -65,7 +70,7 @@ export const router = createBrowserRouter([
         element: <RequireGuest />,
         children: [
           {
-            element: <AuthLayout />,
+            element: <SuspenseWrapper><AuthLayout /></SuspenseWrapper>,
             children: [
               { path: 'login', element: <LoginPage /> },
               { path: 'register', element: <RegisterPage /> },
@@ -78,13 +83,13 @@ export const router = createBrowserRouter([
         element: <RequireAuth />,
         children: [
           {
-            element: <AuthLayout />,
+            element: <SuspenseWrapper><AuthLayout /></SuspenseWrapper>,
             children: [
               { path: '2fa/setup', element: <TwoFactorSetupPage /> },
             ],
           },
           {
-            element: <AppLayout />,
+            element: <SuspenseWrapper><AppLayout /></SuspenseWrapper>,
             children: [
               { index: true, element: <SuspenseWrapper><DashboardPage /></SuspenseWrapper> },
               { path: 'collections', element: <SuspenseWrapper><CollectionsListPage /></SuspenseWrapper> },

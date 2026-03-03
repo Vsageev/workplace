@@ -20,23 +20,8 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
     group: 'General',
     shortcuts: [
       { label: 'Open command palette', keys: [mod, 'K'] },
-      { label: 'Quick create card', keys: ['C'] },
       { label: 'Toggle sidebar', keys: ['['] },
       { label: 'Show keyboard shortcuts', keys: ['?'] },
-    ],
-  },
-  {
-    group: 'Inbox',
-    shortcuts: [
-      { label: 'Navigate conversations up/down', keys: ['j / k'] },
-      { label: 'Open selected conversation', keys: ['Enter'] },
-      { label: 'Deselect conversation', keys: ['Esc'] },
-      { label: 'Toggle read/unread', keys: ['U'] },
-      { label: 'Archive conversation', keys: ['E'] },
-      { label: 'Close/reopen conversation', keys: ['X'] },
-      { label: 'Pin/unpin conversation', keys: ['P'] },
-      { label: 'Focus reply', keys: ['R'] },
-      { label: 'Open template picker', keys: ['/'] },
     ],
   },
   {
@@ -88,8 +73,7 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
       { label: 'Go to My Cards', keys: ['g', { then: 'y' }] },
       { label: 'Go to Collections', keys: ['g', { then: 'c' }] },
       { label: 'Go to Boards', keys: ['g', { then: 'b' }] },
-      { label: 'Go to Inbox', keys: ['g', { then: 'i' }] },
-      { label: 'Go to Agents', keys: ['g', { then: 'a' }] },
+{ label: 'Go to Agents', keys: ['g', { then: 'a' }] },
       { label: 'Go to Monitor', keys: ['g', { then: 'm' }] },
       { label: 'Go to Storage', keys: ['g', { then: 's' }] },
       { label: 'Go to Settings', keys: ['g', { then: ',' }] },

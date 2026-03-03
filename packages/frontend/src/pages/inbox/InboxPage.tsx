@@ -404,7 +404,6 @@ export function InboxPage() {
   const [showCreateCard, setShowCreateCard] = useState(false);
 
   // Keyboard navigation state for conversation list
-  const [focusedConvIndex, setFocusedConvIndex] = useState<number>(-1);
   const conversationListRef = useRef<HTMLDivElement>(null);
 
   // Refs
@@ -650,111 +649,7 @@ export function InboxPage() {
     [sortedConversations, pinnedIds],
   );
 
-  /* ── Keyboard navigation for conversation list (J/K, Arrow Up/Down, Enter, Escape) ── */
-  useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
-      const tag = (e.target as HTMLElement).tagName;
-      const isInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (e.target as HTMLElement).isContentEditable;
 
-      // Skip all shortcuts when typing in an input (except Escape which blurs the input)
-      if (isInput) {
-        if (e.key === 'Escape') {
-          (e.target as HTMLElement).blur();
-        }
-        return;
-      }
-
-      // Escape: deselect conversation and go back to list
-      if (e.key === 'Escape' && selectedId) {
-        e.preventDefault();
-        setSearchParams({});
-        return;
-      }
-
-      const len = sortedConversations.length;
-      if (len === 0) return;
-
-      if (e.key === 'j' || e.key === 'ArrowDown') {
-        e.preventDefault();
-        setFocusedConvIndex((prev) => {
-          const next = prev < len - 1 ? prev + 1 : prev;
-          scrollConvIntoView(next);
-          return next;
-        });
-      } else if (e.key === 'k' || e.key === 'ArrowUp') {
-        e.preventDefault();
-        setFocusedConvIndex((prev) => {
-          const next = prev > 0 ? prev - 1 : 0;
-          scrollConvIntoView(next);
-          return next;
-        });
-      } else if (e.key === 'Enter' && focusedConvIndex >= 0 && focusedConvIndex < len) {
-        e.preventDefault();
-        setSearchParams({ id: sortedConversations[focusedConvIndex].id });
-      } else if (e.key === 'u') {
-        // Toggle unread on focused or selected conversation
-        const targetId = selectedId || (focusedConvIndex >= 0 ? sortedConversations[focusedConvIndex]?.id : null);
-        if (targetId) {
-          e.preventDefault();
-          void toggleConversationUnread(targetId);
-        }
-      } else if (e.key === 'e') {
-        // Archive focused or selected conversation
-        const targetId = selectedId || (focusedConvIndex >= 0 ? sortedConversations[focusedConvIndex]?.id : null);
-        if (targetId) {
-          e.preventDefault();
-          void updateConversationStatus('archived', targetId);
-        }
-      } else if (e.key === 'x') {
-        // Close/reopen focused or selected conversation
-        const targetConv = selectedId
-          ? activeConversation
-          : focusedConvIndex >= 0
-            ? sortedConversations[focusedConvIndex]
-            : null;
-        if (targetConv) {
-          e.preventDefault();
-          void updateConversationStatus(targetConv.status === 'open' ? 'closed' : 'open', targetConv.id);
-        }
-      } else if (e.key === 'r') {
-        // Focus reply input
-        if (selectedId && replyInputRef.current) {
-          e.preventDefault();
-          replyInputRef.current.focus();
-        }
-      } else if (e.key === 'p') {
-        // Pin/unpin focused or selected conversation
-        const targetId = selectedId || (focusedConvIndex >= 0 ? sortedConversations[focusedConvIndex]?.id : null);
-        if (targetId) {
-          e.preventDefault();
-          togglePin(targetId);
-        }
-      }
-    }
-
-    function scrollConvIntoView(index: number) {
-      const container = conversationListRef.current;
-      if (!container) return;
-      const items = container.querySelectorAll('[data-conv-item]');
-      items[index]?.scrollIntoView({ block: 'nearest' });
-    }
-
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [conversations, focusedConvIndex, selectedId, activeConversation, setSearchParams, togglePin, sortedConversations]);
-
-  // Reset focused index when conversations change (search/filter)
-  useEffect(() => {
-    setFocusedConvIndex(-1);
-  }, [statusFilter, debouncedSearch, channelFilter, unreadOnly, assignedToMe]);
-
-  // Sync focused index when a conversation is selected
-  useEffect(() => {
-    if (selectedId) {
-      const idx = sortedConversations.findIndex((c) => c.id === selectedId);
-      if (idx >= 0) setFocusedConvIndex(idx);
-    }
-  }, [selectedId, sortedConversations]);
 
   /* ── Fetch templates when popover opens ── */
   useEffect(() => {
@@ -1117,9 +1012,6 @@ export function InboxPage() {
   /* ── Create card from conversation ── */
   async function handleCreateCard(data: CreateCardData) {
     if (!activeConversation || !data.collectionId) return;
-    const customFields: Record<string, unknown> = {};
-    if (data.dueDate) customFields.dueDate = data.dueDate;
-    if (data.priority) customFields.priority = data.priority;
     const card = await api<{ id: string }>('/cards', {
       method: 'POST',
       body: JSON.stringify({
@@ -1127,7 +1019,6 @@ export function InboxPage() {
         name: data.name,
         description: data.description,
         assigneeId: data.assigneeId,
-        ...(Object.keys(customFields).length > 0 ? { customFields } : {}),
       }),
     });
     await Promise.all([
@@ -1348,7 +1239,7 @@ export function InboxPage() {
           </div>
 
           <div className={styles.filterRow}>
-            <div className={styles.searchWrap}>
+            <div className={`${styles.searchWrap} ${styles.searchWrapFullRow}`}>
               <Search size={14} className={styles.searchIcon} />
               <input
                 type="text"
@@ -1477,7 +1368,7 @@ export function InboxPage() {
             ) : (
               sortedConversations.map((conv, index) => {
                 const isActive = conv.id === selectedId;
-                const isFocused = index === focusedConvIndex && !isActive;
+                const isFocused = false;
                 const isChecked = selectedConvIds.has(conv.id);
                 const isPinned = pinnedIds.has(conv.id);
                 const showPinnedSeparator = pinnedCount > 0 && index === pinnedCount;
@@ -1578,13 +1469,6 @@ export function InboxPage() {
                 );
               })
             )}
-          </div>
-          <div className={styles.shortcutHints}>
-            <span className={styles.shortcutHint}><kbd>J</kbd><kbd>K</kbd> navigate</span>
-            <span className={styles.shortcutHint}><kbd>Enter</kbd> open</span>
-            <span className={styles.shortcutHint}><kbd>U</kbd> unread</span>
-            <span className={styles.shortcutHint}><kbd>P</kbd> pin</span>
-            <span className={styles.shortcutHint}><kbd>R</kbd> reply</span>
           </div>
         </div>
 

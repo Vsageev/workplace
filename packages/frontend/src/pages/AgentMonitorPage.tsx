@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Activity, MessageSquare, Clock, Zap, ChevronDown, ChevronRight, Terminal, AlertTriangle, ExternalLink, X, CheckCircle2, XCircle, Filter, BarChart3, Copy, Check, Trash2 } from 'lucide-react';
+import { Activity, MessageSquare, Clock, Zap, ChevronDown, ChevronRight, Terminal, AlertTriangle, ExternalLink, X, Filter, Copy, Check, Trash2 } from 'lucide-react';
 import { PageHeader } from '../layout';
 import { api } from '../lib/api';
 import { AgentAvatar } from '../components/AgentAvatar';
@@ -128,6 +128,18 @@ function TriggerLink({ run, navigate }: { run: AgentRun; navigate: ReturnType<ty
       >
         <ExternalLink size={12} />
         <span>Chat</span>
+      </button>
+    );
+  }
+  if (run.triggerType === 'cron') {
+    return (
+      <button
+        className={styles.triggerLink}
+        onClick={(e) => { e.stopPropagation(); navigate(`/agents?agentId=${run.agentId}`); }}
+        title="Open agent"
+      >
+        <ExternalLink size={12} />
+        <span>Cron</span>
       </button>
     );
   }
@@ -289,21 +301,6 @@ export function AgentMonitorPage() {
     return () => clearInterval(interval);
   }, [fetchActive, fetchHistory]);
 
-  // Compute stats from history (all runs, not filtered)
-  const stats = useMemo(() => {
-    const completed = historyRuns.filter(r => r.status === 'completed').length;
-    const errors = historyRuns.filter(r => r.status === 'error').length;
-    const total = historyRuns.length;
-    const successRate = total > 0 ? Math.round((completed / total) * 100) : 0;
-    const durations = historyRuns
-      .filter(r => r.durationMs != null)
-      .map(r => r.durationMs as number);
-    const avgDuration = durations.length > 0
-      ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length)
-      : 0;
-    return { total: historyTotal, completed, errors, successRate, avgDuration };
-  }, [historyRuns, historyTotal]);
-
   // Unique agents from history for the agent filter dropdown
   const agentOptions = useMemo(() => {
     const seen = new Map<string, string>();
@@ -369,12 +366,6 @@ export function AgentMonitorPage() {
     return (
       <div className={styles.wrapper}>
         <PageHeader title="Monitor" description="Track agent executions in real-time" />
-        <div className={styles.skeletonStats}>
-          <div className={styles.skeletonStatCard} />
-          <div className={styles.skeletonStatCard} />
-          <div className={styles.skeletonStatCard} />
-          <div className={styles.skeletonStatCard} />
-        </div>
         <div className={styles.skeletonSection} />
       </div>
     );
@@ -382,53 +373,21 @@ export function AgentMonitorPage() {
 
   return (
     <div className={styles.wrapper}>
-      <PageHeader title="Monitor" description="Track agent executions in real-time" />
-
-      {/* Stats Row */}
-      <div className={styles.statsRow}>
-        <div className={styles.statCard}>
-          <div className={styles.statIcon} style={{ background: 'rgba(59, 130, 246, 0.1)', color: 'var(--color-info)' }}>
-            <BarChart3 size={18} />
-          </div>
-          <div className={styles.statContent}>
-            <div className={styles.statValue}>{stats.total}</div>
-            <div className={styles.statLabel}>Total runs</div>
-          </div>
-        </div>
-        <div className={styles.statCard}>
-          <div className={styles.statIcon} style={{ background: 'rgba(16, 185, 129, 0.1)', color: 'var(--color-success)' }}>
-            <CheckCircle2 size={18} />
-          </div>
-          <div className={styles.statContent}>
-            <div className={styles.statValue}>{stats.successRate}%</div>
-            <div className={styles.statLabel}>Success rate</div>
-          </div>
-        </div>
-        <div className={styles.statCard}>
-          <div className={styles.statIcon} style={{ background: 'rgba(239, 68, 68, 0.08)', color: 'var(--color-error)' }}>
-            <XCircle size={18} />
-          </div>
-          <div className={styles.statContent}>
-            <div className={styles.statValue}>{stats.errors}</div>
-            <div className={styles.statLabel}>Errors</div>
-          </div>
-        </div>
-        <div className={styles.statCard}>
-          <div className={styles.statIcon} style={{ background: 'rgba(139, 92, 246, 0.1)', color: '#8B5CF6' }}>
-            <Clock size={18} />
-          </div>
-          <div className={styles.statContent}>
-            <div className={styles.statValue}>{stats.avgDuration > 0 ? formatDuration(stats.avgDuration) : '—'}</div>
-            <div className={styles.statLabel}>Avg duration</div>
-          </div>
-        </div>
-      </div>
-
-      {historyTotal > historyRuns.length && (
-        <p className={styles.statsNote}>
-          Stats computed from the {historyRuns.length} most recent runs — {historyTotal} total match the current filters.
-        </p>
-      )}
+      <PageHeader
+        title="Monitor"
+        description="Track agent executions in real-time"
+        actions={
+          <button
+            className={styles.cleanupButton}
+            onClick={() => cleanupRuns(30)}
+            disabled={cleaningUp}
+            title="Delete completed and error runs older than 30 days (all agents)"
+          >
+            <Trash2 size={13} />
+            {cleaningUp ? 'Cleaning…' : 'Clean up all (30d+)'}
+          </button>
+        }
+      />
 
       {/* Active Runs */}
       <div className={styles.section}>
@@ -463,8 +422,8 @@ export function AgentMonitorPage() {
                   />
                   <button
                     className={styles.runAgentNameBtn}
-                    onClick={(e) => { e.stopPropagation(); navigate(`/agents?id=${run.agentId}`); }}
-                    title="Open agent settings"
+                    onClick={(e) => { e.stopPropagation(); navigate(`/agents?agentId=${run.agentId}`); }}
+                    title="Open agent"
                   >
                     {run.agentName}
                   </button>
@@ -497,17 +456,6 @@ export function AgentMonitorPage() {
           {historyTotal > 0 && (
             <span className={styles.historyCount}>{historyTotal} runs</span>
           )}
-          <div className={styles.sectionHeaderActions}>
-            <button
-              className={styles.cleanupButton}
-              onClick={() => cleanupRuns(30)}
-              disabled={cleaningUp}
-              title="Delete completed and error runs older than 30 days"
-            >
-              <Trash2 size={13} />
-              {cleaningUp ? 'Cleaning…' : 'Clean up (30d+)'}
-            </button>
-          </div>
         </div>
 
         {/* Filters */}
@@ -615,8 +563,8 @@ export function AgentMonitorPage() {
                     />
                     <button
                       className={styles.runAgentNameBtn}
-                      onClick={(e) => { e.stopPropagation(); navigate(`/agents?id=${run.agentId}`); }}
-                      title="Open agent settings"
+                      onClick={(e) => { e.stopPropagation(); navigate(`/agents?agentId=${run.agentId}`); }}
+                      title="Open agent"
                     >
                       {run.agentName}
                     </button>

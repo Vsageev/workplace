@@ -1,8 +1,8 @@
-import type { CrmFormOptions } from './types.js';
+import type { WsFormOptions } from './types.js';
 import { ApiClient } from './api.js';
 import { renderForm, renderLoading, renderError } from './renderer.js';
 
-async function init(options: CrmFormOptions): Promise<void> {
+async function init(options: WsFormOptions): Promise<void> {
   const { formId, container, apiUrl } = options;
 
   const el = typeof container === 'string' ? document.querySelector<HTMLElement>(container) : container;

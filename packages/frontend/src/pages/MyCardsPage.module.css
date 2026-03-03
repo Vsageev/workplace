@@ -142,69 +142,6 @@
   background: rgba(96, 165, 250, 0.08);
 }
 
-/* Due date filter */
-.dueDateFilters {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-  flex-shrink: 0;
-}
-
-.dueDateFiltersIcon {
-  color: var(--color-text-tertiary);
-  flex-shrink: 0;
-}
-
-.dueDateFilterBtn {
-  padding: 4px 10px;
-  border: 1px solid var(--color-border);
-  border-radius: 99px;
-  background: transparent;
-  font-size: 12px;
-  font-family: inherit;
-  cursor: pointer;
-  transition: all var(--transition-fast);
-  color: var(--color-text-secondary);
-  white-space: nowrap;
-}
-
-.dueDateFilterBtn:hover {
-  border-color: currentColor;
-}
-
-.dueDateFilterBtn_overdue { --dd-color: #EF4444; }
-.dueDateFilterBtn_soon { --dd-color: #F59E0B; }
-.dueDateFilterBtn_upcoming { --dd-color: #60A5FA; }
-.dueDateFilterBtn_none { --dd-color: var(--color-text-tertiary); }
-
-.dueDateFilterBtn_overdue:hover,
-.dueDateFilterBtnActive.dueDateFilterBtn_overdue {
-  color: #EF4444;
-  border-color: #EF4444;
-  background: rgba(239, 68, 68, 0.08);
-}
-
-.dueDateFilterBtn_soon:hover,
-.dueDateFilterBtnActive.dueDateFilterBtn_soon {
-  color: #F59E0B;
-  border-color: #F59E0B;
-  background: rgba(245, 158, 11, 0.08);
-}
-
-.dueDateFilterBtn_upcoming:hover,
-.dueDateFilterBtnActive.dueDateFilterBtn_upcoming {
-  color: #60A5FA;
-  border-color: #60A5FA;
-  background: rgba(96, 165, 250, 0.08);
-}
-
-.dueDateFilterBtn_none:hover,
-.dueDateFilterBtnActive.dueDateFilterBtn_none {
-  color: var(--color-text-secondary);
-  border-color: var(--color-text-tertiary);
-  background: var(--color-surface);
-}
-
 /* Tag filters */
 .tagFiltersRow {
   display: flex;
@@ -656,15 +593,6 @@
 .groupHeader:hover {
   background: var(--color-surface);
   color: var(--color-text-secondary);
-}
-
-.groupHeader_overdue {
-  color: var(--color-error);
-}
-
-.groupHeader_overdue:hover {
-  color: var(--color-error);
-  background: rgba(239, 68, 68, 0.06);
 }
 
 .groupHeader_soon {

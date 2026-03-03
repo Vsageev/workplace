@@ -985,29 +985,6 @@
   margin-top: 2px;
 }
 
-.cardDueDate {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--color-text-tertiary);
-  padding: 1px 5px;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-raised);
-  flex-shrink: 0;
-}
-
-.cardDueDateOverdue {
-  color: #ef4444;
-  background: rgba(239, 68, 68, 0.1);
-}
-
-.cardDueDateSoon {
-  color: #f59e0b;
-  background: rgba(245, 158, 11, 0.1);
-}
-
 .cardAssignee {
   display: flex;
   align-items: center;
@@ -1062,10 +1039,7 @@
   white-space: nowrap;
 }
 
-.columnSummaryOverdue {
-  color: var(--color-error);
-  background: rgba(239, 68, 68, 0.08);
-}
+
 
 .columnSummaryHigh {
   color: #D97706;
@@ -1104,31 +1078,226 @@
 .inlineAddCard {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: 6px;
   margin: 0 var(--space-2) var(--space-2);
+  padding: 10px;
+  background: var(--color-card);
+  border: 1px solid var(--color-link);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.08), 0 2px 8px rgba(0, 0, 0, 0.06);
   flex-shrink: 0;
+  animation: inlineCardSlideIn 0.15s ease-out;
+}
+
+@keyframes inlineCardSlideIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .inlineAddInput {
-  padding: 8px 10px;
-  border: 1px solid var(--color-link);
-  border-radius: var(--radius-md);
+  padding: 6px 0;
+  border: none;
   font-size: 13px;
+  font-weight: 500;
   font-family: inherit;
   color: var(--color-text);
-  background: var(--color-card);
+  background: transparent;
   resize: none;
   outline: none;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
   line-height: 1.4;
 }
 
 .inlineAddInput::placeholder {
   color: var(--color-text-tertiary);
+  font-weight: 400;
 }
 
 .inlineAddInput:disabled {
   opacity: 0.6;
+}
+
+.inlineDescInput {
+  padding: 4px 0;
+  border: none;
+  border-top: 1px solid var(--color-border);
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--color-text-secondary);
+  background: transparent;
+  resize: none;
+  outline: none;
+  line-height: 1.4;
+}
+
+.inlineDescInput::placeholder {
+  color: var(--color-text-tertiary);
+}
+
+/* Inline toolbar */
+.inlineToolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--color-border);
+}
+
+.inlineToolbarBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.inlineToolbarBtn:hover {
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  border-color: var(--color-border);
+}
+
+.inlineToolbarBtnActive {
+  color: var(--color-link);
+  background: rgba(59, 130, 246, 0.08);
+  border-color: rgba(59, 130, 246, 0.2);
+}
+
+.inlineToolbarSpacer {
+  flex: 1;
+}
+
+/* Inline assignee */
+.inlineAssigneeWrap {
+  position: relative;
+}
+
+.inlineAssigneeAvatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  font-size: 8px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.inlineAssigneeDropdown {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  margin-bottom: 4px;
+  min-width: 200px;
+  max-height: 260px;
+  overflow-y: auto;
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  z-index: 50;
+  padding: 4px;
+}
+
+.inlineAssigneeDivider {
+  padding: 6px 8px 4px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-tertiary);
+}
+
+.inlineAssigneeOption {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text);
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--transition-fast);
+}
+
+.inlineAssigneeOption:hover {
+  background: var(--color-surface);
+}
+
+.inlineAssigneeOptionActive {
+  background: rgba(59, 130, 246, 0.06);
+}
+
+.inlineAssigneeName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inlineAssigneeYou {
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  margin-left: 4px;
+}
+
+.inlineAssigneeCheck {
+  color: var(--color-link);
+  flex-shrink: 0;
+}
+
+/* Inline tags */
+.inlineTagsRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding-top: 2px;
+}
+
+.inlineTagPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px;
+  border: 1px solid color-mix(in srgb, var(--tag-color) 40%, transparent);
+  border-radius: 99px;
+  background: transparent;
+  color: var(--tag-color);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  line-height: 1.4;
+}
+
+.inlineTagPill:hover {
+  background: color-mix(in srgb, var(--tag-color) 8%, transparent);
+}
+
+.inlineTagPillSelected {
+  background: var(--tag-color);
+  color: #fff;
+  border-color: var(--tag-color);
+}
+
+.inlineTagPillSelected:hover {
+  opacity: 0.9;
+  background: var(--tag-color);
 }
 
 /* Bulk paste banner */
@@ -1202,19 +1371,13 @@
   color: var(--color-text-secondary);
 }
 
-.inlineAddActions {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-}
-
 .inlineAddSubmit {
-  padding: 4px 14px;
+  padding: 4px 12px;
   border: none;
   border-radius: var(--radius-md);
   background: var(--color-link);
   color: #fff;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
   cursor: pointer;
   transition: opacity var(--transition-fast);
@@ -1229,40 +1392,18 @@
   cursor: default;
 }
 
-.inlineAddMore {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
-  color: var(--color-text-tertiary);
-  cursor: pointer;
-  transition: all var(--transition-fast);
-  padding: 0;
-}
-
-.inlineAddMore:hover {
-  border-color: var(--color-text-tertiary);
-  color: var(--color-text-secondary);
-  background: var(--color-card);
-}
-
 .inlineAddCancel {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   border: none;
   border-radius: var(--radius-md);
   background: transparent;
   color: var(--color-text-tertiary);
   cursor: pointer;
   transition: all var(--transition-fast);
-  margin-left: auto;
   padding: 0;
 }
 
@@ -1613,53 +1754,6 @@
   height: 8px;
   border-radius: 50%;
   flex-shrink: 0;
-}
-
-.contextMenuDueDateRow {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-  padding: var(--space-1) var(--space-3) var(--space-2);
-}
-
-.contextMenuDueDateInput {
-  flex: 1;
-  padding: 4px 6px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface, var(--color-card));
-  color: var(--color-text-primary);
-  font-size: 12px;
-  font-family: inherit;
-  cursor: pointer;
-}
-
-.contextMenuDueDateInput:focus {
-  outline: none;
-  border-color: var(--color-primary);
-}
-
-.contextMenuDueDateClear {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  border: none;
-  background: none;
-  color: var(--color-text-tertiary);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  flex-shrink: 0;
-}
-
-.contextMenuDueDateClear:hover {
-  background: var(--color-surface-hover, rgba(0, 0, 0, 0.05));
-  color: var(--color-error);
-}
-
-.contextMenuQuickDates {
-  padding: 0 var(--space-3) var(--space-2);
 }
 
 /* Priority context menu row */

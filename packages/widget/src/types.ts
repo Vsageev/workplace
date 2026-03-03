@@ -25,7 +25,7 @@ export interface SubmitResponse {
   redirectUrl: string | null;
 }
 
-export interface CrmFormOptions {
+export interface WsFormOptions {
   formId: string;
   container: string | HTMLElement;
   apiUrl: string;

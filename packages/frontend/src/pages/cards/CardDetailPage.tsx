@@ -3,15 +3,12 @@ import { createPortal } from 'react-dom';
 import { useParams, Link, useNavigate, useLocation } from 'react-router-dom';
 import {
   Trash2, Plus, X, Link2, Columns3, GripVertical, FolderOpen,
-  FileText, User, Send, Check, Pencil, Loader2, ChevronDown, Copy, CalendarDays, CloudOff, Circle, CircleCheck, Star, Flag, ListChecks, History,
+  FileText, User, Send, Check, Pencil, Loader2, ChevronDown, Copy, CloudOff, Circle, CircleCheck, Star, ListChecks, History,
   Bold, Italic, Code, List, Heading2, ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import { Breadcrumb, Button, MarkdownContent, PageLoader, Tooltip } from '../../ui';
 import type { BreadcrumbItem } from '../../ui';
 import { AgentAvatar } from '../../components/AgentAvatar';
-import { PriorityBadge } from '../../components/PriorityBadge';
-import { QuickDateButtons } from '../../components/QuickDateButtons';
-import type { Priority } from '../../components/PriorityBadge';
 import { api, ApiError } from '../../lib/api';
 import { toast } from '../../stores/toast';
 import { useConfirm } from '../../hooks/useConfirm';
@@ -202,12 +199,6 @@ function formatAuditEntry(entry: AuditLogEntry): string {
     // customFields is a nested object — inspect its keys for meaningful changes
     if (changes.customFields && typeof changes.customFields === 'object') {
       const cf = changes.customFields as Record<string, unknown>;
-      if ('completed' in cf) return cf.completed ? 'Marked as completed' : 'Reopened';
-      if ('dueDate' in cf) {
-        const d = cf.dueDate;
-        return d ? `Due date set to ${new Date(String(d)).toLocaleDateString()}` : 'Due date removed';
-      }
-      if ('priority' in cf) return cf.priority ? `Priority set to ${cf.priority}` : 'Priority removed';
       if ('checklist' in cf) return 'Checklist updated';
       return 'Fields updated';
     }
@@ -300,11 +291,6 @@ export function CardDetailPage() {
   const [movingCollection, setMovingCollection] = useState(false);
   const collectionPickerRef = useRef<HTMLDivElement>(null);
 
-  // Due date
-  const [savingDueDate, setSavingDueDate] = useState(false);
-
-  // Priority
-  const [savingPriority, setSavingPriority] = useState(false);
 
   // Custom fields editing
   const [editingCfKey, setEditingCfKey] = useState<string | null>(null);
@@ -619,50 +605,6 @@ export function CardDetailPage() {
     };
   }, []);
 
-  /* ── Due date ───────────────────────────────────────── */
-
-  async function saveDueDate(value: string) {
-    if (!card) return;
-    const dueDate = value || null;
-    const prevCustomFields = card.customFields;
-    const newCustomFields = { ...card.customFields, dueDate };
-    setCard({ ...card, customFields: newCustomFields });
-    setSavingDueDate(true);
-    try {
-      await api(`/cards/${card.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ customFields: newCustomFields }),
-      });
-    } catch (e) {
-      setCard({ ...card, customFields: prevCustomFields });
-      if (e instanceof ApiError) toast.error(e.message);
-    } finally {
-      setSavingDueDate(false);
-    }
-  }
-
-  /* ── Priority ───────────────────────────────────────── */
-
-  async function savePriority(value: Priority | null) {
-    if (!card) return;
-    const prevCustomFields = card.customFields;
-    const newCustomFields = { ...card.customFields, priority: value ?? undefined };
-    if (!value) delete newCustomFields.priority;
-    setCard({ ...card, customFields: newCustomFields });
-    setSavingPriority(true);
-    try {
-      await api(`/cards/${card.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ customFields: newCustomFields }),
-      });
-    } catch (e) {
-      setCard({ ...card, customFields: prevCustomFields });
-      if (e instanceof ApiError) toast.error(e.message);
-    } finally {
-      setSavingPriority(false);
-    }
-  }
-
   /* ── Collection ─────────────────────────────────────── */
 
   async function openCollectionPicker() {
@@ -763,10 +705,8 @@ export function CardDetailPage() {
   function toggleChecklistItem(itemId: string) {
     const updated = checklist.map((i) => (i.id === itemId ? { ...i, done: !i.done } : i));
     void saveChecklist(updated);
-    if (updated.length > 0 && updated.every((i) => i.done) && card?.customFields?.completed !== true) {
-      toast.success('All checklist items done!', {
-        action: { label: 'Mark card complete', onClick: () => void handleToggleComplete() },
-      });
+    if (updated.length > 0 && updated.every((i) => i.done)) {
+      toast.success('All checklist items done!');
     }
   }
 
@@ -845,7 +785,12 @@ export function CardDetailPage() {
 
   /* ── Custom fields ──────────────────────────────────── */
 
-  const SYSTEM_CF_KEYS = useMemo(() => new Set(['dueDate', 'completed', 'priority', 'checklist']), []);
+  const SYSTEM_CF_KEYS = useMemo(() => new Set(['checklist']), []);
+  const cfEntries = useMemo(
+    () => Object.entries(card?.customFields || {}).filter(([key]) => !SYSTEM_CF_KEYS.has(key)),
+    [card?.customFields, SYSTEM_CF_KEYS],
+  );
+  const tagIds = useMemo(() => new Set(card?.tags.map((t) => t.id) ?? []), [card?.tags]);
 
   async function saveCustomField(key: string, value: string) {
     if (!card || savingCf) return;
@@ -950,40 +895,7 @@ export function CardDetailPage() {
     } catch (e) { if (e instanceof ApiError) toast.error(e.message); }
   }
 
-  /* ── Completion toggle ─────────────────────────────── */
-
-  async function handleToggleComplete() {
-    if (!card) return;
-    const currentCompleted = card.customFields?.completed === true;
-    const newCompleted = !currentCompleted;
-    const prevCustomFields = card.customFields;
-    const newCustomFields = { ...card.customFields, completed: newCompleted };
-    setCard({ ...card, customFields: newCustomFields });
-    try {
-      await api(`/cards/${card.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ customFields: newCustomFields }),
-      });
-      const shortName = card.name.length > 30 ? card.name.slice(0, 30) + '...' : card.name;
-      toast.success(
-        newCompleted ? `"${shortName}" completed` : `"${shortName}" reopened`,
-        {
-          action: {
-            label: 'Undo',
-            onClick: () => void handleToggleComplete(),
-          },
-        },
-      );
-    } catch (e) {
-      setCard((prev) => prev ? { ...prev, customFields: prevCustomFields } : prev);
-      if (e instanceof ApiError) toast.error(e.message);
-    }
-  }
-
   /* ── Keyboard shortcuts ────────────────────────────── */
-
-  const toggleCompleteRef = useRef(handleToggleComplete);
-  toggleCompleteRef.current = handleToggleComplete;
 
   const editingDescRef = useRef(editingDesc);
   editingDescRef.current = editingDesc;
@@ -998,10 +910,7 @@ export function CardDetailPage() {
       if ((e.target as HTMLElement).isContentEditable) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       const key = e.key.toLowerCase();
-      if (key === 'x') {
-        e.preventDefault();
-        void toggleCompleteRef.current();
-      } else if (key === 'm') {
+      if (key === 'm') {
         // Focus comment input
         e.preventDefault();
         setActivityView('comments');
@@ -1279,11 +1188,6 @@ export function CardDetailPage() {
     );
   }
 
-  const cfEntries = useMemo(
-    () => Object.entries(card.customFields || {}).filter(([key]) => !SYSTEM_CF_KEYS.has(key)),
-    [card.customFields, SYSTEM_CF_KEYS],
-  );
-  const tagIds = useMemo(() => new Set(card.tags.map((t) => t.id)), [card.tags]);
 
   return (
     <div className={styles.page}>
@@ -1370,16 +1274,8 @@ export function CardDetailPage() {
         <div className={styles.main}>
           {/* Name + Description card */}
           <div className={styles.card}>
-            {/* Editable title with completion toggle */}
+            {/* Editable title */}
             <div className={styles.titleRow}>
-              <button
-                className={`${styles.completeBtn}${card.customFields?.completed === true ? ` ${styles.completeBtnDone}` : ''}`}
-                onClick={handleToggleComplete}
-                title={card.customFields?.completed === true ? 'Mark as incomplete (X)' : 'Mark as complete (X)'}
-                aria-label={card.customFields?.completed === true ? 'Mark as incomplete' : 'Mark as complete'}
-              >
-                {card.customFields?.completed === true ? <CircleCheck size={22} /> : <Circle size={22} />}
-              </button>
               {editingName ? (
                 <input
                   ref={nameInputRef}
@@ -1393,7 +1289,7 @@ export function CardDetailPage() {
                   }}
                 />
               ) : (
-                <h1 className={`${styles.titleDisplay}${card.customFields?.completed === true ? ` ${styles.titleCompleted}` : ''}`} onClick={startEditName}>
+                <h1 className={styles.titleDisplay} onClick={startEditName}>
                   {card.name}
                   <Pencil size={14} className={styles.editHint} />
                 </h1>
@@ -1836,19 +1732,6 @@ export function CardDetailPage() {
               <span className={styles.sidePanelTitle}>Details</span>
             </div>
             <div className={styles.sidePanelBody}>
-              {/* Status */}
-              <div className={styles.detailRow}>
-                <span className={styles.detailLabel}>Status</span>
-                <button
-                  className={`${styles.statusToggle}${card.customFields?.completed === true ? ` ${styles.statusToggleDone}` : ''}`}
-                  onClick={handleToggleComplete}
-                >
-                  {card.customFields?.completed === true
-                    ? <><CircleCheck size={13} /> Completed</>
-                    : <><Circle size={13} /> Open</>}
-                </button>
-              </div>
-
               {/* Collection */}
               <div className={styles.collectionRow} ref={collectionPickerRef}>
                 <div className={styles.detailRow} style={{ borderTop: 'none', paddingTop: 0 }}>
@@ -1920,80 +1803,6 @@ export function CardDetailPage() {
                 document.body,
               )}
 
-              {/* Due date */}
-              <div className={styles.detailRow}>
-                <span className={styles.detailLabel}>Due date</span>
-                <div className={styles.dueDateWrapper}>
-                  {(() => {
-                    const dueDate = card.customFields?.dueDate as string | undefined;
-                    const today = new Date();
-                    today.setHours(0, 0, 0, 0);
-                    const due = dueDate ? new Date(dueDate) : null;
-                    const isOverdue = due && due < today;
-                    const diffDays = due ? Math.ceil((due.getTime() - today.getTime()) / (24 * 60 * 60 * 1000)) : null;
-                    const isSoon = due && !isOverdue && diffDays !== null && diffDays <= 3;
-                    const relativeLabel = (() => {
-                      if (!due || diffDays === null) return null;
-                      if (diffDays < 0) return `${Math.abs(diffDays)}d overdue`;
-                      if (diffDays === 0) return 'Due today';
-                      if (diffDays === 1) return 'Due tomorrow';
-                      if (diffDays <= 7) return `Due in ${diffDays}d`;
-                      return null;
-                    })();
-                    return (
-                      <>
-                        <div className={`${styles.dueDateField}${isOverdue ? ` ${styles.dueDateOverdue}` : isSoon ? ` ${styles.dueDateSoon}` : ''}`}>
-                          <CalendarDays size={11} />
-                          <input
-                            type="date"
-                            className={styles.dueDateInput}
-                            value={dueDate ?? ''}
-                            disabled={savingDueDate}
-                            onChange={(e) => saveDueDate(e.target.value)}
-                            aria-label="Due date"
-                          />
-                          {dueDate && (
-                            <button
-                              className={styles.dueDateClear}
-                              onClick={() => saveDueDate('')}
-                              disabled={savingDueDate}
-                              title="Clear due date"
-                              aria-label="Clear due date"
-                            >
-                              <X size={10} />
-                            </button>
-                          )}
-                        </div>
-                        <QuickDateButtons
-                          currentValue={dueDate}
-                          onSelect={(v) => saveDueDate(v)}
-                          disabled={savingDueDate}
-                        />
-                        {relativeLabel && (
-                          <span className={`${styles.dueDateRelative}${isOverdue ? ` ${styles.dueDateRelativeOverdue}` : isSoon ? ` ${styles.dueDateRelativeSoon}` : ''}`}>
-                            {relativeLabel}
-                          </span>
-                        )}
-                      </>
-                    );
-                  })()}
-                </div>
-              </div>
-
-              {/* Priority */}
-              <div className={styles.detailRow}>
-                <span className={styles.detailLabel}>
-                  <Flag size={11} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} />
-                  Priority
-                </span>
-                <PriorityBadge
-                  priority={(card.customFields?.priority as Priority) ?? null}
-                  editable
-                  onChange={savePriority}
-                  size="sm"
-                />
-                {savingPriority && <Loader2 size={11} className={styles.spinner} style={{ marginLeft: 4 }} />}
-              </div>
 
               {/* Created */}
               <div className={styles.detailRow}>

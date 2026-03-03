@@ -15,7 +15,6 @@ function isEditableTarget(e: KeyboardEvent): boolean {
 interface UseKeyboardShortcutsOptions {
   onOpenPalette: () => void;
   onOpenShortcuts: () => void;
-  onQuickCreateCard?: () => void;
   onToggleSidebar?: () => void;
 }
 
@@ -25,7 +24,7 @@ interface UseKeyboardShortcutsOptions {
  * Supports single-key shortcuts and two-key sequences (e.g. g then d).
  * Single-key shortcuts are suppressed when focus is in an editable field.
  */
-export function useKeyboardShortcuts({ onOpenPalette, onOpenShortcuts, onQuickCreateCard, onToggleSidebar }: UseKeyboardShortcutsOptions) {
+export function useKeyboardShortcuts({ onOpenPalette, onOpenShortcuts, onToggleSidebar }: UseKeyboardShortcutsOptions) {
   const navigate = useNavigate();
   const pendingPrefix = useRef<string | null>(null);
   const prefixTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -65,8 +64,7 @@ export function useKeyboardShortcuts({ onOpenPalette, onOpenShortcuts, onQuickCr
           y: '/my-cards',
           c: '/collections',
           b: '/boards',
-          i: '/inbox',
-          a: '/agents',
+a: '/agents',
           m: '/monitor',
           s: '/storage',
           ',': '/settings',
@@ -100,12 +98,6 @@ export function useKeyboardShortcuts({ onOpenPalette, onOpenShortcuts, onQuickCr
         return;
       }
 
-      if (key === 'c' && onQuickCreateCard) {
-        e.preventDefault();
-        onQuickCreateCard();
-        return;
-      }
-
       if (key === '[' && onToggleSidebar) {
         e.preventDefault();
         onToggleSidebar();
@@ -120,5 +112,5 @@ export function useKeyboardShortcuts({ onOpenPalette, onOpenShortcuts, onQuickCr
       document.removeEventListener('keydown', handler);
       clearPrefix();
     };
-  }, [navigate, onOpenPalette, onOpenShortcuts, onQuickCreateCard, onToggleSidebar, clearPrefix]);
+  }, [navigate, onOpenPalette, onOpenShortcuts, onToggleSidebar, clearPrefix]);
 }

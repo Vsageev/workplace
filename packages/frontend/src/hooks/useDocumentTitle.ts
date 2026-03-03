@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 
-const BASE_TITLE = 'CRM';
+const BASE_TITLE = 'Workplace';
 
 /** Extract the leading unread badge (e.g. "(3) ") from the current title, if present. */
 function getExistingBadge(): string {

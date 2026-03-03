@@ -35,7 +35,7 @@ export interface SendMessageResponse {
   error?: string;
 }
 
-export interface CrmChatOptions {
+export interface WsChatOptions {
   widgetId: string;
   container?: string | HTMLElement;
   apiUrl: string;

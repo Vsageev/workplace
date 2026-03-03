@@ -1,8 +1,8 @@
-import type { CrmChatOptions } from './types.js';
+import type { WsChatOptions } from './types.js';
 import { ChatApiClient } from './api.js';
 import { renderChatWidget, renderChatError } from './renderer.js';
 
-async function init(options: CrmChatOptions): Promise<void> {
+async function init(options: WsChatOptions): Promise<void> {
   const { widgetId, apiUrl } = options;
 
   // Create a container for the widget if not provided

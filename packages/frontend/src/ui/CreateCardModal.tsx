@@ -1,13 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { X, Check, Search, FileText, FolderOpen, ChevronDown, CalendarDays, CheckCircle2, AlertCircle, Bookmark, BookmarkPlus, Trash2 } from 'lucide-react';
+import { X, Check, Search, FileText, FolderOpen, ChevronDown, CheckCircle2, AlertCircle } from 'lucide-react';
 import { Button } from './Button';
 import { Input } from './Input';
 import { Textarea } from './Textarea';
 import { Modal } from './Modal';
 import { AgentAvatar } from '../components/AgentAvatar';
-import { PriorityBadge } from '../components/PriorityBadge';
-import { QuickDateButtons } from '../components/QuickDateButtons';
-import type { Priority } from '../components/PriorityBadge';
 import { api } from '../lib/api';
 import { useAuth } from '../stores/useAuth';
 import styles from './CreateCardModal.module.css';
@@ -28,32 +25,6 @@ export interface CreateCardData {
   tagIds: string[];
   linkedCardIds: string[];
   collectionId?: string;
-  dueDate?: string;
-  priority?: Priority;
-}
-
-/* ── Card Templates ────────────────────────────────── */
-
-interface CardTemplate {
-  id: string;
-  name: string;
-  description: string;
-  tagIds: string[];
-  priority: Priority | null;
-  assignToSelf: boolean;
-}
-
-const TEMPLATES_STORAGE_KEY = 'card-templates';
-
-function loadTemplates(): CardTemplate[] {
-  try {
-    const raw = localStorage.getItem(TEMPLATES_STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch { return []; }
-}
-
-function saveTemplates(templates: CardTemplate[]) {
-  try { localStorage.setItem(TEMPLATES_STORAGE_KEY, JSON.stringify(templates)); } catch { /* ignore */ }
 }
 
 /* ── Component ─────────────────────────────────────── */
@@ -65,20 +36,16 @@ interface CreateCardModalProps {
   showCollectionPicker?: boolean;
   /** When true, enables the "Create & Add Another" button */
   allowCreateAnother?: boolean;
-  /** Pre-fill the due date field (YYYY-MM-DD) */
-  defaultDueDate?: string;
   /** Pre-fill the card name */
   defaultName?: string;
   /** Pre-fill the card description */
   defaultDescription?: string;
 }
 
-export function CreateCardModal({ onClose, onSubmit, showCollectionPicker, allowCreateAnother = true, defaultDueDate, defaultName, defaultDescription }: CreateCardModalProps) {
+export function CreateCardModal({ onClose, onSubmit, showCollectionPicker, allowCreateAnother = true, defaultName, defaultDescription }: CreateCardModalProps) {
   const { user: currentUser } = useAuth();
   const [name, setName] = useState(defaultName ?? '');
   const [description, setDescription] = useState(defaultDescription ?? '');
-  const [dueDate, setDueDate] = useState(defaultDueDate ?? '');
-  const [priority, setPriority] = useState<Priority | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [justCreated, setJustCreated] = useState<string | null>(null);
@@ -105,14 +72,6 @@ export function CreateCardModal({ onClose, onSubmit, showCollectionPicker, allow
   const [linkSearch, setLinkSearch] = useState('');
   const [linkResults, setLinkResults] = useState<CardResult[]>([]);
   const [linkedCards, setLinkedCards] = useState<CardResult[]>([]);
-
-  // Templates
-  const [templates, setTemplates] = useState<CardTemplate[]>(loadTemplates);
-  const [showTemplateDropdown, setShowTemplateDropdown] = useState(false);
-  const [showSaveTemplate, setShowSaveTemplate] = useState(false);
-  const [templateName, setTemplateName] = useState('');
-  const templateDropdownRef = useRef<HTMLDivElement>(null);
-  const templateNameRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     nameRef.current?.focus();
@@ -173,23 +132,6 @@ export function CreateCardModal({ onClose, onSubmit, showCollectionPicker, allow
     return () => document.removeEventListener('mousedown', handleClick);
   }, [showCollectionDropdown]);
 
-  // Close template dropdown on outside click
-  useEffect(() => {
-    if (!showTemplateDropdown) return;
-    function handleClick(e: MouseEvent) {
-      if (templateDropdownRef.current && !templateDropdownRef.current.contains(e.target as Node)) {
-        setShowTemplateDropdown(false);
-      }
-    }
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, [showTemplateDropdown]);
-
-  // Focus template name input when shown
-  useEffect(() => {
-    if (showSaveTemplate) setTimeout(() => templateNameRef.current?.focus(), 0);
-  }, [showSaveTemplate]);
-
   // Search cards for linking
   useEffect(() => {
     if (linkSearch.length < 2) {
@@ -214,8 +156,6 @@ export function CreateCardModal({ onClose, onSubmit, showCollectionPicker, allow
   const resetForm = useCallback(() => {
     setName('');
     setDescription('');
-    setDueDate('');
-    setPriority(null);
     setSelectedTagIds(new Set());
     setLinkedCards([]);
     setLinkSearch('');
@@ -238,8 +178,6 @@ export function CreateCardModal({ onClose, onSubmit, showCollectionPicker, allow
         tagIds: Array.from(selectedTagIds),
         linkedCardIds: linkedCards.map((c) => c.id),
         ...(showCollectionPicker && selectedCollectionId ? { collectionId: selectedCollectionId } : {}),
-        ...(dueDate ? { dueDate } : {}),
-        ...(priority ? { priority } : {}),
       });
       if (keepOpen) {
         setJustCreated(trimmed);
@@ -254,7 +192,7 @@ export function CreateCardModal({ onClose, onSubmit, showCollectionPicker, allow
     } finally {
       setSubmitting(false);
     }
-  }, [name, description, dueDate, priority, submitting, onSubmit, assigneeId, selectedTagIds, linkedCards, showCollectionPicker, selectedCollectionId, resetForm]);
+  }, [name, description, submitting, onSubmit, assigneeId, selectedTagIds, linkedCards, showCollectionPicker, selectedCollectionId, resetForm]);
 
   const handleSubmit = useCallback(() => doSubmit(false), [doSubmit]);
   const handleSubmitAndNew = useCallback(() => doSubmit(true), [doSubmit]);
@@ -289,62 +227,9 @@ export function CreateCardModal({ onClose, onSubmit, showCollectionPicker, allow
     setLinkedCards((prev) => prev.filter((c) => c.id !== cardId));
   }
 
-  /* ── Template handlers ────────────────────────────── */
-
-  function handleApplyTemplate(template: CardTemplate) {
-    setDescription(template.description);
-    setPriority(template.priority);
-    setSelectedTagIds(new Set(template.tagIds));
-    if (template.assignToSelf && currentUser) {
-      setAssigneeId(currentUser.id);
-    }
-    setShowTemplateDropdown(false);
-    // Keep focus on name field so user can start typing
-    nameRef.current?.focus();
-  }
-
-  function handleSaveTemplate() {
-    const trimmedName = templateName.trim();
-    if (!trimmedName) return;
-    const template: CardTemplate = {
-      id: Date.now().toString(36),
-      name: trimmedName,
-      description,
-      tagIds: Array.from(selectedTagIds),
-      priority,
-      assignToSelf: assigneeId === currentUser?.id,
-    };
-    const updated = [...templates, template];
-    setTemplates(updated);
-    saveTemplates(updated);
-    setTemplateName('');
-    setShowSaveTemplate(false);
-  }
-
-  function handleDeleteTemplate(templateId: string) {
-    const updated = templates.filter((t) => t.id !== templateId);
-    setTemplates(updated);
-    saveTemplates(updated);
-  }
-
   // Resolve assignee display
   const selectedUser = users.find((u) => u.id === assigneeId);
   const selectedAgent = agents.find((a) => a.id === assigneeId);
-
-  // Template summary for display
-  function getTemplateSummary(template: CardTemplate): string {
-    const parts: string[] = [];
-    if (template.priority) parts.push(template.priority);
-    if (template.tagIds.length > 0) {
-      const tagNames = template.tagIds
-        .map((id) => allTags.find((t) => t.id === id)?.name)
-        .filter(Boolean);
-      if (tagNames.length > 0) parts.push(tagNames.join(', '));
-    }
-    if (template.assignToSelf) parts.push('assign to me');
-    if (template.description) parts.push('with description');
-    return parts.length > 0 ? parts.join(' · ') : 'Empty template';
-  }
 
   return (
     <Modal onClose={onClose} size="md" ariaLabel="New Card">
@@ -352,138 +237,11 @@ export function CreateCardModal({ onClose, onSubmit, showCollectionPicker, allow
         <div className={styles.header}>
           <span className={styles.title}>New Card</span>
           <div className={styles.headerActions}>
-            {/* Template buttons */}
-            <div className={styles.templateContainer} ref={templateDropdownRef}>
-              {templates.length > 0 && (
-                <button
-                  type="button"
-                  className={styles.templateTrigger}
-                  onClick={() => { setShowTemplateDropdown(!showTemplateDropdown); setShowSaveTemplate(false); }}
-                  title="Use a template"
-                >
-                  <Bookmark size={14} />
-                  <span>Templates</span>
-                  <ChevronDown size={12} />
-                </button>
-              )}
-              {templates.length === 0 && (
-                <button
-                  type="button"
-                  className={styles.templateTrigger}
-                  onClick={() => setShowSaveTemplate(!showSaveTemplate)}
-                  title="Save current settings as template"
-                >
-                  <BookmarkPlus size={14} />
-                  <span>Save template</span>
-                </button>
-              )}
-              {showTemplateDropdown && (
-                <div className={styles.templateDropdown}>
-                  <div className={styles.templateDropdownHeader}>Templates</div>
-                  {templates.map((tpl) => (
-                    <div key={tpl.id} className={styles.templateItem}>
-                      <button
-                        type="button"
-                        className={styles.templateItemBtn}
-                        onClick={() => handleApplyTemplate(tpl)}
-                      >
-                        <Bookmark size={12} />
-                        <div className={styles.templateItemContent}>
-                          <span className={styles.templateItemName}>{tpl.name}</span>
-                          <span className={styles.templateItemHint}>{getTemplateSummary(tpl)}</span>
-                        </div>
-                      </button>
-                      <button
-                        type="button"
-                        className={styles.templateItemDelete}
-                        onClick={() => handleDeleteTemplate(tpl.id)}
-                        title="Delete template"
-                      >
-                        <Trash2 size={11} />
-                      </button>
-                    </div>
-                  ))}
-                  <div className={styles.templateDropdownDivider} />
-                  {showSaveTemplate ? (
-                    <div className={styles.templateSaveInline}>
-                      <input
-                        ref={templateNameRef}
-                        className={styles.templateSaveInput}
-                        value={templateName}
-                        onChange={(e) => setTemplateName(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === 'Enter') handleSaveTemplate(); if (e.key === 'Escape') setShowSaveTemplate(false); }}
-                        placeholder="Template name..."
-                      />
-                      <button
-                        type="button"
-                        className={styles.templateSaveSubmit}
-                        onClick={handleSaveTemplate}
-                        disabled={!templateName.trim()}
-                      >
-                        Save
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      className={styles.templateAddBtn}
-                      onClick={() => setShowSaveTemplate(true)}
-                    >
-                      <BookmarkPlus size={12} />
-                      Save current as template
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
-            {templates.length > 0 && (
-              <button
-                type="button"
-                className={styles.templateSaveIconBtn}
-                onClick={() => {
-                  setShowSaveTemplate(!showSaveTemplate);
-                  setShowTemplateDropdown(false);
-                }}
-                title="Save current settings as template"
-              >
-                <BookmarkPlus size={14} />
-              </button>
-            )}
             <button className={styles.closeBtn} onClick={onClose} aria-label="Close">
               <X size={16} />
             </button>
           </div>
         </div>
-
-        {/* Save template inline (when no dropdown is open) */}
-        {showSaveTemplate && !showTemplateDropdown && (
-          <div className={styles.templateSaveBanner}>
-            <BookmarkPlus size={13} />
-            <input
-              ref={templateNameRef}
-              className={styles.templateSaveBannerInput}
-              value={templateName}
-              onChange={(e) => setTemplateName(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') handleSaveTemplate(); if (e.key === 'Escape') setShowSaveTemplate(false); }}
-              placeholder="Template name..."
-            />
-            <button
-              type="button"
-              className={styles.templateSaveBannerBtn}
-              onClick={handleSaveTemplate}
-              disabled={!templateName.trim()}
-            >
-              Save
-            </button>
-            <button
-              type="button"
-              className={styles.templateSaveBannerCancel}
-              onClick={() => { setShowSaveTemplate(false); setTemplateName(''); }}
-            >
-              <X size={12} />
-            </button>
-          </div>
-        )}
 
         <div className={styles.fields}>
           {showCollectionPicker && (
@@ -541,42 +299,6 @@ export function CreateCardModal({ onClose, onSubmit, showCollectionPicker, allow
             placeholder="Add a brief description (optional)"
             rows={3}
           />
-
-          {/* Due date */}
-          <div className={styles.section}>
-            <span className={styles.sectionLabel}>Due date</span>
-            <div className={styles.dueDateField}>
-              <CalendarDays size={14} className={styles.dueDateIcon} />
-              <input
-                type="date"
-                className={styles.dueDateInput}
-                value={dueDate}
-                onChange={(e) => setDueDate(e.target.value)}
-                aria-label="Due date"
-              />
-              {dueDate && (
-                <button
-                  type="button"
-                  className={styles.dueDateClear}
-                  onClick={() => setDueDate('')}
-                  aria-label="Clear due date"
-                >
-                  <X size={12} />
-                </button>
-              )}
-            </div>
-            <QuickDateButtons
-              currentValue={dueDate}
-              onSelect={setDueDate}
-              size="md"
-            />
-          </div>
-
-          {/* Priority */}
-          <div className={styles.section}>
-            <span className={styles.sectionLabel}>Priority</span>
-            <PriorityBadge priority={priority} editable onChange={setPriority} size="md" />
-          </div>
 
           {/* Assignee */}
           <div className={styles.section}>

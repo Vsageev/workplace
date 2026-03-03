@@ -2,7 +2,6 @@ import { store } from '../db/index.js';
 import { createAuditLog } from './audit-log.js';
 import { updateCard } from './cards.js';
 import { getOrCreateGeneralCollection } from './collections.js';
-import { stopAllBoardCronJobs } from './board-cron.js';
 
 const GENERAL_BOARD_NAMES = new Set(['general', 'general board']);
 
@@ -367,10 +366,6 @@ export async function deleteBoard(
   id: string,
   audit?: { userId: string; ipAddress?: string; userAgent?: string },
 ) {
-  // Stop cron jobs and remove cron templates
-  stopAllBoardCronJobs(id);
-  store.deleteWhere('boardCronTemplates', (r: any) => r.boardId === id);
-
   // Remove board columns and board cards
   store.deleteWhere('boardColumns', (r: any) => r.boardId === id);
   store.deleteWhere('boardCards', (r: any) => r.boardId === id);

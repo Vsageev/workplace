@@ -7,10 +7,6 @@ export interface CardListQuery {
   collectionId?: string;
   assigneeId?: string;
   search?: string;
-  completed?: boolean;
-  priority?: 'high' | 'medium' | 'low';
-  dueDateBefore?: string;
-  dueDateAfter?: string;
   tagId?: string;
   limit?: number;
   offset?: number;
@@ -55,30 +51,6 @@ export async function listCards(query: CardListQuery) {
         c.name?.toLowerCase().includes(term) ||
         c.description?.toLowerCase().includes(term),
     );
-  }
-
-  if (query.completed !== undefined) {
-    all = all.filter((c: any) => (c.customFields?.completed === true) === query.completed);
-  }
-
-  if (query.priority) {
-    all = all.filter((c: any) => c.customFields?.priority === query.priority);
-  }
-
-  if (query.dueDateBefore) {
-    const before = new Date(query.dueDateBefore).getTime();
-    all = all.filter((c: any) => {
-      const d = c.customFields?.dueDate as string | undefined;
-      return d ? new Date(d).getTime() < before : false;
-    });
-  }
-
-  if (query.dueDateAfter) {
-    const after = new Date(query.dueDateAfter).getTime();
-    all = all.filter((c: any) => {
-      const d = c.customFields?.dueDate as string | undefined;
-      return d ? new Date(d).getTime() > after : false;
-    });
   }
 
   if (query.tagId) {

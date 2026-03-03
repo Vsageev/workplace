@@ -1,5 +1,5 @@
 import { useSearchParams } from 'react-router-dom';
-import { Key, HardDrive, Palette, Activity, Tag, UserCircle, Bell } from 'lucide-react';
+import { Key, HardDrive, Palette, Activity, Tag, UserCircle, Bell, Gauge } from 'lucide-react';
 import { PageHeader } from '../../layout';
 import { ProfileTab } from './ProfileTab';
 import { ApiKeysTab } from './ApiKeysTab';
@@ -8,12 +8,13 @@ import { AppearanceTab } from './AppearanceTab';
 import { ActivityLogTab } from './ActivityLogTab';
 import { TagsTab } from './TagsTab';
 import { NotificationsTab } from './NotificationsTab';
+import { RateLimitsTab } from './RateLimitsTab';
 import styles from './SettingsPage.module.css';
 import { useDocumentTitle } from '../../hooks/useDocumentTitle';
 
-type SettingsTab = 'profile' | 'appearance' | 'notifications' | 'tags' | 'api-keys' | 'backups' | 'activity';
+type SettingsTab = 'profile' | 'appearance' | 'notifications' | 'tags' | 'api-keys' | 'rate-limits' | 'backups' | 'activity';
 
-const VALID_TABS = new Set<SettingsTab>(['profile', 'appearance', 'notifications', 'tags', 'api-keys', 'backups', 'activity']);
+const VALID_TABS = new Set<SettingsTab>(['profile', 'appearance', 'notifications', 'tags', 'api-keys', 'rate-limits', 'backups', 'activity']);
 
 const TABS: { key: SettingsTab; label: string; icon: typeof Key }[] = [
   { key: 'profile', label: 'Profile', icon: UserCircle },
@@ -21,6 +22,7 @@ const TABS: { key: SettingsTab; label: string; icon: typeof Key }[] = [
   { key: 'notifications', label: 'Notifications', icon: Bell },
   { key: 'tags', label: 'Tags', icon: Tag },
   { key: 'api-keys', label: 'API Keys', icon: Key },
+  { key: 'rate-limits', label: 'Rate Limits', icon: Gauge },
   { key: 'backups', label: 'Backups', icon: HardDrive },
   { key: 'activity', label: 'Activity Log', icon: Activity },
 ];
@@ -60,6 +62,7 @@ export function SettingsPage() {
       {activeTab === 'notifications' && <NotificationsTab />}
       {activeTab === 'tags' && <TagsTab />}
       {activeTab === 'api-keys' && <ApiKeysTab />}
+      {activeTab === 'rate-limits' && <RateLimitsTab />}
       {activeTab === 'backups' && <BackupsTab />}
       {activeTab === 'activity' && <ActivityLogTab />}
     </div>

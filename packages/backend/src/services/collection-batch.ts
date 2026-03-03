@@ -5,8 +5,7 @@ import { executeCardTask } from './agent-chat.js';
 export interface CollectionBatchCardFilters {
   search?: string;
   assigneeId?: string;
-  completed?: boolean;
-  priority?: 'high' | 'medium' | 'low';
+
   tagId?: string;
 }
 

@@ -49,7 +49,7 @@ const NAV_ITEMS: Omit<PaletteItem, 'action'>[] = [
   { id: 'nav-my-cards', name: 'My Cards', hint: 'Cards assigned to you', icon: CheckSquare, shortcut: 'G Y', group: 'Navigate' },
   { id: 'nav-collections', name: 'Collections', hint: 'Browse collections', icon: FolderOpen, shortcut: 'G C', group: 'Navigate' },
   { id: 'nav-boards', name: 'Boards', hint: 'Kanban boards', icon: Kanban, shortcut: 'G B', group: 'Navigate' },
-  { id: 'nav-inbox', name: 'Inbox', hint: 'Messages & conversations', icon: MessageSquare, shortcut: 'G I', group: 'Navigate' },
+  { id: 'nav-inbox', name: 'Inbox', hint: 'Messages & conversations', icon: MessageSquare, group: 'Navigate' },
   { id: 'nav-agents', name: 'Agents', hint: 'Manage AI agents', icon: Cpu, shortcut: 'G A', group: 'Navigate' },
   { id: 'nav-monitor', name: 'Monitor', hint: 'Agent run activity', icon: Activity, shortcut: 'G M', group: 'Navigate' },
   { id: 'nav-connectors', name: 'Connectors', hint: 'External integrations', icon: Cable, group: 'Navigate' },

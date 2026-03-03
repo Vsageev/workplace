@@ -68,8 +68,7 @@ export const agentBatchConfigSchema = z.object({
   cardFilters: z.object({
     search: z.string().optional(),
     assigneeId: z.string().optional(),
-    completed: z.boolean().optional(),
-    priority: z.enum(['high', 'medium', 'low']).optional(),
+
     tagId: z.string().optional(),
   }).optional(),
 });

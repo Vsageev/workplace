@@ -249,21 +249,6 @@ export interface MessageDraft {
   updatedAt: string;
 }
 
-export interface BoardCronTemplate {
-  id: string;
-  boardId: string;
-  columnId: string;
-  name: string;
-  description: string | null;
-  assigneeId: string | null;
-  tagIds: string[];
-  cron: string;
-  enabled: boolean;
-  createdById: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
 export interface Workspace {
   id: string;
   name: string;

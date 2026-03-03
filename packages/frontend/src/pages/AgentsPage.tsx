@@ -34,6 +34,12 @@ import {
   Pencil,
   Link2,
   SlidersHorizontal,
+  Eraser,
+  Clock,
+  Loader,
+  ListOrdered,
+  GripVertical,
+  Save,
 } from 'lucide-react';
 import { Button, Badge, Input, Textarea, Select, CronEditor, ApiKeyFormFields, MarkdownContent, Tooltip } from '../ui';
 import { api, apiUpload, ApiError } from '../lib/api';
@@ -43,12 +49,6 @@ import { scrollToFirstError } from '../lib/scroll-to-error';
 import { FilePreviewModal } from '../components/FilePreviewModal';
 import { FileSystemBrowserModal } from '../components/FileSystemBrowserModal';
 import { AgentAvatar, AgentAvatarPicker, randomPalette, randomIcon, type AvatarConfig } from '../components/AgentAvatar';
-import {
-  getLatestStreamingAgentChatStream,
-  startAgentChatStream,
-  startAgentChatRespondStream,
-  useAgentChatStreams,
-} from '../stores/agent-chat-runtime';
 import { useWorkspace } from '../stores/WorkspaceContext';
 import styles from './AgentsPage.module.css';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
@@ -136,6 +136,7 @@ interface ChatConversation {
   lastMessageAt: string | null;
   isUnread: boolean;
   isBusy?: boolean;
+  queuedCount?: number;
   updatedAt: string;
   createdAt: string;
 }
@@ -155,6 +156,21 @@ interface ChatMessage {
   createdAt: string;
   type?: string;
   attachments?: ChatAttachment[] | null;
+}
+
+interface QueuePromptResponse {
+  status: 'queued';
+  queuedCount?: number;
+}
+
+interface QueueItem {
+  id: string;
+  agentId: string;
+  conversationId: string;
+  prompt: string;
+  status: 'queued' | 'processing' | 'completed' | 'failed';
+  attempts: number;
+  createdAt: string;
 }
 
 /* ── ChatImage component ── */
@@ -327,8 +343,14 @@ function describeCron(expr: string): string {
   return expr;
 }
 
-function generateId(): string {
-  return Math.random().toString(36).slice(2, 10);
+function toQueueCount(value: unknown): number {
+  const parsed = Number(value ?? 0);
+  if (!Number.isFinite(parsed) || parsed <= 0) return 0;
+  return Math.floor(parsed);
+}
+
+function queueItemsLabel(count: number): string {
+  return `${count} message${count === 1 ? '' : 's'} queued`;
 }
 
 function areChatConversationListsEqual(a: ChatConversation[], b: ChatConversation[]): boolean {
@@ -340,6 +362,7 @@ function areChatConversationListsEqual(a: ChatConversation[], b: ChatConversatio
       a[i].lastMessageAt !== b[i].lastMessageAt ||
       a[i].isUnread !== b[i].isUnread ||
       Boolean(a[i].isBusy) !== Boolean(b[i].isBusy) ||
+      Number(a[i].queuedCount ?? 0) !== Number(b[i].queuedCount ?? 0) ||
       a[i].updatedAt !== b[i].updatedAt
     ) {
       return false;
@@ -350,6 +373,10 @@ function areChatConversationListsEqual(a: ChatConversation[], b: ChatConversatio
 
 function agentConversationKey(agentId: string, conversationId: string): string {
   return `${agentId}:${conversationId}`;
+}
+
+function generateId(): string {
+  return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
 
 /* ── Agent file entry type ── */
@@ -810,7 +837,9 @@ export function AgentsPage() {
   useDocumentTitle('Agents');
   const { activeWorkspaceId } = useWorkspace();
   const [searchParams] = useSearchParams();
-  const requestedAgentId = searchParams.get('agentId');
+  const requestedAgentId = searchParams.get('agentId')
+    ?? searchParams.get('id')
+    ?? searchParams.get('settingsAgentId');
   const requestedConversationId = searchParams.get('conversationId');
   // ── Agent list state ──
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -851,17 +880,30 @@ export function AgentsPage() {
   const [uploading, setUploading] = useState(false);
   const [stagedImage, setStagedImage] = useState<{ file: File; previewUrl: string } | null>(null);
   const [draggingOver, setDraggingOver] = useState(false);
-  const [queuedMessagesByConversation, setQueuedMessagesByConversation] = useState<Record<string, string[]>>({});
+  const [pendingConversationKeys, setPendingConversationKeys] = useState<Set<string>>(new Set());
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isFirstMessageRef = useRef(false);
   const activeAgentIdRef = useRef<string | null>(null);
   const activeConvIdRef = useRef<string | null>(null);
-  const previousStreamStatusRef = useRef<Map<string, 'streaming' | 'done' | 'error'>>(new Map());
+  const pendingConversationKeysRef = useRef<Set<string>>(new Set());
+  const pendingConversationCountRef = useRef<Map<string, number>>(new Map());
 
   // ── Conversation indicators ──
   const messagesRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const chatStreams = useAgentChatStreams();
+
+  // Auto-resize textarea when input changes (including after send clears it)
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    if (!input) {
+      el.style.height = '';
+      return;
+    }
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 400)}px`;
+  }, [input]);
 
   // ── Create modal ──
   const [createOpen, setCreateOpen] = useState(false);
@@ -875,6 +917,12 @@ export function AgentsPage() {
 
   // ── Chat / Files tab ──
   const [chatTab, setChatTab] = useState<'chat' | 'files'>('chat');
+
+  // ── Queue panel ──
+  const [queuePanelOpen, setQueuePanelOpen] = useState(false);
+  const [queueItems, setQueueItems] = useState<QueueItem[]>([]);
+  const [editingQueueItemId, setEditingQueueItemId] = useState<string | null>(null);
+  const [editingQueuePrompt, setEditingQueuePrompt] = useState('');
 
   // ── Page settings ──
   const [pageSettingsOpen, setPageSettingsOpen] = useState(false);
@@ -909,6 +957,19 @@ export function AgentsPage() {
     } catch { /* ignore */ }
   }, [collapsedAgents]);
 
+  // Cleanup legacy client-side chat queue artifacts (queue is backend-managed now).
+  useEffect(() => {
+    try {
+      localStorage.removeItem('agents_page_chat_queue_v2');
+      for (const key of Object.keys(localStorage)) {
+        if (!key.startsWith('agents_page_chat_queue_lock_v1:')) continue;
+        localStorage.removeItem(key);
+      }
+    } catch {
+      // Ignore storage errors.
+    }
+  }, []);
+
   // ── Settings modal ──
   const [settingsAgent, setSettingsAgent] = useState<Agent | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -925,78 +986,78 @@ export function AgentsPage() {
   const [cronSaving, setCronSaving] = useState(false);
 
   // Keep ref in sync for closure access
+  const agentsRef = useRef(agents);
+  agentsRef.current = agents;
   activeAgentIdRef.current = activeAgentId;
   activeConvIdRef.current = activeConvId;
+  pendingConversationKeysRef.current = pendingConversationKeys;
 
-  const streamingConversationIds = useMemo(
-    () => new Set(chatStreams.filter((stream) => stream.status === 'streaming').map((stream) => stream.conversationId)),
-    [chatStreams],
-  );
-  const activeStream = useMemo(
-    () =>
-      chatStreams.find(
-        (stream) =>
-          stream.status === 'streaming' &&
-          stream.agentId === activeAgentId &&
-          stream.conversationId === activeConvId,
-      ) ?? null,
-    [chatStreams, activeAgentId, activeConvId],
-  );
+  const setActiveConversation = useCallback((agentId: string | null, conversationId: string | null) => {
+    activeAgentIdRef.current = agentId;
+    activeConvIdRef.current = conversationId;
+    setActiveAgentId(agentId);
+    setActiveConvId(conversationId);
+    setQueueItems([]);
+    setQueuePanelOpen(false);
+    setEditingQueueItemId(null);
+    setEditingQueuePrompt('');
+    // Expand the active agent so the selected conversation is visible in the sidebar
+    if (agentId) {
+      setCollapsedAgents((prev) => {
+        if (prev === 'all') {
+          const next = new Set(agentsRef.current.map((a) => a.id));
+          next.delete(agentId);
+          return next;
+        }
+        if (!prev.has(agentId)) return prev;
+        const next = new Set(prev);
+        next.delete(agentId);
+        return next;
+      });
+    }
+  }, []);
+
+  const setConversationPending = useCallback((agentId: string, conversationId: string, pending: boolean) => {
+    const key = agentConversationKey(agentId, conversationId);
+    const counts = pendingConversationCountRef.current;
+    const prevCount = counts.get(key) ?? 0;
+    const nextCount = pending ? prevCount + 1 : Math.max(0, prevCount - 1);
+    if (nextCount > 0) {
+      counts.set(key, nextCount);
+      pendingConversationKeysRef.current.add(key);
+    } else {
+      counts.delete(key);
+      pendingConversationKeysRef.current.delete(key);
+    }
+
+    const nextPending = nextCount > 0;
+    setPendingConversationKeys((prev) => {
+      const currentlyPending = prev.has(key);
+      if (currentlyPending === nextPending) return prev;
+      const next = new Set(prev);
+      if (nextPending) {
+        next.add(key);
+      } else {
+        next.delete(key);
+      }
+      return next;
+    });
+  }, []);
+
   const activeConversation = useMemo(() => {
     if (!activeAgentId || !activeConvId) return null;
     return (convsByAgent[activeAgentId] || []).find((conv) => conv.id === activeConvId) ?? null;
   }, [activeAgentId, activeConvId, convsByAgent]);
-  const activeQueueKey = activeAgentId && activeConvId
-    ? agentConversationKey(activeAgentId, activeConvId)
-    : null;
-  const queuedMessages = activeQueueKey ? queuedMessagesByConversation[activeQueueKey] ?? [] : [];
-  const queuedMessage = queuedMessages[0] ?? null;
-  const queuedMessageCount = queuedMessages.length;
+  const activeConversationPending = activeAgentId && activeConvId
+    ? pendingConversationKeys.has(agentConversationKey(activeAgentId, activeConvId))
+    : false;
   const activeConversationBusy = Boolean(activeConversation?.isBusy);
-  const streaming = Boolean(activeStream) || activeConversationBusy;
-  const streamText = activeStream?.text ?? '';
+  const activeConversationQueueCount = toQueueCount(activeConversation?.queuedCount);
+  const streaming = activeConversationPending || activeConversationBusy;
 
-  const dequeueAndSendQueuedMessage = useCallback((agentId: string, conversationId: string) => {
-    const key = agentConversationKey(agentId, conversationId);
-    let promptToSend: string | null = null;
-    setQueuedMessagesByConversation((prev) => {
-      const queue = prev[key];
-      if (!queue || queue.length === 0) return prev;
-      promptToSend = queue[0];
-      if (queue.length > 1) {
-        return { ...prev, [key]: queue.slice(1) };
-      }
-      const next = { ...prev };
-      delete next[key];
-      return next;
-    });
-    if (!promptToSend) return;
-    const prompt = promptToSend;
-
-    const isActiveConversation =
-      activeAgentIdRef.current === agentId &&
-      activeConvIdRef.current === conversationId;
-
-    if (isActiveConversation) {
-      const tempMsg: ChatMessage = {
-        id: `temp-${Date.now()}`,
-        direction: 'outbound',
-        content: prompt,
-        createdAt: new Date().toISOString(),
-      };
-      setMessages((prev) => [...prev, tempMsg]);
-    }
-
-    void startAgentChatStream({ agentId, conversationId, prompt }).catch((err) => {
-      if (isActiveConversation) {
-        setChatError(err instanceof Error ? err.message : 'Failed to send queued message');
-      }
-      setQueuedMessagesByConversation((prev) => ({
-        ...prev,
-        [key]: [prompt, ...(prev[key] ?? [])],
-      }));
-    });
-  }, []);
+  const isActiveConversation = useCallback((agentId: string, conversationId: string) => (
+    activeAgentIdRef.current === agentId && activeConvIdRef.current === conversationId
+  ), []);
 
   /* ── Close context menu on outside click ── */
   useEffect(() => {
@@ -1080,17 +1141,31 @@ export function AgentsPage() {
   }, [agents]);
 
   /* ── Fetch messages ── */
+  const messagesRef2 = useRef<ChatMessage[]>([]);
+  messagesRef2.current = messages;
+
   const fetchMessages = useCallback(async (agentId: string, conversationId: string) => {
     try {
       const data = await api<{ entries: ChatMessage[] }>(
         `/agents/${agentId}/chat/messages?conversationId=${conversationId}`,
       );
+      if (!isActiveConversation(agentId, conversationId)) return;
+      // Skip update if message list hasn't changed (avoids dropping optimistic
+      // temp messages and prevents unnecessary re-renders during polling).
+      const prev = messagesRef2.current;
+      if (
+        prev.length === data.entries.length &&
+        prev.every((m, i) => m.id === data.entries[i].id && m.content === data.entries[i].content)
+      ) {
+        return;
+      }
       setMessages(data.entries);
       isFirstMessageRef.current = data.entries.length === 0;
     } catch {
+      if (!isActiveConversation(agentId, conversationId)) return;
       setChatError('Failed to load messages');
     }
-  }, []);
+  }, [isActiveConversation]);
 
   const markConversationRead = useCallback(async (agentId: string, conversationId: string) => {
     setConvsByAgent((prev) => {
@@ -1114,6 +1189,62 @@ export function AgentsPage() {
       // best effort
     }
   }, []);
+
+  /* ── Queue item handlers ── */
+  const fetchQueueItems = useCallback(async (agentId: string, conversationId: string) => {
+    try {
+      const data = await api<{ entries: QueueItem[] }>(
+        `/agents/${agentId}/chat/conversations/${conversationId}/queue`,
+      );
+      if (!isActiveConversation(agentId, conversationId)) return;
+      setQueueItems(data.entries.filter((item) => item.status === 'queued'));
+    } catch {
+      // silently fail
+    }
+  }, [isActiveConversation]);
+
+  async function handleSaveQueueItem(itemId: string) {
+    if (!activeAgentId || !activeConvId || !editingQueuePrompt.trim()) return;
+    try {
+      await api(`/agents/${activeAgentId}/chat/queue/${itemId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          conversationId: activeConvId,
+          prompt: editingQueuePrompt.trim(),
+        }),
+      });
+      setEditingQueueItemId(null);
+      setEditingQueuePrompt('');
+      await fetchQueueItems(activeAgentId, activeConvId);
+    } catch {
+      // silently fail
+    }
+  }
+
+  async function handleDeleteQueueItem(itemId: string) {
+    if (!activeAgentId || !activeConvId) return;
+    try {
+      await api(`/agents/${activeAgentId}/chat/queue/${itemId}`, {
+        method: 'DELETE',
+        body: JSON.stringify({ conversationId: activeConvId }),
+      });
+      await fetchQueueItems(activeAgentId, activeConvId);
+    } catch {
+      // silently fail
+    }
+  }
+
+  async function handleClearQueue() {
+    if (!activeAgentId || !activeConvId) return;
+    try {
+      await api(`/agents/${activeAgentId}/chat/conversations/${activeConvId}/queue`, {
+        method: 'DELETE',
+      });
+      setQueueItems([]);
+    } catch {
+      // silently fail
+    }
+  }
 
   /* ── Initial load ── */
   useEffect(() => {
@@ -1149,38 +1280,16 @@ export function AgentsPage() {
             : false;
           const targetConvId = requestedConvExists ? requestedConversationId : requestedConvs[0]?.id ?? null;
 
-          setActiveAgentId(requestedAgentId);
+          setActiveConversation(requestedAgentId, null);
           if (targetConvId) {
-            setActiveConvId(targetConvId);
-            const msgData = await api<{ entries: ChatMessage[] }>(
-              `/agents/${requestedAgentId}/chat/messages?conversationId=${targetConvId}`,
-            );
-            if (!cancelled) {
-              setMessages(msgData.entries);
-              isFirstMessageRef.current = msgData.entries.length === 0;
-            }
+            setActiveConversation(requestedAgentId, targetConvId);
+            setMessages([]);
+            setChatError(null);
+            await fetchMessages(requestedAgentId, targetConvId);
           } else {
-            setActiveConvId(null);
+            setActiveConversation(requestedAgentId, null);
             setMessages([]);
             isFirstMessageRef.current = true;
-          }
-          return;
-        }
-      }
-
-      const latestStreaming = getLatestStreamingAgentChatStream();
-      if (latestStreaming) {
-        const streamConvs = allConvs[latestStreaming.agentId] || [];
-        const streamConvExists = streamConvs.some((conv) => conv.id === latestStreaming.conversationId);
-        if (streamConvExists) {
-          setActiveAgentId(latestStreaming.agentId);
-          setActiveConvId(latestStreaming.conversationId);
-          const msgData = await api<{ entries: ChatMessage[] }>(
-            `/agents/${latestStreaming.agentId}/chat/messages?conversationId=${latestStreaming.conversationId}`,
-          );
-          if (!cancelled) {
-            setMessages(msgData.entries);
-            isFirstMessageRef.current = msgData.entries.length === 0;
           }
           return;
         }
@@ -1189,15 +1298,10 @@ export function AgentsPage() {
       for (const agent of entries) {
         const busyConv = (allConvs[agent.id] || []).find((conv) => Boolean(conv.isBusy));
         if (!busyConv) continue;
-        setActiveAgentId(agent.id);
-        setActiveConvId(busyConv.id);
-        const msgData = await api<{ entries: ChatMessage[] }>(
-          `/agents/${agent.id}/chat/messages?conversationId=${busyConv.id}`,
-        );
-        if (!cancelled) {
-          setMessages(msgData.entries);
-          isFirstMessageRef.current = msgData.entries.length === 0;
-        }
+        setActiveConversation(agent.id, busyConv.id);
+        setMessages([]);
+        setChatError(null);
+        await fetchMessages(agent.id, busyConv.id);
         return;
       }
 
@@ -1205,22 +1309,19 @@ export function AgentsPage() {
       const firstAgent = entries[0];
       const firstConvs = allConvs[firstAgent.id] || [];
       if (firstConvs.length > 0) {
-        setActiveAgentId(firstAgent.id);
-        setActiveConvId(firstConvs[0].id);
-        const msgData = await api<{ entries: ChatMessage[] }>(
-          `/agents/${firstAgent.id}/chat/messages?conversationId=${firstConvs[0].id}`,
-        );
-        if (!cancelled) {
-          setMessages(msgData.entries);
-          isFirstMessageRef.current = msgData.entries.length === 0;
-        }
+        setActiveConversation(firstAgent.id, firstConvs[0].id);
+        setMessages([]);
+        setChatError(null);
+        await fetchMessages(firstAgent.id, firstConvs[0].id);
       } else {
-        setActiveAgentId(firstAgent.id);
+        setActiveConversation(firstAgent.id, null);
+        setMessages([]);
+        setChatError(null);
       }
     }
     load();
     return () => { cancelled = true; };
-  }, [fetchAgents, fetchGroups, requestedAgentId, requestedConversationId]);
+  }, [fetchAgents, fetchGroups, fetchMessages, requestedAgentId, requestedConversationId, setActiveConversation]);
 
   useEffect(() => {
     if (agents.length === 0) return;
@@ -1235,70 +1336,25 @@ export function AgentsPage() {
     };
   }, [agents, refreshAllConversations]);
 
-  /* ── React to stream lifecycle updates ── */
+  // While a run is active (local pending request or backend busy flag),
+  // periodically refresh messages so progress/final updates are visible.
   useEffect(() => {
-    const previous = previousStreamStatusRef.current;
-    const next = new Map<string, 'streaming' | 'done' | 'error'>();
+    if ((!activeConversationBusy && !activeConversationPending) || !activeAgentId || !activeConvId) return;
 
-    for (const stream of chatStreams) {
-      next.set(stream.id, stream.status);
-      const previousStatus = previous.get(stream.id);
-
-      if (previousStatus !== 'streaming') continue;
-
-      if (stream.status === 'done') {
-        dequeueAndSendQueuedMessage(stream.agentId, stream.conversationId);
-        if (
-          activeAgentIdRef.current === stream.agentId &&
-          activeConvIdRef.current === stream.conversationId
-        ) {
-          void markConversationRead(stream.agentId, stream.conversationId);
-          void fetchMessages(stream.agentId, stream.conversationId);
-        }
-        void fetchConversations(stream.agentId);
-      } else if (
-        stream.status === 'error' &&
-        activeAgentIdRef.current === stream.agentId &&
-        activeConvIdRef.current === stream.conversationId
-      ) {
-        setChatError(stream.error || 'Agent error');
-      }
-    }
-
-    previousStreamStatusRef.current = next;
-  }, [chatStreams, dequeueAndSendQueuedMessage, fetchConversations, fetchMessages, markConversationRead]);
-
-  // While a run is active (local stream or backend busy flag), periodically
-  // refresh messages so API-posted progress/final updates are visible.
-  useEffect(() => {
-    const pollingAgentId = activeStream?.agentId ?? (activeConversationBusy ? activeAgentId : null);
-    const pollingConvId = activeStream?.conversationId ?? (activeConversationBusy ? activeConvId : null);
-    if (!pollingAgentId || !pollingConvId) return;
-
-    const agentId = pollingAgentId;
-    const conversationId = pollingConvId;
+    const agentId = activeAgentId;
+    const conversationId = activeConvId;
     void fetchMessages(agentId, conversationId);
+    void fetchQueueItems(agentId, conversationId);
 
     const intervalId = window.setInterval(() => {
       void fetchMessages(agentId, conversationId);
+      void fetchQueueItems(agentId, conversationId);
     }, 1500);
 
     return () => {
       window.clearInterval(intervalId);
     };
-  }, [activeStream, activeConversationBusy, activeAgentId, activeConvId, fetchMessages]);
-
-  // Busy-flag fallback: if chat stream isn't tracked locally, dispatch queued text
-  // once backend busy state flips from true -> false for the active conversation.
-  const wasActiveConversationBusyRef = useRef(false);
-  useEffect(() => {
-    const wasBusy = wasActiveConversationBusyRef.current;
-    wasActiveConversationBusyRef.current = activeConversationBusy;
-
-    if (wasBusy && !activeConversationBusy && !activeStream && activeAgentId && activeConvId) {
-      dequeueAndSendQueuedMessage(activeAgentId, activeConvId);
-    }
-  }, [activeConversationBusy, activeStream, activeAgentId, activeConvId, dequeueAndSendQueuedMessage]);
+  }, [activeConversationBusy, activeConversationPending, activeAgentId, activeConvId, fetchMessages, fetchQueueItems]);
 
   /* ── Scroll to bottom ── */
   const scrollToBottom = useCallback(() => {
@@ -1309,7 +1365,7 @@ export function AgentsPage() {
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, streamText, scrollToBottom]);
+  }, [messages, streaming, scrollToBottom]);
 
   useEffect(() => {
     if (!activeAgentId || !activeConvId) return;
@@ -1385,8 +1441,7 @@ export function AgentsPage() {
         return next;
       });
     }
-    setActiveAgentId(agentId);
-    setActiveConvId(convId);
+    setActiveConversation(agentId, convId);
     setMessages([]);
     setChatError(null);
     clearStagedImage();
@@ -1418,8 +1473,7 @@ export function AgentsPage() {
         next.delete(agentId);
         return next;
       });
-      setActiveAgentId(agentId);
-      setActiveConvId(conv.id);
+      setActiveConversation(agentId, conv.id);
       setMessages([]);
       isFirstMessageRef.current = true;
       setChatError(null);
@@ -1434,6 +1488,7 @@ export function AgentsPage() {
     try {
       await api(`/agents/${agentId}/chat/conversations/${convId}`, { method: 'DELETE' });
       const deletingActiveConversation = activeAgentId === agentId && activeConvId === convId;
+      const remainingConversations = (convsByAgent[agentId] || []).filter((c) => c.id !== convId);
 
       // Compute next selection from current state before mutating it.
       let nextFocusedConversationId: string | null = null;
@@ -1451,21 +1506,27 @@ export function AgentsPage() {
         ...prev,
         [agentId]: (prev[agentId] || []).filter((c) => c.id !== convId),
       }));
-      setQueuedMessagesByConversation((prev) => {
+      pendingConversationCountRef.current.delete(agentConversationKey(agentId, convId));
+      setPendingConversationKeys((prev) => {
         const key = agentConversationKey(agentId, convId);
-        if (!(key in prev)) return prev;
-        const next = { ...prev };
-        delete next[key];
+        if (!prev.has(key)) return prev;
+        const next = new Set(prev);
+        next.delete(key);
         return next;
       });
+      if (remainingConversations.length === 0) {
+        collapseAgent(agentId);
+      }
 
       if (!deletingActiveConversation) return;
 
       if (nextFocusedConversationId) {
-        setActiveConvId(nextFocusedConversationId);
+        setActiveConversation(agentId, nextFocusedConversationId);
+        setMessages([]);
+        setChatError(null);
         void fetchMessages(agentId, nextFocusedConversationId);
       } else {
-        setActiveConvId(null);
+        setActiveConversation(agentId, null);
         setMessages([]);
       }
     } catch {
@@ -1473,23 +1534,49 @@ export function AgentsPage() {
     }
   }
 
-  /* ── Send message (SSE streaming) ── */
+  /* ── Clean conversations (delete all except active and unread) ── */
+  async function cleanConversations(agentId: string) {
+    const convs = convsByAgent[agentId] || [];
+    const toDelete = convs.filter((c) => {
+      const isActive = activeAgentId === agentId && activeConvId === c.id;
+      const isStreaming = Boolean(c.isBusy) || pendingConversationKeys.has(agentConversationKey(agentId, c.id));
+      return !isActive && !c.isUnread && !isStreaming;
+    });
+    await Promise.allSettled(
+      toDelete.map((c) => api(`/agents/${agentId}/chat/conversations/${c.id}`, { method: 'DELETE' })),
+    );
+    const deletedIds = new Set(toDelete.map((c) => c.id));
+    const remainingConversations = convs.filter((c) => !deletedIds.has(c.id));
+    setConvsByAgent((prev) => ({
+      ...prev,
+      [agentId]: (prev[agentId] || []).filter((c) => !deletedIds.has(c.id)),
+    }));
+    setPendingConversationKeys((prev) => {
+      let changed = false;
+      const next = new Set(prev);
+      for (const c of toDelete) {
+        pendingConversationCountRef.current.delete(agentConversationKey(agentId, c.id));
+        changed = next.delete(agentConversationKey(agentId, c.id)) || changed;
+      }
+      return changed ? next : prev;
+    });
+    if (remainingConversations.length === 0) {
+      collapseAgent(agentId);
+    }
+  }
+
+  async function cleanAllConversations() {
+    await Promise.allSettled(agents.map((a) => cleanConversations(a.id)));
+  }
+
+  /* ── Send message ── */
   async function sendMessage() {
     const prompt = input.trim();
     const hasImage = !!stagedImage;
     if ((!prompt && !hasImage) || !activeAgentId || !activeConvId) return;
 
-    // If agent is busy, queue the text message (images can't be queued)
-    if (streaming) {
-      if (hasImage) return; // can't queue images
-      const queueKey = agentConversationKey(activeAgentId, activeConvId);
-      setQueuedMessagesByConversation((prev) => ({
-        ...prev,
-        [queueKey]: [...(prev[queueKey] ?? []), prompt],
-      }));
-      setInput('');
-      return;
-    }
+    // Keep image-upload flow single-flight; text prompts are queued by the backend.
+    if (hasImage && streaming) return;
 
     const sentAgentId = activeAgentId;
     const sentConvId = activeConvId;
@@ -1505,7 +1592,7 @@ export function AgentsPage() {
       setUploading(true);
       try {
         const imgMsg = await uploadStagedImage(prompt);
-        if (imgMsg) {
+        if (imgMsg && isActiveConversation(sentAgentId, sentConvId)) {
           setMessages((prev) => [...prev, imgMsg]);
         }
       } catch (err) {
@@ -1521,42 +1608,96 @@ export function AgentsPage() {
       }
 
       // Trigger the agent to respond to the uploaded image
+      setConversationPending(sentAgentId, sentConvId, true);
       try {
-        await startAgentChatRespondStream({
-          agentId: sentAgentId,
-          conversationId: sentConvId,
-        });
+        await api(
+          `/agents/${sentAgentId}/chat/respond`,
+          {
+            method: 'POST',
+            body: JSON.stringify({ conversationId: sentConvId }),
+          },
+        );
+        await Promise.all([
+          fetchMessages(sentAgentId, sentConvId),
+          fetchConversations(sentAgentId),
+        ]);
       } catch (err) {
         setChatError(err instanceof Error ? err.message : 'Failed to get agent response');
       } finally {
+        setConversationPending(sentAgentId, sentConvId, false);
         inputRef.current?.focus();
       }
       return;
     }
 
-    // Text-only message — optimistic UI + stream
-    const tempMsg: ChatMessage = {
+    // Text-only message — add optimistic queue item instead of showing in chat
+    const optimisticQueueItem: QueueItem = {
       id: `temp-${Date.now()}`,
-      direction: 'outbound',
-      content: prompt,
+      agentId: sentAgentId,
+      conversationId: sentConvId,
+      prompt,
+      status: 'queued',
+      attempts: 0,
       createdAt: new Date().toISOString(),
     };
-    setMessages((prev) => [...prev, tempMsg]);
+    setQueueItems((prev) => [...prev, optimisticQueueItem]);
 
+    // If the conversation is already busy/streaming, we're just adding to the
+    // queue — no need to toggle pending state or force-refetch (the 1.5s poll
+    // loop takes care of it).
+    const alreadyBusy = streaming;
+
+    const directMessageId = `direct-${Date.now()}-${generateId()}`;
+    if (!alreadyBusy) {
+      setConversationPending(sentAgentId, sentConvId, true);
+    }
     try {
-      await startAgentChatStream({
-        agentId: sentAgentId,
-        conversationId: sentConvId,
-        prompt,
-      });
-
-      // Refetch conversations to pick up auto-title
-      if (wasFirst && sentAgentId) {
-        void fetchConversations(sentAgentId);
+      const queueResponse = await api<QueuePromptResponse>(
+        `/agents/${sentAgentId}/chat/message`,
+        {
+          method: 'POST',
+          headers: {
+            'Idempotency-Key': `agent-chat-direct:${directMessageId}`,
+          },
+          body: JSON.stringify({
+            prompt,
+            conversationId: sentConvId,
+          }),
+        },
+      );
+      const immediateQueuedCount = toQueueCount(queueResponse.queuedCount);
+      if (immediateQueuedCount > 0) {
+        setConvsByAgent((prev) => {
+          const convs = prev[sentAgentId];
+          if (!convs || convs.length === 0) return prev;
+          let changed = false;
+          const nextConvs = convs.map((conv) => {
+            if (conv.id !== sentConvId) return conv;
+            if (toQueueCount(conv.queuedCount) === immediateQueuedCount && conv.isBusy) return conv;
+            changed = true;
+            return { ...conv, isBusy: true, queuedCount: immediateQueuedCount };
+          });
+          if (!changed) return prev;
+          return { ...prev, [sentAgentId]: nextConvs };
+        });
+      }
+      // Refetch queue items to replace optimistic entry with real data
+      await fetchQueueItems(sentAgentId, sentConvId);
+      if (!alreadyBusy) {
+        const conversations = await fetchConversations(sentAgentId);
+        const updatedConversation = conversations.find((conv) => conv.id === sentConvId);
+        if (!updatedConversation?.isBusy) {
+          await fetchMessages(sentAgentId, sentConvId);
+        }
       }
     } catch (err) {
+      // Remove optimistic queue item on failure
+      setQueueItems((prev) => prev.filter((item) => item.id !== optimisticQueueItem.id));
       setChatError(err instanceof Error ? err.message : 'Failed to send message');
     } finally {
+      if (!alreadyBusy) {
+        setConversationPending(sentAgentId, sentConvId, false);
+      }
       inputRef.current?.focus();
     }
   }
@@ -1601,6 +1742,8 @@ export function AgentsPage() {
     clearStagedImage();
     return msg;
   }
+
+  /* ── Queue management ── */
 
   function handlePaste(e: ReactClipboardEvent<HTMLTextAreaElement>) {
     const file = getFirstImageFromClipboardData(e.clipboardData);
@@ -1783,6 +1926,15 @@ export function AgentsPage() {
     return collapsedAgents === 'all' || collapsedAgents.has(id);
   }
 
+  function collapseAgent(id: string) {
+    setCollapsedAgents((prev) => {
+      if (prev === 'all' || prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+  }
+
   function toggleAgentCollapse(id: string) {
     setCollapsedAgents((prev) => {
       if (prev === 'all') {
@@ -1866,14 +2018,12 @@ export function AgentsPage() {
           { method: 'POST', body: JSON.stringify({}) },
         );
         setConvsByAgent((prev) => ({ ...prev, [newAgent.id]: [conv] }));
-        setActiveAgentId(newAgent.id);
-        setActiveConvId(conv.id);
+        setActiveConversation(newAgent.id, conv.id);
         setMessages([]);
         isFirstMessageRef.current = true;
       } catch {
         setConvsByAgent((prev) => ({ ...prev, [newAgent.id]: [] }));
-        setActiveAgentId(newAgent.id);
-        setActiveConvId(null);
+        setActiveConversation(newAgent.id, null);
       }
       closeCreate();
     } catch (err) {
@@ -1920,8 +2070,7 @@ export function AgentsPage() {
         return next;
       });
       if (activeAgentId === id) {
-        setActiveAgentId(null);
-        setActiveConvId(null);
+        setActiveConversation(null, null);
         setMessages([]);
       }
       setDeletingId(null);
@@ -1952,15 +2101,13 @@ export function AgentsPage() {
   function renderAgentItem(agent: Agent) {
     const convs = convsByAgent[agent.id] || [];
     const collapsed = isAgentCollapsed(agent.id);
-    const hasUnread = collapsed && convs.some((c) => {
-      const isStreaming = Boolean(c.isBusy) || streamingConversationIds.has(c.id);
-      return !isStreaming && c.isUnread;
-    });
-    const hasStreaming = collapsed && convs.some((c) => Boolean(c.isBusy) || streamingConversationIds.has(c.id));
+    const hasUnreadAny = convs.some((c) => c.isUnread);
+    const hasStreamingAny = convs.some((c) => Boolean(c.isBusy) || pendingConversationKeys.has(agentConversationKey(agent.id, c.id)));
+    const queuedTotal = convs.reduce((sum, conv) => sum + toQueueCount(conv.queuedCount), 0);
     return (
       <div key={agent.id} className={styles.agentGroup}>
         <div
-          className={styles.agentGroupHeader}
+          className={`${styles.agentGroupHeader} ${activeAgentId === agent.id ? styles.agentGroupHeaderActive : ''}`}
           onClick={() => {
             const convs = convsByAgent[agent.id] || [];
             if (convs.length > 0) {
@@ -1985,16 +2132,23 @@ export function AgentsPage() {
               icon={agent.avatarIcon || 'spark'}
               bgColor={agent.avatarBgColor || '#1a1a2e'}
               logoColor={agent.avatarLogoColor || '#e94560'}
-              size={36}
+              size={28}
             />
-            {hasStreaming && <span className={styles.agentStreamingDot} title="Agent is responding..." />}
-            {!hasStreaming && hasUnread && <span className={styles.agentUnreadDot} title="New response" />}
+            {hasUnreadAny ? (
+              <span
+                className={styles.agentStatusDot}
+                style={{ background: 'var(--color-primary)' }}
+                title="Has unread messages"
+              />
+            ) : hasStreamingAny ? (
+              <span
+                className={styles.agentStreamingDot}
+                title={queuedTotal > 0 ? `Queued in backend: ${queueItemsLabel(queuedTotal)}` : 'Agent is responding...'}
+              />
+            ) : null}
           </div>
           <div className={styles.agentGroupInfo}>
             <div className={styles.agentGroupName}>{agent.name}</div>
-            <div className={styles.agentGroupMeta}>
-              {agent.model} · {convs.length} chat{convs.length !== 1 ? 's' : ''}
-            </div>
           </div>
           <div className={styles.agentGroupActions}>
             <Tooltip label="Settings">
@@ -2004,6 +2158,15 @@ export function AgentsPage() {
                 aria-label="Agent settings"
               >
                 <Settings size={14} />
+              </button>
+            </Tooltip>
+            <Tooltip label="Clean chats">
+              <button
+                className={styles.agentGroupIconBtn}
+                onClick={(e) => { e.stopPropagation(); void cleanConversations(agent.id); }}
+                aria-label="Clean chats"
+              >
+                <Eraser size={14} />
               </button>
             </Tooltip>
             <Tooltip label="New chat">
@@ -2021,8 +2184,12 @@ export function AgentsPage() {
         {!collapsed && convs.length > 0 && (
           <div className={styles.convList}>
             {convs.map((conv) => {
-              const isStreaming = Boolean(conv.isBusy) || streamingConversationIds.has(conv.id);
+              const isStreaming = Boolean(conv.isBusy) || pendingConversationKeys.has(agentConversationKey(agent.id, conv.id));
               const isUnread = conv.isUnread;
+              const queuedCount = toQueueCount(conv.queuedCount);
+              const streamingTitle = queuedCount > 0
+                ? `Queued in backend: ${queueItemsLabel(queuedCount)}`
+                : 'Agent is responding...';
               return (
                 <div
                   key={conv.id}
@@ -2034,7 +2201,7 @@ export function AgentsPage() {
                   onClick={() => selectConversation(agent.id, conv.id)}
                 >
                   {isStreaming && (
-                    <span className={styles.convStreamingDot} title="Agent is responding..." />
+                    <span className={styles.convStreamingDot} title={streamingTitle} />
                   )}
                   {!isStreaming && isUnread && (
                     <span className={styles.convUnreadDot} title="New response" />
@@ -2044,6 +2211,15 @@ export function AgentsPage() {
                       {conv.subject || 'New conversation'}
                     </div>
                   </div>
+                  {queuedCount > 0 && (
+                    <span
+                      className={styles.convQueueBadge}
+                      title={queueItemsLabel(queuedCount)}
+                    >
+                      <Clock size={9} />
+                      {queuedCount}
+                    </span>
+                  )}
                   <span className={styles.convItemTime}>
                     {relativeTime(conv.lastMessageAt || conv.createdAt)}
                   </span>
@@ -2093,6 +2269,11 @@ export function AgentsPage() {
               <Tooltip label="Manage groups">
                 <button className={styles.addAgentBtn} onClick={() => setManageGroupsOpen(!manageGroupsOpen)} aria-label="Manage groups">
                   <Layers size={16} />
+                </button>
+              </Tooltip>
+              <Tooltip label="Clean all agents' chats">
+                <button className={styles.addAgentBtn} onClick={() => void cleanAllConversations()} aria-label="Clean all chats">
+                  <Eraser size={16} />
                 </button>
               </Tooltip>
               <Tooltip label="Add agent">
@@ -2258,6 +2439,7 @@ export function AgentsPage() {
                           />
                           <span className={styles.sidebarGroupName}>Ungrouped</span>
                           <span className={styles.sidebarGroupCount}>{ungrouped.length}</span>
+                          <span style={{ width: 20, flexShrink: 0 }} />
                         </div>
                       )}
                       {(!showHeader || !isCollapsed) && ungrouped.map((agent) => renderAgentItem(agent))}
@@ -2302,6 +2484,21 @@ export function AgentsPage() {
                       Files
                     </button>
                   </div>
+                  <Tooltip label="Message queue">
+                    <button
+                      className={`${styles.iconBtn} ${queuePanelOpen ? styles.iconBtnActive : ''}`}
+                      onClick={() => {
+                        const next = !queuePanelOpen;
+                        setQueuePanelOpen(next);
+                        if (next && activeAgentId && activeConvId) {
+                          void fetchQueueItems(activeAgentId, activeConvId);
+                        }
+                      }}
+                      aria-label="Message queue"
+                    >
+                      <ListOrdered size={15} />
+                    </button>
+                  </Tooltip>
                   <Tooltip label="Agent settings">
                     <button
                       className={styles.iconBtn}
@@ -2387,24 +2584,117 @@ export function AgentsPage() {
                     </div>
                   ))}
 
-                  {/* Streaming bubble */}
-                  {streaming && streamText && (
+                  {/* Pending response bubble */}
+                  {streaming && (
                     <div className={`${styles.messageRow} ${styles.messageRowAgent}`}>
                       <div className={styles.messageContent}>
                         <div className={`${styles.messageBubble} ${styles.messageBubbleAgent} ${styles.streamingCursor}`}>
-                          <MarkdownContent>{streamText}</MarkdownContent>
+                          <span className={styles.streamingQueueInfo}>
+                            <Loader size={13} className={styles.spinIcon} />
+                            Thinking…
+                          </span>
                         </div>
                       </div>
                     </div>
                   )}
+                </div>
+              )}
 
-                  {streaming && !streamText && (
-                    <div className={`${styles.messageRow} ${styles.messageRowAgent}`}>
-                      <div className={styles.messageContent}>
-                        <div className={`${styles.messageBubble} ${styles.messageBubbleAgent} ${styles.streamingCursor}`}>
-                          &nbsp;
+              {/* Queue panel */}
+              {queueItems.length > 0 && (
+                <div className={styles.queuePanel}>
+                  <div className={styles.queuePanelHeader}>
+                    <button
+                      className={styles.queuePanelToggle}
+                      onClick={() => setQueuePanelOpen((v) => !v)}
+                    >
+                      <Clock size={13} />
+                      <span>{queueItems.length} message{queueItems.length === 1 ? '' : 's'} in queue</span>
+                      <ChevronRight
+                        size={14}
+                        className={`${styles.queuePanelChevron} ${queuePanelOpen ? styles.queuePanelChevronOpen : ''}`}
+                      />
+                    </button>
+                    <button
+                      className={styles.queueClearAllBtn}
+                      onClick={() => void handleClearQueue()}
+                      title="Clear all queued messages"
+                    >
+                      <Trash2 size={12} />
+                      Clear all
+                    </button>
+                  </div>
+                  {queuePanelOpen && (
+                    <div className={styles.queuePanelItems}>
+                      {queueItems.map((item, idx) => (
+                        <div key={item.id} className={styles.queueItem}>
+                          <span className={styles.queueItemIndex}>{idx + 1}</span>
+                          {editingQueueItemId === item.id ? (
+                            <div className={styles.queueItemEditWrap}>
+                              <textarea
+                                className={styles.queueItemEditInput}
+                                value={editingQueuePrompt}
+                                onChange={(e) => setEditingQueuePrompt(e.target.value)}
+                                rows={2}
+                                autoFocus
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Escape') {
+                                    setEditingQueueItemId(null);
+                                    setEditingQueuePrompt('');
+                                  }
+                                  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                                    void handleSaveQueueItem(item.id);
+                                  }
+                                }}
+                              />
+                              <div className={styles.queueItemEditActions}>
+                                <button
+                                  className={styles.queueItemSaveBtn}
+                                  onClick={() => void handleSaveQueueItem(item.id)}
+                                  title="Save"
+                                >
+                                  <Check size={13} />
+                                </button>
+                                <button
+                                  className={styles.queueItemCancelBtn}
+                                  onClick={() => {
+                                    setEditingQueueItemId(null);
+                                    setEditingQueuePrompt('');
+                                  }}
+                                  title="Cancel"
+                                >
+                                  <X size={13} />
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <>
+                              <span className={styles.queueItemPrompt} title={item.prompt}>
+                                {item.prompt}
+                              </span>
+                              <div className={styles.queueItemActions}>
+                                <button
+                                  className={styles.queueItemEditBtn}
+                                  onClick={() => {
+                                    setEditingQueueItemId(item.id);
+                                    setEditingQueuePrompt(item.prompt);
+                                  }}
+                                  title="Edit"
+                                >
+                                  <Pencil size={12} />
+                                </button>
+                                <button
+                                  className={styles.queueItemDeleteBtn}
+                                  onClick={() => void handleDeleteQueueItem(item.id)}
+                                  title="Remove from queue"
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              </div>
+                            </>
+                          )}
                         </div>
-                      </div>
+                      ))}
                     </div>
                   )}
                 </div>
@@ -2419,32 +2709,6 @@ export function AgentsPage() {
               >
                 {uploading && (
                   <div className={styles.uploadingIndicator}>Uploading image…</div>
-                )}
-                {queuedMessage && (
-                  <div className={styles.queuedMessageIndicator}>
-                    <span className={styles.queuedMessageText}>
-                      Queued{queuedMessageCount > 1 ? ` (${queuedMessageCount})` : ''}: {queuedMessage}
-                    </span>
-                    <button
-                      className={styles.queuedMessageCancel}
-                      onClick={() => {
-                        if (!activeQueueKey) return;
-                        setQueuedMessagesByConversation((prev) => {
-                          const queue = prev[activeQueueKey];
-                          if (!queue || queue.length === 0) return prev;
-                          if (queue.length > 1) {
-                            return { ...prev, [activeQueueKey]: queue.slice(1) };
-                          }
-                          const next = { ...prev };
-                          delete next[activeQueueKey];
-                          return next;
-                        });
-                      }}
-                      aria-label="Cancel queued message"
-                    >
-                      <X size={14} />
-                    </button>
-                  </div>
                 )}
                 {stagedImage && (
                   <div className={styles.stagedImagePreview}>
@@ -2479,9 +2743,11 @@ export function AgentsPage() {
                   <textarea
                     ref={inputRef}
                     className={styles.replyInput}
-                    placeholder={streaming ? 'Type to queue a message…' : stagedImage ? 'Add a caption… (optional)' : 'Type a message…'}
+                    placeholder={stagedImage ? 'Add a caption… (optional)' : streaming ? 'Type to queue a message…' : 'Type a message…'}
                     value={input}
-                    onChange={(e) => setInput(e.target.value)}
+                    onChange={(e) => {
+                      setInput(e.target.value);
+                    }}
                     onKeyDown={handleKeyDown}
                     onPaste={handlePaste}
                     rows={1}
@@ -2491,8 +2757,8 @@ export function AgentsPage() {
                     className={styles.sendBtn}
                     onClick={sendMessage}
                     disabled={uploading || (!input.trim() && !stagedImage)}
-                    aria-label={streaming ? 'Queue message' : 'Send message'}
-                    title={streaming ? 'Queue message — will send when agent finishes' : 'Send message'}
+                    aria-label="Send message"
+                    title="Send message"
                   >
                     <Send size={18} />
                   </button>

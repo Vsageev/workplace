@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Plus, FolderOpen, Trash2, X, Star, AlertTriangle } from 'lucide-react';
+import { Plus, FolderOpen, Trash2, X, Star } from 'lucide-react';
 import { PageHeader } from '../../layout';
 import { Button } from '../../ui';
 import { Modal } from '../../ui/Modal';
@@ -19,7 +19,7 @@ import { useDocumentTitle } from '../../hooks/useDocumentTitle';
 import { useDebounce } from '../../hooks/useDebounce';
 import { highlightMatch } from '../../components/SearchHighlight';
 
-type SortOption = 'name-asc' | 'name-desc' | 'created-desc' | 'created-asc' | 'progress-desc' | 'overdue-desc';
+type SortOption = 'name-asc' | 'name-desc' | 'created-desc' | 'created-asc';
 const SORT_STORAGE_KEY = 'collections-sort';
 
 interface Collection {
@@ -29,8 +29,6 @@ interface Collection {
   isGeneral?: boolean;
   createdAt: string;
   cardCount?: number;
-  completedCardCount?: number;
-  overdueCardCount?: number;
 }
 
 interface CollectionsResponse {
@@ -176,16 +174,6 @@ export function CollectionsListPage() {
       case 'created-asc':
         sorted.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
         break;
-      case 'progress-desc':
-        sorted.sort((a, b) => {
-          const aPct = a.cardCount ? (a.completedCardCount ?? 0) / a.cardCount : 0;
-          const bPct = b.cardCount ? (b.completedCardCount ?? 0) / b.cardCount : 0;
-          return bPct - aPct;
-        });
-        break;
-      case 'overdue-desc':
-        sorted.sort((a, b) => (b.overdueCardCount ?? 0) - (a.overdueCardCount ?? 0));
-        break;
     }
     return sorted;
   }, [collections, sort]);
@@ -261,8 +249,6 @@ export function CollectionsListPage() {
           <option value="created-asc">Oldest first</option>
           <option value="name-asc">Name A–Z</option>
           <option value="name-desc">Name Z–A</option>
-          <option value="progress-desc">Most progress first</option>
-          <option value="overdue-desc">Most overdue first</option>
         </select>
       </div>
 
@@ -313,27 +299,11 @@ export function CollectionsListPage() {
                 <div className={styles.folderMeta}>
                   {collection.cardCount !== undefined && (
                     <span className={styles.cardCount}>
-                      {collection.completedCardCount !== undefined && collection.cardCount > 0
-                        ? `${collection.completedCardCount}/${collection.cardCount} done`
-                        : `${collection.cardCount} ${collection.cardCount === 1 ? 'card' : 'cards'}`}
-                    </span>
-                  )}
-                  {(collection.overdueCardCount ?? 0) > 0 && (
-                    <span className={styles.overdueCount} title={`${collection.overdueCardCount} overdue card${collection.overdueCardCount === 1 ? '' : 's'}`}>
-                      <AlertTriangle size={11} />
-                      {collection.overdueCardCount} overdue
+                      {collection.cardCount} {collection.cardCount === 1 ? 'card' : 'cards'}
                     </span>
                   )}
                   <span>Created {new Date(collection.createdAt).toLocaleDateString()}</span>
                 </div>
-                {collection.cardCount !== undefined && collection.cardCount > 0 && collection.completedCardCount !== undefined && (
-                  <div className={styles.progressBar}>
-                    <div
-                      className={styles.progressFill}
-                      style={{ width: `${Math.round((collection.completedCardCount / collection.cardCount) * 100)}%` }}
-                    />
-                  </div>
-                )}
               </Link>
               <div className={styles.cardActions}>
                 <button

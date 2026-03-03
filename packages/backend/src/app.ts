@@ -40,10 +40,11 @@ import { workspaceRoutes } from './routes/workspaces.js';
 import { agentRoutes } from './routes/agents.js';
 import { agentChatRoutes } from './routes/agent-chat.js';
 import { agentRunRoutes } from './routes/agent-runs.js';
-import { initAllCronJobs } from './services/agent-cron.js';
+import { settingsRoutes, initRateLimiterFromSettings } from './routes/settings.js';
+import { initAllCronJobs, shutdownAgentCronJobs } from './services/agent-cron.js';
 import { initAllBoardCronJobs } from './services/board-cron.js';
 import { reconcileRunsOnStartup, cleanupOldRunLogs } from './services/agent-runs.js';
-import { reattachRunningProcess, RUNS_DIR } from './services/agent-chat.js';
+import { initializeAgentChatQueue, reattachRunningProcess, RUNS_DIR } from './services/agent-chat.js';
 import { ensureAgentServiceAccounts } from './services/agents.js';
 import { consolidateGeneralCollections } from './services/collections.js';
 
@@ -125,6 +126,10 @@ export async function buildApp() {
   await app.register(agentRoutes);
   await app.register(agentChatRoutes);
   await app.register(agentRunRoutes);
+  await app.register(settingsRoutes);
+
+  // Apply persisted rate-limit settings to the in-memory limiter
+  initRateLimiterFromSettings();
 
   // Initialize agent cron jobs
   initAllCronJobs();
@@ -132,12 +137,18 @@ export async function buildApp() {
   // Initialize board cron template jobs
   initAllBoardCronJobs();
 
+  // Gracefully stop cron schedulers during shutdown
+  app.addHook('onClose', () => {
+    shutdownAgentCronJobs();
+  });
+
   // Ensure agent-runs log directory exists
   fs.mkdirSync(RUNS_DIR, { recursive: true });
 
   // Clean old run logs, then reconcile running records (re-attach or mark dead)
   cleanupOldRunLogs();
   reconcileRunsOnStartup((run) => reattachRunningProcess(run));
+  initializeAgentChatQueue({ preserveActiveProcessing: true });
 
   return app;
 }

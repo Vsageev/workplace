@@ -19,8 +19,7 @@ import { runCollectionAgentBatch } from '../services/collection-batch.js';
 const agentBatchCardFiltersSchema = z.object({
   search: z.string().optional(),
   assigneeId: z.string().optional(),
-  completed: z.boolean().optional(),
-  priority: z.enum(['high', 'medium', 'low']).optional(),
+
   tagId: z.string().optional(),
 });
 

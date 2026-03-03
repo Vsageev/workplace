@@ -139,10 +139,10 @@ export function verifyWebhookSecret(headerSecret: string | undefined, botSecret:
 // Message type detection & attachment extraction
 // ---------------------------------------------------------------------------
 
-type CrmMessageType = 'text' | 'image' | 'video' | 'document' | 'voice' | 'sticker' | 'location';
+type MessageType = 'text' | 'image' | 'video' | 'document' | 'voice' | 'sticker' | 'location';
 
 interface ParsedMessage {
-  type: CrmMessageType;
+  type: MessageType;
   content: string | null;
   attachments: Record<string, unknown>[] | null;
   metadata: Record<string, unknown>;

@@ -53,6 +53,8 @@ const envSchema = z.object({
   RATE_LIMIT_AUTH_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
   RATE_LIMIT_API_MAX: z.coerce.number().int().positive().default(10000),
   RATE_LIMIT_API_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
+  RATE_LIMIT_AGENT_PROMPT_MAX: z.coerce.number().int().positive().default(10),
+  RATE_LIMIT_AGENT_PROMPT_WINDOW_S: z.coerce.number().int().positive().default(60),
 
   // Email sync
   EMAIL_SYNC_CRON: z.string().default('*/2 * * * *'),

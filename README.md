@@ -14,7 +14,7 @@ A workspace platform with boards, cards, folders, unified inbox, Telegram integr
 ### 1. Clone and install
 
 ```bash
-git clone <repo-url> && cd replace_prototype
+git clone <repo-url> && cd workplace
 pnpm install
 ```
 
@@ -58,7 +58,7 @@ packages/
   backend/     Fastify API server, JSON file store
   frontend/    React 19 SPA, Vite, React Router
   shared/      Shared TypeScript types
-  widget/      Embeddable lead capture form & chat widgets
+  widget/      Embeddable web form & chat widgets
 scripts/       Dev utility scripts (cert generation)
 docs/          Design system, API guidelines
 ```
@@ -94,14 +94,14 @@ Standalone JavaScript widgets embedded on external websites via a `<script>` tag
 
 Two widgets:
 
-- **`crm-form.js`** — lead capture form. Fetches form config from the backend by ID, renders fields dynamically, submits data back. Auto-initializes from `data-crm-form` / `data-crm-api-url` HTML attributes, or via `CrmForm.init()`.
-- **`crm-chat.js`** — embedded chat widget for real-time conversations with visitors.
+- **`ws-form.js`** — embeddable web form. Fetches form config from the backend by ID, renders fields dynamically, submits data back. Auto-initializes from `data-ws-form` / `data-ws-api-url` HTML attributes, or via `WsForm.init()`.
+- **`ws-chat.js`** — embedded chat widget for real-time conversations with visitors.
 
 Usage example:
 
 ```html
-<div data-crm-form="FORM_ID" data-crm-api-url="https://your-api.example.com"></div>
-<script src="https://your-cdn.example.com/crm-form.js"></script>
+<div data-ws-form="FORM_ID" data-ws-api-url="https://your-api.example.com"></div>
+<script src="https://your-cdn.example.com/ws-form.js"></script>
 ```
 
 ### `scripts/`
@@ -132,7 +132,7 @@ Usage example:
 - **Telegram** — bot integration, media support, webhook handling
 - **AI Agents** — configurable agents with preset system, file workspaces, and chat interface
 - **Connectors** — external service integrations
-- **Lead Capture** — embeddable web forms and chat widgets
+- **Embeddable Widgets** — web forms and chat widgets for external sites
 - **Webhooks** — webhook subscriptions with delivery tracking
 - **Storage** — file upload and media management
 - **Security** — JWT auth, API key scoped permissions, 2FA (TOTP), rate limiting, audit logging, backups

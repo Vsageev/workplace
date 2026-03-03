@@ -87,64 +87,6 @@
   color: var(--color-text-secondary);
 }
 
-/* ── Due date ────────────────────────────────────── */
-
-.dueDateField {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: 7px 10px;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  transition: border-color var(--transition-fast);
-}
-
-.dueDateField:focus-within {
-  border-color: var(--color-primary, #3B82F6);
-}
-
-.dueDateIcon {
-  color: var(--color-text-tertiary);
-  flex-shrink: 0;
-}
-
-.dueDateInput {
-  flex: 1;
-  background: none;
-  border: none;
-  outline: none;
-  font-size: 13px;
-  color: var(--color-text);
-  font-family: inherit;
-  min-width: 0;
-}
-
-.dueDateInput::-webkit-calendar-picker-indicator {
-  opacity: 0.5;
-  cursor: pointer;
-}
-
-.dueDateClear {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  border: none;
-  background: none;
-  border-radius: var(--radius-sm, 4px);
-  color: var(--color-text-tertiary);
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: all var(--transition-fast);
-}
-
-.dueDateClear:hover {
-  background: var(--color-border);
-  color: var(--color-text-secondary);
-}
-
 /* ── Assignee select ─────────────────────────────── */
 
 .assigneeSelect {

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -22,7 +22,6 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   FileText,
-  Clock,
   Bell,
 } from 'lucide-react';
 import { useAuth } from '../stores/useAuth';
@@ -34,7 +33,6 @@ import { toast } from '../stores/toast';
 import { useUnreadNotificationCount } from '../stores/toast';
 import { useConfirm } from '../hooks/useConfirm';
 import { useFavorites } from '../hooks/useFavorites';
-import { getRecentVisits, type RecentVisit } from '../lib/recent-visits';
 import { NotificationPanel } from '../components/NotificationPanel';
 import styles from './Sidebar.module.css';
 
@@ -43,40 +41,18 @@ interface SidebarProps {
   onOpenCommandPalette?: () => void;
   onQuickCreateCard?: () => void;
   unreadCount?: number;
-  overdueCardsCount?: number;
   activeRunsCount?: number;
   collapsed?: boolean;
   onToggleCollapse?: () => void;
 }
 
-export function Sidebar({ onNavigate, onOpenCommandPalette, onQuickCreateCard, unreadCount = 0, overdueCardsCount = 0, activeRunsCount = 0, collapsed = false, onToggleCollapse }: SidebarProps) {
+export function Sidebar({ onNavigate, onOpenCommandPalette, onQuickCreateCard, unreadCount = 0, activeRunsCount = 0, collapsed = false, onToggleCollapse }: SidebarProps) {
   const { user, logout } = useAuth();
   const { workspaces, activeWorkspace, activeWorkspaceId, setActiveWorkspace, refetchWorkspaces } = useWorkspace();
   const { confirm, dialog: confirmDialog } = useConfirm();
   const { favorites, removeFavorite } = useFavorites();
   const location = useLocation();
 
-  const [recentVisits, setRecentVisits] = useState<RecentVisit[]>([]);
-  const [recentCollapsed, setRecentCollapsed] = useState(
-    () => localStorage.getItem('sidebar-recent-collapsed') === 'true',
-  );
-
-  // Refresh recent visits on route change
-  const refreshRecents = useCallback(() => {
-    setRecentVisits(getRecentVisits().slice(0, 5));
-  }, []);
-
-  useEffect(() => {
-    refreshRecents();
-  }, [location.pathname, refreshRecents]);
-
-  const toggleRecentCollapsed = useCallback(() => {
-    setRecentCollapsed((prev) => {
-      const next = !prev;
-      localStorage.setItem('sidebar-recent-collapsed', String(next));
-      return next;
-    });
-  }, []);
 
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [showModal, setShowModal] = useState(false);
@@ -87,9 +63,16 @@ export function Sidebar({ onNavigate, onOpenCommandPalette, onQuickCreateCard, u
   const collectionsTo = '/collections';
   const boardsTo = '/boards';
 
-  const navItems = [
+  const navItems: Array<{
+    to: string;
+    icon: typeof LayoutDashboard;
+    label: string;
+    badge?: number;
+    badgePulsing?: boolean;
+    badgeDanger?: boolean;
+  }> = [
     { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
-    { to: '/my-cards', icon: CheckSquare, label: 'My Cards', badge: overdueCardsCount, badgeDanger: true },
+    { to: '/my-cards', icon: CheckSquare, label: 'My Cards' },
     { to: collectionsTo, icon: FolderOpen, label: 'Collections' },
     { to: boardsTo, icon: Kanban, label: 'Boards' },
     { to: '/inbox', icon: MessageSquare, label: 'Inbox', badge: unreadCount },
@@ -143,13 +126,39 @@ export function Sidebar({ onNavigate, onOpenCommandPalette, onQuickCreateCard, u
     <aside className={`${styles.sidebar}${collapsed ? ` ${styles.sidebarCollapsed}` : ''}`}>
       {confirmDialog}
       {collapsed ? (
-        <Tooltip label={activeWorkspace?.name ?? 'Workplace'} position="right">
-          <div className={styles.logoCollapsed}>
-            {(activeWorkspace?.name ?? 'W')[0]}
-          </div>
-        </Tooltip>
+        <>
+          <Tooltip label={activeWorkspace?.name ?? 'Workplace'} position="right">
+            <div className={styles.logoCollapsed}>
+              {(activeWorkspace?.name ?? 'W')[0]}
+            </div>
+          </Tooltip>
+          {onToggleCollapse && (
+            <Tooltip label="Expand sidebar" position="right">
+              <button
+                className={styles.collapseToggle}
+                onClick={onToggleCollapse}
+                aria-label="Expand sidebar"
+              >
+                <PanelLeftOpen size={16} />
+              </button>
+            </Tooltip>
+          )}
+        </>
       ) : (
-        <div className={styles.logo}>{activeWorkspace?.name ?? 'Workplace'}</div>
+        <div className={styles.logoRow}>
+          <div className={styles.logo}>{activeWorkspace?.name ?? 'Workplace'}</div>
+          {onToggleCollapse && (
+            <Tooltip label="Collapse sidebar" position="bottom">
+              <button
+                className={styles.collapseToggle}
+                onClick={onToggleCollapse}
+                aria-label="Collapse sidebar"
+              >
+                <PanelLeftClose size={16} />
+              </button>
+            </Tooltip>
+          )}
+        </div>
       )}
 
       {/* Workspace switcher */}
@@ -236,27 +245,6 @@ export function Sidebar({ onNavigate, onOpenCommandPalette, onQuickCreateCard, u
         )
       )}
 
-      {onQuickCreateCard && (
-        collapsed ? (
-          <Tooltip label="New Card" position="right">
-            <button
-              className={styles.collapsedCreateBtn}
-              onClick={onQuickCreateCard}
-            >
-              <Plus size={18} />
-            </button>
-          </Tooltip>
-        ) : (
-          <button
-            className={styles.quickCreateButton}
-            onClick={onQuickCreateCard}
-          >
-            <Plus size={14} />
-            <span>New Card</span>
-            <kbd className={styles.searchKbd}>C</kbd>
-          </button>
-        )
-      )}
 
       <div className={styles.scrollArea}>
       {favorites.length > 0 && !collapsed && (
@@ -290,33 +278,6 @@ export function Sidebar({ onNavigate, onOpenCommandPalette, onQuickCreateCard, u
         </div>
       )}
 
-      {recentVisits.length > 0 && !collapsed && (
-        <div className={styles.recentSection}>
-          <button
-            className={styles.recentHeader}
-            onClick={toggleRecentCollapsed}
-            aria-expanded={!recentCollapsed}
-          >
-            <Clock size={12} />
-            <span>Recent</span>
-            <ChevronDown
-              size={12}
-              className={`${styles.recentChevron}${recentCollapsed ? ` ${styles.recentChevronCollapsed}` : ''}`}
-            />
-          </button>
-          {!recentCollapsed && recentVisits.map((visit) => (
-            <NavLink
-              key={`${visit.type}-${visit.id}`}
-              to={visit.path}
-              className={styles.recentItem}
-              onClick={onNavigate}
-            >
-              {visit.type === 'board' ? <Kanban size={14} /> : visit.type === 'card' ? <FileText size={14} /> : <FolderOpen size={14} />}
-              <span className={styles.recentName}>{visit.name}</span>
-            </NavLink>
-          ))}
-        </div>
-      )}
 
       {favorites.length > 0 && collapsed && (
         <div className={styles.collapsedFavoritesSection}>
@@ -333,7 +294,7 @@ export function Sidebar({ onNavigate, onOpenCommandPalette, onQuickCreateCard, u
           ))}
         </div>
       )}
-      {(favorites.length > 0 || recentVisits.length > 0) && collapsed && (
+      {favorites.length > 0 && collapsed && (
         <div className={styles.collapsedFavoritesDivider} />
       )}
 
@@ -429,36 +390,6 @@ export function Sidebar({ onNavigate, onOpenCommandPalette, onQuickCreateCard, u
             <Settings size={18} />
             <span>Settings</span>
           </NavLink>
-        )}
-
-        {collapsed ? (
-          <>
-            {onToggleCollapse && (
-              <Tooltip label="Expand sidebar" position="right">
-                <button
-                  className={styles.collapseToggle}
-                  onClick={onToggleCollapse}
-                  aria-label="Expand sidebar"
-                >
-                  <PanelLeftOpen size={16} />
-                </button>
-              </Tooltip>
-            )}
-          </>
-        ) : (
-          <>
-            {onToggleCollapse && (
-              <Tooltip label="Collapse sidebar" position="right">
-                <button
-                  className={styles.collapseToggle}
-                  onClick={onToggleCollapse}
-                  aria-label="Collapse sidebar"
-                >
-                  <PanelLeftClose size={16} />
-                </button>
-              </Tooltip>
-            )}
-          </>
         )}
 
         {user && (

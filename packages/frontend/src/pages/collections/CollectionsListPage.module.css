@@ -130,14 +130,6 @@
   font-weight: 500;
 }
 
-.overdueCount {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  color: var(--color-error);
-  font-weight: 500;
-}
-
 .progressBar {
   height: 3px;
   background: var(--color-border-subtle);

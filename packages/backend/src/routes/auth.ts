@@ -24,15 +24,17 @@ import { authRateLimitConfig } from '../plugins/rate-limit.js';
 import { validatePasswordStrength } from '../utils/password-policy.js';
 import { ApiError } from '../utils/api-errors.js';
 
+const normalizedEmail = z.string().trim().toLowerCase().email();
+
 const registerBody = z.object({
-  email: z.email(),
+  email: normalizedEmail,
   password: z.string().min(8).max(128),
   firstName: z.string().min(1).max(100),
   lastName: z.string().min(1).max(100),
 });
 
 const loginBody = z.object({
-  email: z.email(),
+  email: normalizedEmail,
   password: z.string().min(1),
 });
 
@@ -66,7 +68,10 @@ export async function authRoutes(app: FastifyInstance) {
       throw ApiError.badRequest('weak_password', passwordCheck.errors.join('. '), 'Password must be at least 8 characters with uppercase, lowercase, number, and special character');
     }
 
-    const existing = store.findOne('users', (u) => u.email === email.toLowerCase());
+    const existing = store.findOne(
+      'users',
+      (u) => typeof u.email === 'string' && u.email.toLowerCase() === email,
+    );
 
     if (existing) {
       throw ApiError.conflict('duplicate_email', 'User with this email already exists', 'Use POST /api/auth/login to sign in instead');
@@ -75,7 +80,7 @@ export async function authRoutes(app: FastifyInstance) {
     const passwordHash = await hashPassword(password);
 
     const user = store.insert('users', {
-      email: email.toLowerCase(),
+      email,
       passwordHash,
       firstName,
       lastName,
@@ -103,7 +108,10 @@ export async function authRoutes(app: FastifyInstance) {
   typedApp.post('/api/auth/login', { config: { rateLimit: authRateLimitConfig() }, schema: { tags: ['Auth'], summary: 'Login', body: loginBody } }, async (request, reply) => {
     const { email, password } = request.body;
 
-    const user = store.findOne('users', (u) => u.email === email.toLowerCase());
+    const user = store.findOne(
+      'users',
+      (u) => typeof u.email === 'string' && u.email.toLowerCase() === email,
+    );
 
     if (!user) {
       throw ApiError.unauthorized('invalid_credentials', 'Invalid email or password');

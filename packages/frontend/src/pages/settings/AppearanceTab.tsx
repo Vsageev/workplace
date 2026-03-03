@@ -1,21 +1,13 @@
 import { useState } from 'react';
-import { PanelLeftClose, LayoutList, CheckSquare } from 'lucide-react';
+import { PanelLeftClose, CheckSquare } from 'lucide-react';
 import { useTheme } from '../../hooks/useTheme';
 import styles from './AppearanceTab.module.css';
 
 type ThemeOption = 'light' | 'dark' | 'system';
-type GroupByOption = 'dueDate' | 'priority' | 'none';
-
-const THEME_OPTIONS: { value: ThemeOption; label: string; description: string }[] = [
-  { value: 'light', label: 'Light', description: 'Clean white interface for bright environments' },
-  { value: 'dark', label: 'Dark', description: 'Easy on the eyes in low-light conditions' },
-  { value: 'system', label: 'System', description: 'Automatically matches your OS preference' },
-];
-
-const GROUP_BY_OPTIONS: { value: GroupByOption; label: string }[] = [
-  { value: 'dueDate', label: 'Due date' },
-  { value: 'priority', label: 'Priority' },
-  { value: 'none', label: 'None' },
+const THEME_OPTIONS: { value: ThemeOption; label: string }[] = [
+  { value: 'light', label: 'Light' },
+  { value: 'dark', label: 'Dark' },
+  { value: 'system', label: 'System' },
 ];
 
 function Toggle({ checked, onChange, id }: { checked: boolean; onChange: (val: boolean) => void; id: string }) {
@@ -32,15 +24,63 @@ function Toggle({ checked, onChange, id }: { checked: boolean; onChange: (val: b
   );
 }
 
+function WindowChrome({ dotColor }: { dotColor: 'light' | 'dark' }) {
+  const c = dotColor === 'light'
+    ? ['#ff5f57', '#febc2e', '#28c840']
+    : ['#ff5f57aa', '#febc2eaa', '#28c840aa'];
+  return (
+    <div className={styles.windowChrome}>
+      <span style={{ background: c[0] }} />
+      <span style={{ background: c[1] }} />
+      <span style={{ background: c[2] }} />
+    </div>
+  );
+}
+
+function ListItem({ variant }: { variant: 'light' | 'dark' }) {
+  return (
+    <div className={`${styles.listItem} ${styles[`listItem_${variant}`]}`}>
+      <div className={styles.listItemDot} />
+      <div className={styles.listItemLines}>
+        <div className={styles.listItemTitle} />
+        <div className={styles.listItemSub} />
+      </div>
+    </div>
+  );
+}
+
+function PreviewScene({ variant }: { variant: 'light' | 'dark' }) {
+  return (
+    <div className={`${styles.scene} ${styles[`scene_${variant}`]}`}>
+      <WindowChrome dotColor={variant} />
+      <div className={styles.sceneLayout}>
+        <div className={styles.sceneSidebar}>
+          <div className={styles.sidebarBlock} />
+          <div className={styles.sidebarLine} />
+          <div className={`${styles.sidebarLine} ${styles.sidebarLineActive}`} />
+          <div className={styles.sidebarLine} />
+        </div>
+        <div className={styles.sceneContent}>
+          <div className={styles.contentHeader}>
+            <div className={styles.contentHeaderTitle} />
+            <div className={styles.contentHeaderBtn} />
+          </div>
+          <div className={styles.contentBody}>
+            <ListItem variant={variant} />
+            <ListItem variant={variant} />
+            <ListItem variant={variant} />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function AppearanceTab() {
   const { theme, setTheme } = useTheme();
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
     () => localStorage.getItem('sidebar-collapsed') === 'true',
-  );
-
-  const [myCardsGroupBy, setMyCardsGroupBy] = useState<GroupByOption>(
-    () => (localStorage.getItem('my-cards-page-group-by') as GroupByOption) || 'dueDate',
   );
 
   const [myCardsHideCompleted, setMyCardsHideCompleted] = useState(
@@ -50,13 +90,7 @@ export function AppearanceTab() {
   function handleSidebarCollapsed(val: boolean) {
     setSidebarCollapsed(val);
     localStorage.setItem('sidebar-collapsed', String(val));
-    // Apply to current session immediately
     window.dispatchEvent(new CustomEvent('sidebar-preference-change', { detail: { collapsed: val } }));
-  }
-
-  function handleMyCardsGroupBy(val: GroupByOption) {
-    setMyCardsGroupBy(val);
-    localStorage.setItem('my-cards-page-group-by', val);
   }
 
   function handleMyCardsHideCompleted(val: boolean) {
@@ -77,26 +111,25 @@ export function AppearanceTab() {
             return (
               <button
                 key={opt.value}
-                className={`${styles.themeOption}${isActive ? ` ${styles.themeOptionActive}` : ''}`}
+                className={`${styles.themeCard}${isActive ? ` ${styles.themeCardActive}` : ''}`}
                 onClick={() => setTheme(opt.value)}
                 aria-pressed={isActive}
               >
-                <div className={`${styles.themePreview} ${styles[`themePreview${opt.value.charAt(0).toUpperCase() + opt.value.slice(1)}`]}`}>
-                  <div className={styles.themePreviewSidebar} />
-                  <div className={styles.themePreviewContent}>
-                    <div className={styles.themePreviewLine} />
-                    <div className={`${styles.themePreviewLine} ${styles.themePreviewLineShort}`} />
-                  </div>
+                <div className={styles.themePreview}>
+                  {opt.value === 'system' ? (
+                    <div className={styles.systemSplit}>
+                      <div className={styles.systemHalf}>
+                        <PreviewScene variant="light" />
+                      </div>
+                      <div className={styles.systemHalf}>
+                        <PreviewScene variant="dark" />
+                      </div>
+                    </div>
+                  ) : (
+                    <PreviewScene variant={opt.value} />
+                  )}
                 </div>
-                <div className={styles.themeOptionFooter}>
-                  <div className={styles.themeOptionContent}>
-                    <div className={styles.themeOptionLabel}>{opt.label}</div>
-                    <div className={styles.themeOptionDesc}>{opt.description}</div>
-                  </div>
-                  <div className={styles.themeRadio}>
-                    <div className={styles.themeRadioDot} />
-                  </div>
-                </div>
+                <span className={styles.themeLabel}>{opt.label}</span>
               </button>
             );
           })}
@@ -137,23 +170,6 @@ export function AppearanceTab() {
               <span className={styles.prefLabelDesc}>Focus on what's left to do; completed cards are hidden on load</span>
             </label>
             <Toggle id="my-cards-hide-completed-pref" checked={myCardsHideCompleted} onChange={handleMyCardsHideCompleted} />
-          </div>
-          <div className={styles.prefRow}>
-            <LayoutList size={16} className={styles.prefIcon} />
-            <label className={styles.prefLabel} htmlFor="my-cards-group-by-pref">
-              <span className={styles.prefLabelText}>Default grouping</span>
-              <span className={styles.prefLabelDesc}>How cards are grouped when you open My Cards</span>
-            </label>
-            <select
-              id="my-cards-group-by-pref"
-              className={styles.prefSelect}
-              value={myCardsGroupBy}
-              onChange={(e) => handleMyCardsGroupBy(e.target.value as GroupByOption)}
-            >
-              {GROUP_BY_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
           </div>
         </div>
       </div>

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { Menu, X, ChevronLeft, MessageSquare } from 'lucide-react';
-import { Tooltip, CreateCardModal } from '../ui';
+import { CreateCardModal } from '../ui';
 import type { CreateCardData } from '../ui/CreateCardModal';
 import { WorkspaceProvider } from '../stores/WorkspaceContext';
 import { CommandPalette } from '../components/CommandPalette';
@@ -11,7 +11,6 @@ import { NavigationProgress } from '../components/NavigationProgress';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import { useUnreadBadgeTitle } from '../hooks/useDocumentTitle';
 import { useUnreadCount } from '../hooks/useUnreadCount';
-import { useOverdueCardsCount } from '../hooks/useOverdueCardsCount';
 import { useActiveRunsCount } from '../hooks/useActiveRunsCount';
 import { api } from '../lib/api';
 import { toast } from '../stores/toast';
@@ -29,6 +28,11 @@ const PAGE_TITLES: Record<string, string> = {
   '/storage': 'Storage',
   '/settings': 'Settings',
 };
+const MOBILE_BREAKPOINT_QUERY = '(max-width: 1024px)';
+
+function isMobileViewport(): boolean {
+  return window.matchMedia(MOBILE_BREAKPOINT_QUERY).matches;
+}
 
 function getMobileHeaderInfo(pathname: string): { title: string; canGoBack: boolean } {
   // Exact match first
@@ -49,11 +53,11 @@ export function AppLayout() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
     () => localStorage.getItem('sidebar-collapsed') === 'true',
   );
+  const [isMobile, setIsMobile] = useState(isMobileViewport);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [quickCreateOpen, setQuickCreateOpen] = useState(false);
   const unreadCount = useUnreadCount();
-  const overdueCardsCount = useOverdueCardsCount();
   const activeRunsCount = useActiveRunsCount();
   useUnreadBadgeTitle(unreadCount ?? 0);
 
@@ -76,26 +80,6 @@ export function AppLayout() {
       );
     }
   }, [unreadCount, location.pathname, navigate]);
-
-  // Show a warning toast when new overdue cards appear during the session.
-  // Same null-baseline pattern as inbox: first resolved value is the baseline (no toast),
-  // only subsequent increases in the poll cycle trigger a notification.
-  const prevOverdueRef = useRef<number | null>(null);
-  useEffect(() => {
-    // overdueCardsCount is null until the first fetch resolves — skip until we have a real value
-    if (overdueCardsCount === null) return;
-    const prev = prevOverdueRef.current;
-    prevOverdueRef.current = overdueCardsCount;
-    // prev === null means this is the initial baseline — don't notify on page load
-    if (prev === null || location.pathname === '/my-cards') return;
-    if (overdueCardsCount > prev) {
-      const newCount = overdueCardsCount - prev;
-      toast.warning(
-        newCount === 1 ? '1 card is now overdue' : `${newCount} cards are now overdue`,
-        { action: { label: 'View', onClick: () => navigate('/my-cards') } },
-      );
-    }
-  }, [overdueCardsCount, location.pathname, navigate]);
 
   // Notify when agent runs complete (count drops from a known positive value to lower)
   const prevActiveRunsRef = useRef<number | null>(null);
@@ -121,11 +105,32 @@ export function AppLayout() {
   }, [activeRunsCount, location.pathname, navigate]);
 
   const toggleSidebarCollapse = useCallback(() => {
+    if (isMobile) return;
     setSidebarCollapsed((prev) => {
       const next = !prev;
       localStorage.setItem('sidebar-collapsed', String(next));
       return next;
     });
+  }, [isMobile]);
+
+  // Keep layout mode in sync with CSS media query and close any transient mobile drawer state
+  // when crossing breakpoints.
+  useEffect(() => {
+    const media = window.matchMedia(MOBILE_BREAKPOINT_QUERY);
+
+    const syncViewport = (mobile: boolean) => {
+      setIsMobile(mobile);
+      setSidebarOpen(false);
+    };
+
+    syncViewport(media.matches);
+
+    const handleChange = (event: MediaQueryListEvent) => {
+      syncViewport(event.matches);
+    };
+
+    media.addEventListener('change', handleChange);
+    return () => media.removeEventListener('change', handleChange);
   }, []);
 
   const mobileHeader = useMemo(() => getMobileHeaderInfo(location.pathname), [location.pathname]);
@@ -133,15 +138,13 @@ export function AppLayout() {
   useKeyboardShortcuts({
     onOpenPalette: useCallback(() => setPaletteOpen(true), []),
     onOpenShortcuts: useCallback(() => setShortcutsOpen(true), []),
-    onQuickCreateCard: useCallback(() => setQuickCreateOpen(true), []),
-    onToggleSidebar: toggleSidebarCollapse,
+    onToggleSidebar: isMobile ? undefined : toggleSidebarCollapse,
   });
+
+  const isSidebarCollapsed = sidebarCollapsed && !isMobile;
 
   const handleQuickCreate = useCallback(async (data: CreateCardData) => {
     if (!data.collectionId) return;
-    const customFields: Record<string, unknown> = {};
-    if (data.dueDate) customFields.dueDate = data.dueDate;
-    if (data.priority) customFields.priority = data.priority;
     const card = await api<{ id: string }>('/cards', {
       method: 'POST',
       body: JSON.stringify({
@@ -149,7 +152,6 @@ export function AppLayout() {
         name: data.name,
         description: data.description,
         assigneeId: data.assigneeId,
-        ...(Object.keys(customFields).length > 0 ? { customFields } : {}),
       }),
     });
 
@@ -264,14 +266,13 @@ export function AppLayout() {
             onOpenCommandPalette={() => setPaletteOpen(true)}
             onQuickCreateCard={() => setQuickCreateOpen(true)}
             unreadCount={unreadCount ?? 0}
-            overdueCardsCount={overdueCardsCount ?? 0}
             activeRunsCount={activeRunsCount ?? 0}
-            collapsed={sidebarCollapsed}
-            onToggleCollapse={toggleSidebarCollapse}
+            collapsed={isSidebarCollapsed}
+            onToggleCollapse={isMobile ? undefined : toggleSidebarCollapse}
           />
         </div>
 
-        <main className={`${styles.main}${sidebarCollapsed ? ` ${styles.mainCollapsed}` : ''}`}>
+        <main className={`${styles.main}${isSidebarCollapsed ? ` ${styles.mainCollapsed}` : ''}`}>
           <Outlet />
         </main>
 

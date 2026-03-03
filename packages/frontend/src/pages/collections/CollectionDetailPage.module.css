@@ -230,62 +230,6 @@
   gap: 5px;
 }
 
-.dueDateFilters {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  flex-wrap: wrap;
-}
-
-.dueDateFilterChip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 10px;
-  border-radius: var(--radius-pill, 999px);
-  font-size: 12px;
-  font-weight: 500;
-  border: 1.5px solid var(--color-border);
-  background: transparent;
-  color: var(--color-text-secondary);
-  cursor: pointer;
-  transition: all var(--transition-fast);
-  line-height: 1.6;
-  white-space: nowrap;
-}
-
-.dueDateFilterChip:hover {
-  border-color: var(--color-text-secondary);
-  color: var(--color-text);
-  background: var(--color-surface);
-}
-
-.dueDateFilterChipActive {
-  background: var(--color-link);
-  border-color: var(--color-link);
-  color: #fff;
-}
-
-.dueDateFilterChipActive:hover {
-  opacity: 0.85;
-  background: var(--color-link);
-  border-color: var(--color-link);
-  color: #fff;
-}
-
-.dueDateFilterChipDanger {
-  background: var(--color-error, #ef4444);
-  border-color: var(--color-error, #ef4444);
-  color: #fff;
-}
-
-.dueDateFilterChipDanger:hover {
-  opacity: 0.85;
-  background: var(--color-error, #ef4444);
-  border-color: var(--color-error, #ef4444);
-  color: #fff;
-}
-
 .priorityFilters {
   display: flex;
   align-items: center;
@@ -383,236 +327,6 @@
   pointer-events: none;
 }
 
-/* ── Bulk selection bar ───────────────────────────── */
-.bulkBar {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: 8px 12px;
-  background: var(--color-link);
-  border-radius: var(--radius-md);
-  animation: bulkBarIn 150ms ease-out;
-}
-
-@keyframes bulkBarIn {
-  from { opacity: 0; transform: translateY(-4px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-.bulkSelectAll {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: rgba(255, 255, 255, 0.15);
-  color: #fff;
-  cursor: pointer;
-  padding: 0;
-  flex-shrink: 0;
-  transition: background var(--transition-fast);
-}
-
-.bulkSelectAll:hover {
-  background: rgba(255, 255, 255, 0.25);
-}
-
-.bulkCount {
-  font-size: 14px;
-  font-weight: 600;
-  color: #fff;
-  white-space: nowrap;
-}
-
-.bulkActions {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin-left: auto;
-}
-
-.bulkDeleteBtn {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 6px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  border-radius: var(--radius-md);
-  background: rgba(239, 68, 68, 0.9);
-  color: #fff;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all var(--transition-fast);
-}
-
-.bulkDeleteBtn:hover:not(:disabled) {
-  background: #ef4444;
-  border-color: rgba(255, 255, 255, 0.4);
-}
-
-.bulkDeleteBtn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.bulkClearBtn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 6px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: var(--radius-md);
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all var(--transition-fast);
-}
-
-.bulkClearBtn:hover {
-  background: rgba(255, 255, 255, 0.2);
-  border-color: rgba(255, 255, 255, 0.3);
-}
-
-/* ── Bulk assign ──────────────────────────────────── */
-.bulkAssignWrap {
-  position: relative;
-}
-
-.bulkAssignBtn {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 6px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  border-radius: var(--radius-md);
-  background: rgba(255, 255, 255, 0.15);
-  color: #fff;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all var(--transition-fast);
-}
-
-.bulkAssignBtn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.25);
-  border-color: rgba(255, 255, 255, 0.4);
-}
-
-.bulkAssignBtn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.bulkAssignDropdown {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
-  z-index: 200;
-  min-width: 180px;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
-  padding: 4px;
-  animation: bulkBarIn 120ms ease-out;
-}
-
-.bulkAssignGroup {
-  padding: 4px 8px 2px;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--color-text-tertiary);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.bulkAssignOption {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 6px 8px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--color-text-primary);
-  font-size: 13px;
-  cursor: pointer;
-  text-align: left;
-  transition: background var(--transition-fast);
-}
-
-.bulkAssignOption:hover {
-  background: var(--color-hover);
-}
-
-.bulkAssignDivider {
-  height: 1px;
-  background: var(--color-border);
-  margin: 4px 0;
-}
-
-.bulkAssignLoading {
-  padding: 8px;
-  font-size: 13px;
-  color: var(--color-text-tertiary);
-  text-align: center;
-}
-
-/* ── Card checkbox ────────────────────────────────── */
-.cardCheckbox {
-  position: absolute;
-  left: 8px;
-  top: 50%;
-  transform: translateY(-50%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: var(--color-card);
-  color: var(--color-text-tertiary);
-  cursor: pointer;
-  padding: 0;
-  opacity: 0;
-  pointer-events: none;
-  transition: all var(--transition-fast);
-  z-index: 2;
-}
-
-.cardCheckbox:hover {
-  color: var(--color-link);
-}
-
-.cardCheckboxVisible {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.cardItemWrapper:hover .cardCheckbox {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.cardItemSelected .cardCheckbox {
-  color: var(--color-link);
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.cardItemSelected .cardItem {
-  border-color: var(--color-link);
-  background: rgba(59, 130, 246, 0.04);
-  padding-left: 38px;
-}
-
 /* Keyboard navigation focus */
 .cardItemFocused .cardItem {
   border-color: var(--color-link);
@@ -623,11 +337,6 @@
 .cardItemFocused .cardActions {
   opacity: 1;
   pointer-events: auto;
-}
-
-.cardItemWrapper:hover .cardItem,
-.cardCheckboxVisible ~ .cardItem {
-  padding-left: 38px;
 }
 
 .cardsList {
@@ -872,30 +581,6 @@
   white-space: nowrap;
 }
 
-.cardDueDate {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--color-text-tertiary);
-  padding: 1px 6px;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-raised);
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.cardDueDateOverdue {
-  color: #ef4444;
-  background: rgba(239, 68, 68, 0.1);
-}
-
-.cardDueDateSoon {
-  color: #f59e0b;
-  background: rgba(245, 158, 11, 0.1);
-}
-
 .emptyState {
   display: flex;
   flex-direction: column;
@@ -1103,11 +788,6 @@
   user-select: none;
 }
 
-.tableThCheck {
-  width: 36px;
-  padding: 8px 6px 8px 10px;
-}
-
 .tableThBtn {
   display: inline-flex;
   align-items: center;
@@ -1143,10 +823,6 @@
   vertical-align: middle;
 }
 
-.tableThDue {
-  width: 100px;
-}
-
 .tableThUpdated {
   width: 100px;
 }
@@ -1169,46 +845,11 @@
   background: var(--color-surface);
 }
 
-.tableRowSelected {
-  background: rgba(59, 130, 246, 0.04);
-}
-
-.tableRowSelected:hover {
-  background: rgba(59, 130, 246, 0.08);
-}
-
 .tableRowFocused {
   background: var(--color-surface);
   box-shadow: inset 2px 0 0 var(--color-link);
 }
 
-.tableCheckBtn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--color-text-tertiary);
-  cursor: pointer;
-  padding: 0;
-  transition: color var(--transition-fast);
-}
-
-.tableCheckBtn:hover {
-  color: var(--color-link);
-}
-
-.tableRowSelected .tableCheckBtn {
-  color: var(--color-link);
-}
-
-.tableTdCheck {
-  padding: 6px 6px 6px 10px;
-  vertical-align: middle;
-}
 
 .tableTdName {
   padding: 8px 12px;
@@ -1320,26 +961,6 @@
   font-weight: 600;
   color: var(--color-text-tertiary);
   white-space: nowrap;
-}
-
-.tableTdDue {
-  padding: 6px 12px;
-  vertical-align: middle;
-}
-
-.tableDue {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--color-text-secondary);
-  white-space: nowrap;
-}
-
-.tableDueOverdue {
-  color: #ef4444;
-}
-
-.tableDueSoon {
-  color: #f59e0b;
 }
 
 .tableTdUpdated {
@@ -1505,6 +1126,12 @@
   display: flex;
   align-items: flex-start;
   gap: 8px;
+  min-width: 0;
+}
+
+.tableNameCell > div {
+  min-width: 0;
+  overflow: hidden;
 }
 
 .tableNameCell .completeBtn {
@@ -1542,7 +1169,6 @@
   border-radius: var(--radius-md);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
   padding: 4px;
-  animation: bulkBarIn 120ms ease-out;
 }
 
 .moveDropdownLoading {
@@ -1679,309 +1305,6 @@
 
 .collectionNameBtn:hover .collectionNameEditIcon {
   opacity: 1;
-}
-
-/* ── Inline date picker ──────────────────────────── */
-.inlineDatePicker {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-}
-
-.inlineDateTrigger {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--color-text-secondary);
-  padding: 1px 6px;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-raised);
-  border: 1px solid transparent;
-  cursor: pointer;
-  white-space: nowrap;
-  flex-shrink: 0;
-  transition: all var(--transition-fast);
-  line-height: 1.6;
-}
-
-.inlineDateTrigger:hover {
-  border-color: var(--color-border);
-  background: var(--color-surface);
-}
-
-.inlineDateOverdue {
-  color: #ef4444;
-  background: rgba(239, 68, 68, 0.1);
-}
-
-.inlineDateOverdue:hover {
-  background: rgba(239, 68, 68, 0.15);
-  border-color: rgba(239, 68, 68, 0.3);
-}
-
-.inlineDateSoon {
-  color: #f59e0b;
-  background: rgba(245, 158, 11, 0.1);
-}
-
-.inlineDateSoon:hover {
-  background: rgba(245, 158, 11, 0.15);
-  border-color: rgba(245, 158, 11, 0.3);
-}
-
-.inlineDateEmpty {
-  color: var(--color-text-tertiary);
-  background: transparent;
-  border: 1px dashed var(--color-border-subtle);
-}
-
-.inlineDateEmpty:hover {
-  color: var(--color-text-secondary);
-  border-color: var(--color-border);
-  background: var(--color-surface);
-}
-
-.inlineDateClear {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  border: none;
-  background: var(--color-surface);
-  color: var(--color-text-tertiary);
-  cursor: pointer;
-  padding: 0;
-  opacity: 0;
-  transition: all var(--transition-fast);
-}
-
-.inlineDatePicker:hover .inlineDateClear {
-  opacity: 1;
-}
-
-.inlineDateClear:hover {
-  color: var(--color-text-secondary);
-  background: var(--color-border-subtle);
-}
-
-.inlineDateInput {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  opacity: 0;
-  pointer-events: none;
-  border: none;
-  padding: 0;
-  margin: 0;
-}
-
-/* ── Bulk priority dropdown ──────────────────────── */
-.bulkPriorityWrap {
-  position: relative;
-}
-
-.bulkPriorityDropdown {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
-  z-index: 200;
-  min-width: 140px;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
-  padding: 4px;
-  animation: bulkBarIn 120ms ease-out;
-}
-
-.bulkPriorityOption {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 6px 8px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--color-text-primary);
-  font-size: 13px;
-  cursor: pointer;
-  text-align: left;
-  transition: background var(--transition-fast);
-}
-
-.bulkPriorityOption:hover {
-  background: var(--color-hover);
-}
-
-.bulkPriorityDot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-/* ── Bulk due date picker ───────────────────────── */
-.bulkDueDateWrap {
-  position: relative;
-}
-
-.bulkDueDateDropdown {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
-  z-index: 200;
-  min-width: 180px;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
-  padding: 8px;
-  animation: bulkBarIn 120ms ease-out;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.bulkDueDateInput {
-  width: 100%;
-  padding: 6px 8px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-card);
-  color: var(--color-text);
-  font-size: 13px;
-}
-
-.bulkDueDateInput:focus {
-  outline: none;
-  border-color: var(--color-link);
-}
-
-.bulkDueDateActions {
-  display: flex;
-  gap: 4px;
-}
-
-.bulkDueDateApply {
-  flex: 1;
-  padding: 4px 8px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: var(--color-link);
-  color: #fff;
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: opacity var(--transition-fast);
-}
-
-.bulkDueDateApply:hover {
-  opacity: 0.9;
-}
-
-.bulkDueDateApply:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.bulkDueDateClear {
-  padding: 4px 8px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--color-text-secondary);
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all var(--transition-fast);
-}
-
-.bulkDueDateClear:hover {
-  color: var(--color-text);
-  border-color: var(--color-text-secondary);
-}
-
-.bulkTagWrap {
-  position: relative;
-}
-
-.bulkTagDropdown {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
-  z-index: 100;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.16);
-  padding: 6px;
-  min-width: 180px;
-  max-height: 240px;
-  overflow-y: auto;
-}
-
-.bulkTagOption {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 6px 8px;
-  background: none;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  text-align: left;
-  font-size: 13px;
-  color: var(--color-text);
-}
-
-.bulkTagOption:hover {
-  background: var(--color-hover);
-}
-
-.bulkTagCheck {
-  width: 16px;
-  height: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  border: 1.5px solid var(--color-border);
-  border-radius: 3px;
-  color: transparent;
-}
-
-.bulkTagCheckAll {
-  border-color: var(--color-accent, #3b82f6);
-  background: var(--color-accent, #3b82f6);
-  color: white;
-}
-
-.bulkTagCheckSome {
-  border-color: var(--color-text-muted);
-  color: var(--color-text-muted);
-}
-
-.bulkTagPill {
-  display: inline-flex;
-  align-items: center;
-  padding: 2px 8px;
-  border-radius: 12px;
-  font-size: 11px;
-  font-weight: 600;
-  color: white;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 140px;
 }
 
 .collectionNameInput {
