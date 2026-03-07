@@ -1,0 +1,189 @@
+import path from 'node:path';
+import { env } from '../config/env.js';
+import { JsonStore } from './json-store.js';
+import { hashPassword } from '../services/auth.js';
+
+function findByField(
+  store: JsonStore,
+  collection: string,
+  field: string,
+  value: unknown,
+): Record<string, unknown> | null {
+  return store.findOne(collection, (r) => r[field] === value);
+}
+
+async function ensureUsers(store: JsonStore) {
+  const specs = [
+    {
+      email: 'admin@workspace.local',
+      password: 'admin123',
+      firstName: 'Admin',
+      lastName: 'User',
+      type: 'human',
+    },
+    {
+      email: 'manager@workspace.local',
+      password: 'manager123',
+      firstName: 'Maria',
+      lastName: 'Johnson',
+      type: 'human',
+    },
+    {
+      email: 'agent1@workspace.local',
+      password: 'agent123',
+      firstName: 'Alex',
+      lastName: 'Smith',
+      type: 'human',
+    },
+  ] as const;
+
+  const users: Record<string, unknown>[] = [];
+
+  for (const spec of specs) {
+    const existing = findByField(store, 'users', 'email', spec.email);
+    if (existing) {
+      users.push(existing);
+      continue;
+    }
+
+    const passwordHash = await hashPassword(spec.password);
+    const created = store.insert('users', {
+      email: spec.email,
+      passwordHash,
+      firstName: spec.firstName,
+      lastName: spec.lastName,
+      type: spec.type,
+      isActive: true,
+      totpSecret: null,
+      totpEnabled: false,
+      recoveryCodes: null,
+    });
+    users.push(created);
+  }
+
+  return users;
+}
+
+function ensureProjectSettings(store: JsonStore): void {
+  const existing = store.getById('settings', 'project');
+  if (existing) return;
+
+  store.insert('settings', {
+    id: 'project',
+    defaultAgentKeyId: null,
+  });
+}
+
+function ensureRateLimitSettings(store: JsonStore): void {
+  const existing = store.getById('settings', 'rate-limits');
+  if (existing) return;
+
+  store.insert('settings', {
+    id: 'rate-limits',
+    agentPromptMax: env.RATE_LIMIT_AGENT_PROMPT_MAX,
+    agentPromptWindowS: env.RATE_LIMIT_AGENT_PROMPT_WINDOW_S,
+  });
+}
+
+function ensureGeneralCollection(
+  store: JsonStore,
+  createdById: string,
+): Record<string, unknown> {
+  const existing = store.findOne('collections', (r) => r.isGeneral === true);
+  if (existing) return existing;
+
+  return store.insert('collections', {
+    name: 'General',
+    description: 'Default collection for uncategorized cards',
+    isGeneral: true,
+    createdById,
+  });
+}
+
+function ensureDefaultBoard(
+  store: JsonStore,
+  createdById: string,
+  defaultCollectionId: string,
+): Record<string, unknown> {
+  const existing = findByField(store, 'boards', 'name', 'auto-dev-cards');
+  if (existing) return existing;
+
+  const board = store.insert('boards', {
+    name: 'auto-dev-cards',
+    description: 'Default board for automation and refactor tasks',
+    collectionId: null,
+    defaultCollectionId,
+    isGeneral: false,
+    createdById,
+  });
+
+  const columns = [
+    { name: 'ui-tasks', color: '#6B7280', position: 0 },
+    { name: 'refactor-tasks', color: '#3B82F6', position: 1 },
+    { name: 'testing', color: '#F59E0B', position: 2 },
+    { name: 'done', color: '#10B981', position: 3 },
+  ];
+
+  for (const column of columns) {
+    store.insert('boardColumns', {
+      boardId: board.id,
+      name: column.name,
+      color: column.color,
+      position: column.position,
+      assignAgentId: null,
+    });
+  }
+
+  return board;
+}
+
+function ensureWorkspace(
+  store: JsonStore,
+  userId: string,
+  boardId: string,
+  collectionId: string,
+): void {
+  const existing = store.findOne('workspaces', (r) => r.userId === userId);
+  if (existing) return;
+
+  store.insert('workspaces', {
+    name: 'Default Workspace',
+    userId,
+    boardIds: [boardId],
+    collectionIds: [collectionId],
+    agentGroupIds: [],
+  });
+}
+
+async function bootstrap() {
+  const store = new JsonStore(path.resolve(env.DATA_DIR));
+  await store.init();
+
+  console.log('Bootstrapping workspace data...');
+
+  const [admin] = await ensureUsers(store);
+  const adminId = admin.id as string;
+
+  ensureProjectSettings(store);
+  ensureRateLimitSettings(store);
+
+  const generalCollection = ensureGeneralCollection(store, adminId);
+  const defaultBoard = ensureDefaultBoard(store, adminId, generalCollection.id as string);
+
+  ensureWorkspace(
+    store,
+    adminId,
+    defaultBoard.id as string,
+    generalCollection.id as string,
+  );
+
+  await store.flush();
+
+  console.log('Workspace bootstrap completed.');
+  console.log('Admin login: admin@workspace.local / admin123');
+}
+
+bootstrap().catch((err) => {
+  console.error('Bootstrap failed:', err);
+  process.exit(1);
+});

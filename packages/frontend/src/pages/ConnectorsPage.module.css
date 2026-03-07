@@ -369,3 +369,55 @@
 .toggleInput:checked + .toggleSlider::before {
   transform: translateX(18px);
 }
+
+/* Mobile responsive */
+@media (max-width: 600px) {
+  .connectorCard {
+    flex-direction: column;
+    padding: var(--space-3) var(--space-4);
+  }
+
+  .connectorActions {
+    align-self: flex-end;
+  }
+
+  .connectorName {
+    font-size: 14px;
+  }
+
+  .modal {
+    margin: var(--space-3);
+    max-width: calc(100% - var(--space-6));
+    max-height: calc(100vh - var(--space-6));
+  }
+
+  .modalHeader {
+    padding: var(--space-3) var(--space-4);
+  }
+
+  .modalBody {
+    padding: var(--space-4);
+  }
+
+  .modalFooter {
+    padding: var(--space-3) var(--space-4);
+  }
+
+  .typeCard {
+    padding: var(--space-3) var(--space-4);
+    gap: var(--space-3);
+  }
+
+  .typeIconWrap {
+    width: 40px;
+    height: 40px;
+  }
+
+  .empty {
+    padding: var(--space-10) var(--space-4);
+  }
+
+  .toggleRow {
+    gap: var(--space-3);
+  }
+}

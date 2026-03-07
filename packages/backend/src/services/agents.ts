@@ -295,19 +295,6 @@ function agentServiceEmail(agentId: string): string {
   return `agent-${agentId}@${AGENT_USER_EMAIL_DOMAIN}`;
 }
 
-function findAgentServiceUser(agentId: string): Record<string, unknown> | null {
-  const byAgentId = store.findOne(
-    'users',
-    (r: Record<string, unknown>) => r.type === 'agent' && r.agentId === agentId,
-  );
-  if (byAgentId) return byAgentId;
-
-  return store.findOne(
-    'users',
-    (r: Record<string, unknown>) => r.email === agentServiceEmail(agentId),
-  );
-}
-
 async function createAgentServiceUser(
   agentId: string,
   agentName: string,
@@ -478,12 +465,6 @@ export function updateAgent(
     const serviceUserId = updated.serviceUserId as string | null | undefined;
     if (serviceUserId) {
       normalizeAgentServiceUser(serviceUserId, id, data.name);
-    } else {
-      const fallbackUser = findAgentServiceUser(id);
-      if (fallbackUser) {
-        normalizeAgentServiceUser(fallbackUser.id as string, id, data.name);
-        store.update('agents', id, { serviceUserId: fallbackUser.id as string });
-      }
     }
   }
 
@@ -502,9 +483,7 @@ export async function deleteAgent(id: string): Promise<boolean> {
     await deleteApiKey(agent.workspaceApiKeyId as string).catch(() => {});
   }
 
-  const serviceUserId =
-    (agent.serviceUserId as string | null | undefined) ??
-    (findAgentServiceUser(id)?.id as string | undefined);
+  const serviceUserId = agent.serviceUserId as string | null | undefined;
   if (serviceUserId) {
     store.update('users', serviceUserId, { isActive: false, type: 'agent', agentId: id });
     store.deleteWhere('refreshTokens', (r: Record<string, unknown>) => r.userId === serviceUserId);
@@ -512,7 +491,7 @@ export async function deleteAgent(id: string): Promise<boolean> {
 
   // Close related conversations and preserve agent name in metadata
   const agentConversations = store.find('conversations', (r: Record<string, unknown>) => {
-    if (r.channelType !== 'agent' && r.channelType !== 'other') return false;
+    if (r.channelType !== 'agent') return false;
     try {
       const meta = typeof r.metadata === 'string' ? JSON.parse(r.metadata) : r.metadata;
       return meta?.agentId === id;
@@ -560,9 +539,8 @@ export async function ensureAgentServiceAccounts(): Promise<void> {
       ? store.getById('users', directServiceUserId)
       : null;
 
-    const existingServiceUser = directServiceUser ?? findAgentServiceUser(agentId);
-    const serviceUser = existingServiceUser
-      ? normalizeAgentServiceUser(existingServiceUser.id as string, agentId, agentName)
+    const serviceUser = directServiceUser
+      ? normalizeAgentServiceUser(directServiceUser.id as string, agentId, agentName)
       : await createAgentServiceUser(agentId, agentName);
     const serviceUserId = serviceUser.id as string;
 

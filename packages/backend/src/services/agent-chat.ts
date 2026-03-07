@@ -3,7 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { store } from '../db/index.js';
 import { env } from '../config/env.js';
-import { getAgent } from './agents.js';
+import { extractFinalResponseText } from '../lib/agent-output.js';
+import { getAgent, listAgents } from './agents.js';
 import { createAgentRun, completeAgentRun } from './agent-runs.js';
 
 const STORAGE_DIR = path.resolve(env.DATA_DIR, 'storage');
@@ -57,43 +58,6 @@ function appendImagePathsToPrompt(prompt: string, imagePaths?: string[]): string
   return `${prompt ? prompt + '\n\n' : ''}Image files:\n${pathList}`;
 }
 
-/**
- * Extract readable text from Claude CLI's stream-json output format.
- * Falls back to raw stdout if no structured events are found.
- */
-function extractStreamJsonText(stdout: string): string {
-  const lines = stdout.trim().split('\n');
-  // Prefer the final 'result' event which has the full consolidated text
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const line = lines[i].trim();
-    if (!line) continue;
-    try {
-      const event = JSON.parse(line);
-      if (event.type === 'result' && typeof event.result === 'string') {
-        return event.result;
-      }
-    } catch {
-      // not JSON
-    }
-  }
-  // Fallback: extract text from the last assistant message block
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const line = lines[i].trim();
-    if (!line) continue;
-    try {
-      const event = JSON.parse(line);
-      if (event.type === 'assistant' && Array.isArray(event.message?.content)) {
-        const textBlock = (event.message.content as Array<{ type: string; text?: string }>)
-          .find((b) => b.type === 'text');
-        if (textBlock?.text) return textBlock.text;
-      }
-    } catch {
-      // not JSON
-    }
-  }
-  return stdout.trim();
-}
-
 function buildCliCommand(options: BuildCliOptions): CliCommand {
   const { model, modelId, thinkingLevel, prompt, imagePaths } = options;
   const modelLower = model.trim().toLowerCase();
@@ -103,7 +67,17 @@ function buildCliCommand(options: BuildCliOptions): CliCommand {
     const args: string[] = [];
     const fullPrompt = appendImagePathsToPrompt(prompt, imagePaths);
 
-    args.push('-p', fullPrompt, '--output-format', 'text', '--append-system-prompt', sysPrompt);
+    // Stream structured events so run logs contain full model output, not only final text.
+    args.push(
+      '-p',
+      fullPrompt,
+      '--output-format',
+      'stream-json',
+      '--include-partial-messages',
+      '--verbose',
+      '--append-system-prompt',
+      sysPrompt,
+    );
 
     if (modelId) {
       args.push('--model', modelId);
@@ -131,7 +105,8 @@ function buildCliCommand(options: BuildCliOptions): CliCommand {
     return { bin: 'codex', args };
   }
   if (modelLower.includes('qwen')) {
-    const args = ['--output-format', 'text'];
+    // Stream structured events so run logs contain full model output, not only final text.
+    const args = ['--output-format', 'stream-json', '--include-partial-messages'];
     // Always run without interactive approvals.
     args.push('--approval-mode', 'yolo');
     if (modelId) {
@@ -171,24 +146,19 @@ function isBackgroundTriggerConversationRecord(r: Record<string, unknown>): bool
   if (typeof meta.cronJobId === 'string' && meta.cronJobId.length > 0) return true;
   if (typeof meta.cardId === 'string' && meta.cardId.length > 0) return true;
 
-  const trigger = typeof meta.trigger === 'string'
-    ? meta.trigger
-    : typeof meta.triggerType === 'string'
-      ? meta.triggerType
-      : null;
+  const trigger = typeof meta.trigger === 'string' ? meta.trigger : null;
 
-  return trigger === 'cron_job' || trigger === 'card_assignment' || trigger === 'cron' || trigger === 'card';
+  return trigger === 'cron_job' || trigger === 'card_assignment';
 }
 
 function isAgentConversation(r: Record<string, unknown>, agentId: string): boolean {
-  if (r.channelType !== 'agent' && r.channelType !== 'other') return false;
+  if (r.channelType !== 'agent') return false;
   const meta = parseMetadata(r.metadata);
   return meta?.agentId === agentId;
 }
 
 /**
  * List all conversations belonging to an agent, sorted by lastMessageAt desc.
- * Lazy-backfills subject from first outbound message for legacy conversations.
  */
 export function listAgentConversations(agentId: string, limit = 50, offset = 0) {
   const all = store.find(
@@ -196,40 +166,6 @@ export function listAgentConversations(agentId: string, limit = 50, offset = 0) 
     (r: Record<string, unknown>) =>
       isAgentConversation(r, agentId) && !isBackgroundTriggerConversationRecord(r),
   );
-
-  // Migrate legacy 'other' → 'agent' and backfill subject
-  for (const conv of all) {
-    let dirty = false;
-    if (conv.channelType === 'other') {
-      conv.channelType = 'agent';
-      dirty = true;
-    }
-    if (conv.subject === null || conv.subject === undefined) {
-      // Backfill from first outbound message
-      const firstOut = store
-        .find(
-          'messages',
-          (r: Record<string, unknown>) =>
-            r.conversationId === conv.id && r.direction === 'outbound',
-        )
-        .sort(
-          (a: Record<string, unknown>, b: Record<string, unknown>) =>
-            new Date(a.createdAt as string).getTime() -
-            new Date(b.createdAt as string).getTime(),
-        )[0];
-      if (firstOut) {
-        const text = (firstOut.content as string).slice(0, 60);
-        conv.subject = text.length < (firstOut.content as string).length ? text + '...' : text;
-        dirty = true;
-      }
-    }
-    if (dirty) {
-      store.update('conversations', conv.id as string, {
-        channelType: conv.channelType,
-        subject: conv.subject,
-      });
-    }
-  }
 
   const sorted = all.sort((a, b) => {
     const aTime = a.lastMessageAt ? new Date(a.lastMessageAt as string).getTime() : 0;
@@ -255,6 +191,53 @@ export function listAgentConversations(agentId: string, limit = 50, offset = 0) 
     };
   });
   return { entries, total: all.length };
+}
+
+/**
+ * List recent agent chat conversations across ALL agents, sorted by lastMessageAt desc.
+ * Returns agent metadata alongside each conversation.
+ */
+export function listRecentAgentConversations(limit = 10) {
+  const agents = listAgents();
+  const agentMap = new Map(agents.map((a) => [a.id, a]));
+
+  const all = store.find(
+    'conversations',
+    (r: Record<string, unknown>) => {
+      if (r.channelType !== 'agent') return false;
+      if (isBackgroundTriggerConversationRecord(r)) return false;
+      const meta = parseMetadata(r.metadata);
+      return !!meta?.agentId && agentMap.has(meta.agentId as string);
+    },
+  );
+
+  const sorted = all.sort((a, b) => {
+    const aTime = a.lastMessageAt ? new Date(a.lastMessageAt as string).getTime() : 0;
+    const bTime = b.lastMessageAt ? new Date(b.lastMessageAt as string).getTime() : 0;
+    if (bTime !== aTime) return bTime - aTime;
+    return new Date(b.createdAt as string).getTime() - new Date(a.createdAt as string).getTime();
+  });
+
+  const entries = sorted.slice(0, limit).map((conv) => {
+    const meta = parseMetadata(conv.metadata);
+    const agentId = meta?.agentId as string;
+    const agent = agentMap.get(agentId)!;
+    return {
+      id: conv.id,
+      subject: conv.subject ?? null,
+      lastMessageAt: conv.lastMessageAt ?? null,
+      isUnread: conv.isUnread ?? false,
+      updatedAt: conv.updatedAt,
+      createdAt: conv.createdAt,
+      agentId,
+      agentName: agent.name,
+      agentAvatarIcon: agent.avatarIcon ?? null,
+      agentAvatarBgColor: agent.avatarBgColor ?? null,
+      agentAvatarLogoColor: agent.avatarLogoColor ?? null,
+    };
+  });
+
+  return { entries };
 }
 
 /**
@@ -507,7 +490,7 @@ interface AgentProcessOptions {
   prompt: string;
   systemPrompt: string;
   imagePaths?: string[];
-  triggerType: 'chat' | 'cron' | 'card';
+  triggerType: TriggerType;
   triggerRef?: { conversationId?: string; cardId?: string; cronJobId?: string };
   onStdoutChunk?: (text: string) => void;
   onRunCreated?: (runId: string) => void;
@@ -579,6 +562,68 @@ function findFinalAgentApiMessage(messages: Record<string, unknown>[]) {
   return [...messages].reverse().find((msg) => parseMetadata(msg.metadata)?.isFinal === true) ?? null;
 }
 
+function listConversationInboundMessages(conversationId: string, sinceMs: number) {
+  return store
+    .find(
+      'messages',
+      (r: Record<string, unknown>) =>
+        r.conversationId === conversationId &&
+        r.direction === 'inbound' &&
+        new Date(r.createdAt as string).getTime() >= sinceMs,
+    )
+    .sort(
+      (a: Record<string, unknown>, b: Record<string, unknown>) =>
+        new Date(a.createdAt as string).getTime() - new Date(b.createdAt as string).getTime(),
+    );
+}
+
+function findExistingFinalMessageFromRun(
+  conversationId: string,
+  runStartedAt: number,
+  expectedContent: string | null,
+): Record<string, unknown> | null {
+  const inboundMessages = listConversationInboundMessages(conversationId, runStartedAt);
+  if (inboundMessages.length === 0) return null;
+
+  if (expectedContent && expectedContent.trim().length > 0) {
+    const contentMatch = [...inboundMessages].reverse().find((msg) => {
+      if (msg.type !== 'text') return false;
+      return ((msg.content as string) || '').trim() === expectedContent.trim();
+    });
+    if (contentMatch) return contentMatch;
+  }
+
+  return (
+    [...inboundMessages].reverse().find((msg) => {
+      if (msg.type !== 'text') return false;
+      const meta = parseMetadata(msg.metadata);
+      return !(meta?.agentChatUpdate === true && meta?.isFinal === false);
+    }) ?? null
+  );
+}
+
+function resolveFinalMessageForCompletedRun(
+  conversationId: string,
+  runStartedAt: number,
+  rawStdout: string,
+): Record<string, unknown> | null {
+  const updatesFromApi = listAgentApiUpdates(conversationId, runStartedAt);
+  const finalApiMessage = findFinalAgentApiMessage(updatesFromApi);
+  if (finalApiMessage) return finalApiMessage;
+
+  const stdoutText = extractFinalResponseText(rawStdout);
+  const existingFinal = findExistingFinalMessageFromRun(conversationId, runStartedAt, stdoutText || null);
+  if (existingFinal) return existingFinal;
+
+  if (stdoutText) {
+    return saveMessage(conversationId, 'inbound', stdoutText);
+  }
+  if (updatesFromApi.length > 0) {
+    return updatesFromApi[updatesFromApi.length - 1];
+  }
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // RunHandle — replaces ChildProcess in the running processes map
 // ---------------------------------------------------------------------------
@@ -612,6 +657,13 @@ function parseIsoDateMs(value: unknown): number {
   if (typeof value !== 'string') return Number.NaN;
   const timestamp = new Date(value).getTime();
   return Number.isFinite(timestamp) ? timestamp : Number.NaN;
+}
+
+function isRunMarkedKilledByUser(runId: string | null): boolean {
+  if (!runId) return false;
+  const run = store.getById('agent_runs', runId);
+  if (!run) return false;
+  return run.killedByUser === true || run.errorMessage === 'Killed by user';
 }
 
 function listConversationQueueItems(agentId: string, conversationId: string): Record<string, unknown>[] {
@@ -818,6 +870,7 @@ function runAgentProcess(options: AgentProcessOptions): string {
     conversationId: options.triggerRef?.conversationId,
     cardId: options.triggerRef?.cardId,
     cronJobId: options.triggerRef?.cronJobId,
+    triggerPrompt: options.prompt,
   });
   const runId = agentRun.id as string;
   options.onRunCreated?.(runId);
@@ -928,15 +981,15 @@ export function reattachRunningProcess(run: Record<string, unknown>) {
   const runId = run.id as string;
   const stdoutPath = run.stdoutPath as string;
   const stderrPath = run.stderrPath as string;
-  const triggerType = run.triggerType as 'chat' | 'cron' | 'card';
+  const triggerType = run.triggerType as TriggerType;
 
   // Reconstruct the run key
   let runKey: string;
   if (triggerType === 'chat' && conversationId) {
     runKey = processKey(agentId, conversationId);
-  } else if (triggerType === 'cron' && cronJobId) {
+  } else if (triggerType === 'cron_job' && cronJobId) {
     runKey = `${agentId}:cron:${cronJobId}`;
-  } else if (triggerType === 'card' && cardId) {
+  } else if (triggerType === 'card_assignment' && cardId) {
     runKey = `${agentId}:card:${cardId}`;
   } else {
     runKey = `${agentId}:${runId}`;
@@ -949,10 +1002,22 @@ export function reattachRunningProcess(run: Record<string, unknown>) {
   const onExit = (result: AgentProcessResult) => {
     // For chat triggers, save the final message to conversation
     if (triggerType === 'chat' && conversationId) {
+      if (isRunMarkedKilledByUser(runId)) {
+        finalizeRecoveredQueueItemForRun(
+          agentId,
+          conversationId,
+          runId,
+          runStartedAt,
+          null,
+          'Killed by user',
+        );
+        return;
+      }
+
       const updatesFromApi = listAgentApiUpdates(conversationId, runStartedAt);
       const finalApiMessage = findFinalAgentApiMessage(updatesFromApi);
-      // extractStreamJsonText handles both plain text and stream-json output gracefully.
-      const stdoutText = extractStreamJsonText(result.stdout);
+      // extractFinalResponseText handles both plain text and stream-json output gracefully.
+      const stdoutText = extractFinalResponseText(result.stdout);
       let finalMessage: Record<string, unknown> | null = null;
 
       if (finalApiMessage) {
@@ -1016,6 +1081,7 @@ function spawnChatProcess(
 
   const key = processKey(agentId, conversationId);
   const hasImages = imagePaths.length > 0;
+  let spawnedRunId: string | null = null;
 
   runAgentProcess({
     agentId,
@@ -1026,8 +1092,16 @@ function spawnChatProcess(
     imagePaths: hasImages ? imagePaths : undefined,
     triggerType: 'chat',
     triggerRef: { conversationId },
-    onRunCreated: callbacks.onRunCreated,
+    onRunCreated: (runId) => {
+      spawnedRunId = runId;
+      callbacks.onRunCreated?.(runId);
+    },
     onExit: ({ code, stdout, stderr, runStartedAt }) => {
+      if (isRunMarkedKilledByUser(spawnedRunId)) {
+        callbacks.onError('Killed by user');
+        return;
+      }
+
       if ((code ?? 1) !== 0 && !stdout.trim()) {
         const errMsg = stderr.trim() || `Process exited with code ${code}`;
         callbacks.onError(errMsg);
@@ -1036,8 +1110,8 @@ function spawnChatProcess(
 
       const updatesFromApi = listAgentApiUpdates(conversationId, runStartedAt);
       const finalApiMessage = findFinalAgentApiMessage(updatesFromApi);
-      // For image mode (stream-json output), extract the text from the JSON events.
-      const stdoutText = hasImages ? extractStreamJsonText(stdout) : stdout.trim();
+      // extractFinalResponseText handles both plain text and stream-json output gracefully.
+      const stdoutText = extractFinalResponseText(stdout);
 
       let msg: Record<string, unknown>;
       if (finalApiMessage) {
@@ -1201,6 +1275,19 @@ function markQueueItemCompleted(
   });
 }
 
+function markQueueItemCancelledByUser(
+  queueItemId: string,
+  errorMessage = 'Cancelled by user',
+) {
+  store.update(AGENT_CHAT_QUEUE_COLLECTION, queueItemId, {
+    status: 'failed',
+    completedAt: new Date().toISOString(),
+    nextAttemptAt: null,
+    runId: null,
+    errorMessage,
+  });
+}
+
 function retryOrFailQueueItem(
   queueItemId: string,
   queueItem: Record<string, unknown>,
@@ -1240,6 +1327,58 @@ function retryOrFailQueueItem(
       queuedFailure: true,
     },
   });
+}
+
+function recoverInterruptedQueueItemFromRun(
+  queueItem: Record<string, unknown>,
+): boolean {
+  const queueItemId = typeof queueItem.id === 'string' ? queueItem.id : null;
+  const agentId = typeof queueItem.agentId === 'string' ? queueItem.agentId : null;
+  const conversationId =
+    typeof queueItem.conversationId === 'string' ? queueItem.conversationId : null;
+  const runId = typeof queueItem.runId === 'string' ? queueItem.runId : null;
+  if (!queueItemId || !agentId || !conversationId || !runId) return false;
+
+  const run = store.getById('agent_runs', runId);
+  if (!run) return false;
+  if (run.triggerType !== 'chat') return false;
+  if (run.agentId !== agentId || run.conversationId !== conversationId) return false;
+  if (isRunMarkedKilledByUser(runId)) {
+    markQueueItemCancelledByUser(queueItemId);
+    return true;
+  }
+
+  const runStatus = run.status;
+  if (runStatus === 'running') return false;
+
+  if (runStatus === 'completed') {
+    const runStartedAtMs = parseIsoDateMs(run.startedAt);
+    const runStartedAt = Number.isFinite(runStartedAtMs) ? runStartedAtMs : Date.now();
+    const rawStdout = typeof run.stdout === 'string' ? run.stdout : '';
+    const finalMessage = resolveFinalMessageForCompletedRun(conversationId, runStartedAt, rawStdout);
+
+    if (finalMessage) {
+      markQueueItemCompleted(queueItemId, finalMessage);
+      return true;
+    }
+  }
+
+  const attemptsUsed = normalizeQueueAttemptCount(queueItem.attempts);
+  const errorMessage =
+    typeof run.errorMessage === 'string' && run.errorMessage
+      ? run.errorMessage
+      : runStatus === 'completed'
+        ? 'Recovered run completed without a response'
+        : 'Recovered run failed after backend restart';
+  retryOrFailQueueItem(
+    queueItemId,
+    queueItem,
+    agentId,
+    conversationId,
+    errorMessage,
+    attemptsUsed,
+  );
+  return true;
 }
 
 function findProcessingQueueItemForRun(
@@ -1295,6 +1434,12 @@ function finalizeRecoveredQueueItemForRun(
   const processingItem = findProcessingQueueItemForRun(agentId, conversationId, runId, runStartedAt);
   if (!processingItem || typeof processingItem.id !== 'string') return;
 
+  if (isRunMarkedKilledByUser(runId)) {
+    markQueueItemCancelledByUser(processingItem.id);
+    scheduleQueueDrain(agentId, conversationId, 0);
+    return;
+  }
+
   if (finalMessage) {
     markQueueItemCompleted(processingItem.id, finalMessage);
     scheduleQueueDrain(agentId, conversationId, 0);
@@ -1342,10 +1487,11 @@ async function drainConversationQueue(agentId: string, conversationId: string): 
         return;
       }
 
+      const readyItemId = readyItem.id as string;
       const attempts = Number(readyItem.attempts ?? 0);
       const prompt = typeof readyItem.prompt === 'string' ? readyItem.prompt.trim() : '';
       if (!prompt) {
-        store.update(AGENT_CHAT_QUEUE_COLLECTION, readyItem.id as string, {
+        store.update(AGENT_CHAT_QUEUE_COLLECTION, readyItemId, {
           status: 'failed',
           completedAt: new Date().toISOString(),
           nextAttemptAt: null,
@@ -1354,7 +1500,7 @@ async function drainConversationQueue(agentId: string, conversationId: string): 
         });
         continue;
       }
-      store.update(AGENT_CHAT_QUEUE_COLLECTION, readyItem.id as string, {
+      store.update(AGENT_CHAT_QUEUE_COLLECTION, readyItemId, {
         status: 'processing',
         attempts: attempts + 1,
         startedAt: new Date().toISOString(),
@@ -1362,24 +1508,47 @@ async function drainConversationQueue(agentId: string, conversationId: string): 
         errorMessage: null,
       });
 
+      let spawnedRunId: string | null = null;
       try {
         const finalMessage = await executePrompt(agentId, prompt, conversationId, {
           onRunCreated: (runId) => {
-            store.update(AGENT_CHAT_QUEUE_COLLECTION, readyItem.id as string, { runId });
+            spawnedRunId = runId;
+            store.update(AGENT_CHAT_QUEUE_COLLECTION, readyItemId, { runId });
           },
         });
-        markQueueItemCompleted(readyItem.id as string, finalMessage);
+        const latestItem = store.getById(AGENT_CHAT_QUEUE_COLLECTION, readyItemId);
+        if (!latestItem || latestItem.status !== 'processing') {
+          scheduleQueueDrain(agentId, conversationId, 0);
+          continue;
+        }
+        markQueueItemCompleted(readyItemId, finalMessage);
       } catch (err) {
+        const latestItem = store.getById(AGENT_CHAT_QUEUE_COLLECTION, readyItemId);
+        if (!latestItem || latestItem.status !== 'processing') {
+          scheduleQueueDrain(agentId, conversationId, 0);
+          continue;
+        }
+
+        const activeRunId =
+          typeof latestItem.runId === 'string' && latestItem.runId
+            ? latestItem.runId
+            : spawnedRunId;
+        if (isRunMarkedKilledByUser(activeRunId)) {
+          markQueueItemCancelledByUser(readyItemId);
+          scheduleQueueDrain(agentId, conversationId, 0);
+          continue;
+        }
+
         const errorMessage =
           err instanceof Error ? err.message : 'Failed to process queued chat message';
-        const nextAttempt = attempts + 1;
+        const attemptsUsed = normalizeQueueAttemptCount(latestItem.attempts);
         retryOrFailQueueItem(
-          readyItem.id as string,
-          readyItem,
+          readyItemId,
+          latestItem,
           agentId,
           conversationId,
           errorMessage,
-          nextAttempt,
+          attemptsUsed,
         );
       }
     }
@@ -1402,6 +1571,23 @@ export function getAgentQueuedPromptCount(agentId: string, conversationId: strin
   return getPendingQueueCount(agentId, conversationId);
 }
 
+export function cancelProcessingQueueItemForRun(
+  runId: string,
+  errorMessage = 'Cancelled by user',
+): boolean {
+  const item = store.find(
+    AGENT_CHAT_QUEUE_COLLECTION,
+    (r: Record<string, unknown>) => r.status === 'processing' && r.runId === runId,
+  )[0];
+  if (!item || typeof item.id !== 'string') return false;
+
+  markQueueItemCancelledByUser(item.id, errorMessage);
+  if (typeof item.agentId === 'string' && typeof item.conversationId === 'string') {
+    scheduleQueueDrain(item.agentId, item.conversationId, 0);
+  }
+  return true;
+}
+
 export interface InitializeAgentChatQueueOptions {
   preserveActiveProcessing?: boolean;
 }
@@ -1421,6 +1607,9 @@ export function initializeAgentChatQueue(options: InitializeAgentChatQueueOption
       hasKeys &&
       isAgentBusy(item.agentId as string, item.conversationId as string);
     if (shouldPreserve) continue;
+
+    const recoveredFromRun = recoverInterruptedQueueItemFromRun(item);
+    if (recoveredFromRun) continue;
 
     store.update(AGENT_CHAT_QUEUE_COLLECTION, item.id as string, {
       status: 'queued',
@@ -1617,7 +1806,7 @@ export function executeCronTask(
     runKey: key,
     prompt,
     systemPrompt: TASK_MODE_SYSTEM_PROMPT,
-    triggerType: 'cron',
+    triggerType: 'cron_job',
     triggerRef: { cronJobId: job.id },
     onExit: ({ code, stderr }) => {
       if ((code ?? 1) !== 0) {
@@ -1638,7 +1827,7 @@ export function executeCronTask(
 export function executeCardTask(
   agentId: string,
   card: { id: string; name: string; description: string | null; collectionId: string },
-  callbacks: { onDone: () => void; onError: (err: string) => void },
+  callbacks: { onDone: () => void; onError: (err: string) => void; onRunCreated?: (runId: string) => void },
   customPrompt?: string,
 ) {
   const agent = getAgent(agentId);
@@ -1683,8 +1872,9 @@ export function executeCardTask(
     runKey: key,
     prompt,
     systemPrompt: TASK_MODE_SYSTEM_PROMPT,
-    triggerType: 'card',
+    triggerType: 'card_assignment',
     triggerRef: { cardId: card.id },
+    onRunCreated: callbacks.onRunCreated,
     onExit: ({ code, stderr }) => {
       if ((code ?? 1) !== 0) {
         const errMsg = stderr.trim() || `Process exited with code ${code}`;

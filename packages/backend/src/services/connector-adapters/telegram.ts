@@ -18,13 +18,16 @@ function readStatus(integrationId: string): IntegrationStatus {
     settings: {
       autoGreetingEnabled: bot.autoGreetingEnabled ?? false,
       autoGreetingText: bot.autoGreetingText ?? null,
+      ngrokUrl: (bot.ngrokUrl as string) ?? null,
+      ngrokAuto: bot.ngrokAuto ?? false,
     },
   };
 }
 
 export const telegramAdapter: ConnectorAdapter = {
   async connect(payload, audit) {
-    const bot = await connectBot(payload.token as string, audit) as Record<string, unknown>;
+    const ngrokUrl = (payload.ngrokUrl as string | undefined) || undefined;
+    const bot = await connectBot(payload.token as string, audit, { ngrokUrl }) as Record<string, unknown>;
 
     const seed: ConnectorSeed = {
       name: bot.botFirstName as string,
@@ -67,6 +70,15 @@ export const telegramAdapter: ConnectorAdapter = {
       },
       audit,
     );
+
+    // Handle ngrok settings changes
+    if ('ngrokAuto' in settings && settings.ngrokAuto) {
+      await refreshWebhook(integrationId, audit, { ngrokUrl: 'auto' });
+    } else if ('ngrokUrl' in settings || ('ngrokAuto' in settings && !settings.ngrokAuto)) {
+      const newNgrokUrl = (settings.ngrokUrl as string | null) || undefined;
+      await refreshWebhook(integrationId, audit, { ngrokUrl: newNgrokUrl ?? '' });
+    }
+
     return readStatus(integrationId);
   },
 };

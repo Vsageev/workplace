@@ -83,12 +83,12 @@ info "Building shared package..."
 pnpm --filter shared build
 ok "Shared package built"
 
-# ── 7. Seed the database ──────────────────────────────────────────
-info "Seeding database..."
+# ── 7. Bootstrap backend data ─────────────────────────────────────
+info "Bootstrapping backend data..."
 cd packages/backend
-pnpm db:seed
+pnpm db:bootstrap
 cd "$ROOT_DIR"
-ok "Database seeded"
+ok "Backend data bootstrapped"
 
 # ── 8. Done ───────────────────────────────────────────────────────
 echo ""
@@ -100,7 +100,6 @@ echo "  Test accounts:"
 echo "    admin@workspace.local   / admin123"
 echo "    manager@workspace.local / manager123"
 echo "    agent1@workspace.local  / agent123"
-echo "    agent2@workspace.local  / agent123"
 echo ""
 echo "  Start development:"
 echo "    pnpm dev              # backend + frontend"

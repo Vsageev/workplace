@@ -21,12 +21,20 @@ import {
 } from '../services/boards.js';
 import { getWorkspaceById } from '../services/workspaces.js';
 import {
+  cancelAgentBatchRun,
+  getAgentBatchRun,
+  listAgentBatchRunItems,
+  listAgentBatchRuns,
+  type AgentBatchItemStatus,
+  type AgentBatchRunFilterStatus,
+} from '../services/agent-batch-queue.js';
+import {
   listBoardCronTemplates,
   createBoardCronTemplate,
   updateBoardCronTemplate,
   deleteBoardCronTemplate,
 } from '../services/board-cron.js';
-import { runBoardAgentBatch } from '../services/board-batch.js';
+import { runBoardAgentBatch, countBoardBatchCards } from '../services/board-batch.js';
 
 const columnSchema = z.object({
   name: z.string().min(1).max(255),
@@ -50,6 +58,9 @@ const updateBoardBody = z.object({
   collectionId: z.uuid().nullable().optional(),
   defaultCollectionId: z.uuid().nullable().optional(),
 });
+
+const batchRunStatusSchema = z.enum(['queued', 'running', 'completed', 'failed', 'cancelled', 'active']);
+const batchItemStatusSchema = z.enum(['queued', 'processing', 'completed', 'failed', 'cancelled']);
 
 export async function boardRoutes(app: FastifyInstance) {
   const typedApp = app.withTypeProvider<ZodTypeProvider>();
@@ -447,6 +458,93 @@ export async function boardRoutes(app: FastifyInstance) {
 
   // ── Batch Run ──────────────────────────────────────────────────────
 
+  typedApp.get(
+    '/api/boards/batch-runs',
+    {
+      onRequest: [app.authenticate, requirePermission('boards:read')],
+      schema: {
+        tags: ['Boards'],
+        summary: 'List batch runs across all boards',
+        querystring: z.object({
+          status: batchRunStatusSchema.optional(),
+          agentId: z.uuid().optional(),
+          limit: z.coerce.number().int().min(1).max(200).optional(),
+          offset: z.coerce.number().int().min(0).optional(),
+        }),
+      },
+    },
+    async (request, reply) => {
+      const { entries, total } = listAgentBatchRuns({
+        sourceType: 'board',
+        status: request.query.status as AgentBatchRunFilterStatus | undefined,
+        agentId: request.query.agentId,
+        limit: request.query.limit,
+        offset: request.query.offset,
+      });
+
+      return reply.send({
+        total,
+        limit: request.query.limit ?? 50,
+        offset: request.query.offset ?? 0,
+        entries,
+      });
+    },
+  );
+
+  typedApp.post(
+    '/api/boards/batch-runs/:runId/cancel',
+    {
+      onRequest: [app.authenticate, requirePermission('boards:update')],
+      schema: {
+        tags: ['Boards'],
+        summary: 'Cancel a board batch run by ID',
+        params: z.object({ runId: z.uuid() }),
+      },
+    },
+    async (request, reply) => {
+      const run = getAgentBatchRun(request.params.runId);
+      if (!run || run.sourceType !== 'board') {
+        return reply.notFound('Batch run not found');
+      }
+
+      const cancelled = cancelAgentBatchRun(request.params.runId);
+      return reply.send(cancelled ?? run);
+    },
+  );
+
+  // Preview how many cards match the batch run filters
+  typedApp.get(
+    '/api/boards/:id/batch-run/preview',
+    {
+      onRequest: [app.authenticate, requirePermission('boards:read')],
+      schema: {
+        tags: ['Boards'],
+        summary: 'Preview card count for a batch run',
+        params: z.object({ id: z.uuid() }),
+        querystring: z.object({
+          columnIds: z.string().optional(),
+          textFilter: z.string().max(200).optional(),
+        }),
+      },
+    },
+    async (request, reply) => {
+      const board = await getBoardById(request.params.id);
+      if (!board) return reply.notFound('Board not found');
+
+      const columnIds = request.query.columnIds
+        ? request.query.columnIds.split(',').filter(Boolean)
+        : undefined;
+
+      const count = countBoardBatchCards(
+        request.params.id,
+        columnIds,
+        request.query.textFilter,
+      );
+
+      return reply.send({ count });
+    },
+  );
+
   // Run an agent on all cards in a board
   typedApp.post(
     '/api/boards/:id/batch-run',
@@ -460,6 +558,7 @@ export async function boardRoutes(app: FastifyInstance) {
           agentId: z.uuid(),
           prompt: z.string().min(1).max(10000),
           columnIds: z.array(z.uuid()).optional(),
+          textFilter: z.string().max(200).optional(),
           maxParallel: z.number().int().min(1).max(10).optional(),
         }),
       },
@@ -474,6 +573,133 @@ export async function boardRoutes(app: FastifyInstance) {
       });
 
       return reply.send(result);
+    },
+  );
+
+  typedApp.get(
+    '/api/boards/:id/batch-runs',
+    {
+      onRequest: [app.authenticate, requirePermission('boards:read')],
+      schema: {
+        tags: ['Boards'],
+        summary: 'List batch runs for a board',
+        params: z.object({ id: z.uuid() }),
+        querystring: z.object({
+          status: batchRunStatusSchema.optional(),
+          agentId: z.uuid().optional(),
+          limit: z.coerce.number().int().min(1).max(200).optional(),
+          offset: z.coerce.number().int().min(0).optional(),
+        }),
+      },
+    },
+    async (request, reply) => {
+      const board = await getBoardById(request.params.id);
+      if (!board) return reply.notFound('Board not found');
+
+      const { entries, total } = listAgentBatchRuns({
+        sourceType: 'board',
+        sourceId: request.params.id,
+        status: request.query.status as AgentBatchRunFilterStatus | undefined,
+        agentId: request.query.agentId,
+        limit: request.query.limit,
+        offset: request.query.offset,
+      });
+
+      return reply.send({
+        total,
+        limit: request.query.limit ?? 50,
+        offset: request.query.offset ?? 0,
+        entries,
+      });
+    },
+  );
+
+  typedApp.get(
+    '/api/boards/:id/batch-runs/:runId',
+    {
+      onRequest: [app.authenticate, requirePermission('boards:read')],
+      schema: {
+        tags: ['Boards'],
+        summary: 'Get a board batch run',
+        params: z.object({ id: z.uuid(), runId: z.uuid() }),
+      },
+    },
+    async (request, reply) => {
+      const board = await getBoardById(request.params.id);
+      if (!board) return reply.notFound('Board not found');
+
+      const run = getAgentBatchRun(request.params.runId);
+      if (!run) return reply.notFound('Batch run not found');
+      if (run.sourceType !== 'board' || run.sourceId !== request.params.id) {
+        return reply.notFound('Batch run not found');
+      }
+
+      return reply.send(run);
+    },
+  );
+
+  typedApp.get(
+    '/api/boards/:id/batch-runs/:runId/items',
+    {
+      onRequest: [app.authenticate, requirePermission('boards:read')],
+      schema: {
+        tags: ['Boards'],
+        summary: 'List board batch run items',
+        params: z.object({ id: z.uuid(), runId: z.uuid() }),
+        querystring: z.object({
+          status: batchItemStatusSchema.optional(),
+          limit: z.coerce.number().int().min(1).max(500).optional(),
+          offset: z.coerce.number().int().min(0).optional(),
+        }),
+      },
+    },
+    async (request, reply) => {
+      const board = await getBoardById(request.params.id);
+      if (!board) return reply.notFound('Board not found');
+
+      const run = getAgentBatchRun(request.params.runId);
+      if (!run) return reply.notFound('Batch run not found');
+      if (run.sourceType !== 'board' || run.sourceId !== request.params.id) {
+        return reply.notFound('Batch run not found');
+      }
+
+      const { entries, total } = listAgentBatchRunItems(request.params.runId, {
+        status: request.query.status as AgentBatchItemStatus | undefined,
+        limit: request.query.limit,
+        offset: request.query.offset,
+      });
+
+      return reply.send({
+        total,
+        limit: request.query.limit ?? 100,
+        offset: request.query.offset ?? 0,
+        entries,
+      });
+    },
+  );
+
+  typedApp.post(
+    '/api/boards/:id/batch-runs/:runId/cancel',
+    {
+      onRequest: [app.authenticate, requirePermission('boards:update')],
+      schema: {
+        tags: ['Boards'],
+        summary: 'Cancel a board batch run',
+        params: z.object({ id: z.uuid(), runId: z.uuid() }),
+      },
+    },
+    async (request, reply) => {
+      const board = await getBoardById(request.params.id);
+      if (!board) return reply.notFound('Board not found');
+
+      const run = getAgentBatchRun(request.params.runId);
+      if (!run) return reply.notFound('Batch run not found');
+      if (run.sourceType !== 'board' || run.sourceId !== request.params.id) {
+        return reply.notFound('Batch run not found');
+      }
+
+      const cancelled = cancelAgentBatchRun(request.params.runId);
+      return reply.send(cancelled ?? run);
     },
   );
 

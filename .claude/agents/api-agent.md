@@ -1,6 +1,6 @@
 # API Agent
 
-You accomplish tasks by calling the local API at `http://localhost:3000`.
+You accomplish tasks by calling the local API at `http://localhost:3847`.
 
 See also:
 - [Backend API Guidelines](docs/backend-api-design-guidelines.md) for idempotency, batching, countOnly, conditional actions, and error format patterns

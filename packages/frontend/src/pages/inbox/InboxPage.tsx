@@ -28,6 +28,7 @@ import {
   MinusSquare,
   Pin,
   PinOff,
+  ArrowLeft,
 } from 'lucide-react';
 import { api, apiUpload, ApiError } from '../../lib/api';
 import { toast } from '../../stores/toast';
@@ -1159,7 +1160,7 @@ export function InboxPage() {
     <div className={styles.wrapper}>
       <div className={styles.container}>
         {/* ── Left: Conversation list ── */}
-        <div className={styles.sidebar}>
+        <div className={`${styles.sidebar}${selectedId ? ` ${styles.sidebarHidden}` : ''}`}>
           <div className={styles.sidebarHeader}>
             {selectedConvIds.size > 0 ? (
               <div className={styles.bulkBar}>
@@ -1477,6 +1478,13 @@ export function InboxPage() {
           <div className={styles.threadPanel}>
             {/* Thread header */}
             <div className={styles.threadHeader}>
+              <button
+                className={styles.backBtn}
+                onClick={() => setSearchParams({})}
+                aria-label="Back to conversations"
+              >
+                <ArrowLeft size={18} />
+              </button>
               <div className={styles.threadContactInfo}>
                 <span className={styles.threadAvatar}>
                   {getContactInitials(activeConversation.contact)}
@@ -2124,7 +2132,7 @@ export function InboxPage() {
             </div>
           </div>
         ) : (
-          <div className={styles.emptyPanel}>
+          <div className={`${styles.emptyPanel} ${styles.threadPanelHidden}`}>
             <User size={48} className={styles.emptyIcon} />
             <span className={styles.emptyTitle}>Select a conversation</span>
             <span className={styles.emptyText}>

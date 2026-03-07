@@ -1,10 +1,11 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useParams, Link, useSearchParams, useNavigate } from 'react-router-dom';
-import { Plus, FileText, Trash2, User, X, Tag, CornerDownLeft, Star, Link2, ExternalLink, Users, ChevronDown, LayoutList, Table2, ChevronUp, Pencil, FolderInput, Layers, ChevronRight, Check, ListChecks, Bookmark, BookmarkPlus, Download, Copy, Bot, Play, Settings2 } from 'lucide-react';
+import { Plus, FileText, Trash2, User, X, Tag, CornerDownLeft, Star, Link2, ExternalLink, Users, ChevronDown, LayoutList, Table2, ChevronUp, Pencil, FolderInput, Layers, ChevronRight, Check, ListChecks, Bookmark, BookmarkPlus, Download, Copy, Bot } from 'lucide-react';
 import { PageHeader } from '../../layout';
 import { Button, EntitySwitcher, CreateCardModal, Modal } from '../../ui';
 import { AgentAvatar } from '../../components/AgentAvatar';
 import { api, ApiError } from '../../lib/api';
+import { fetchProcessingCardAgents } from '../../lib/agent-batch';
 import { toast } from '../../stores/toast';
 import { useConfirm } from '../../hooks/useConfirm';
 import { clearPreferredCollectionId, setPreferredCollectionId } from '../../lib/navigation-preferences';
@@ -18,6 +19,8 @@ import styles from './CollectionDetailPage.module.css';
 import { useDocumentTitle } from '../../hooks/useDocumentTitle';
 import { useDebounce } from '../../hooks/useDebounce';
 import { CardQuickView } from '../boards/CardQuickView';
+import { ActiveBatchRunsBanner } from '../../components/ActiveBatchRunsBanner';
+import { CollectionBatchRunPanel } from './CollectionBatchRunPanel';
 
 interface CardTag {
   id: string;
@@ -187,19 +190,86 @@ export function CollectionDetailPage() {
   );
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
 
+  /* ── Create New Collection ── */
+  const [showCreateCollection, setShowCreateCollection] = useState(false);
+  const [newCollectionName, setNewCollectionName] = useState('');
+  const [newCollectionDesc, setNewCollectionDesc] = useState('');
+  const [creatingCollection, setCreatingCollection] = useState(false);
+
+  async function handleCreateCollection() {
+    if (!newCollectionName.trim()) return;
+    setCreatingCollection(true);
+    try {
+      const created = await api<{ id: string }>('/collections', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: newCollectionName.trim(),
+          description: newCollectionDesc.trim() || null,
+        }),
+      });
+      setShowCreateCollection(false);
+      setNewCollectionName('');
+      setNewCollectionDesc('');
+      toast.success('Collection created');
+      navigate(`/collections/${created.id}`);
+    } catch (err) {
+      if (err instanceof ApiError) toast.error(err.message);
+    } finally {
+      setCreatingCollection(false);
+    }
+  }
+
   /* ── Agent Batch Run state ── */
-  const [showBatchModal, setShowBatchModal] = useState(false);
-  const [batchAgentId, setBatchAgentId] = useState('');
-  const [batchPrompt, setBatchPrompt] = useState('');
-  const [batchMaxParallel, setBatchMaxParallel] = useState(3);
-  const [batchFilterSearch, setBatchFilterSearch] = useState('');
-  const [batchFilterTagId, setBatchFilterTagId] = useState('');
-  const [batchRunning, setBatchRunning] = useState(false);
-  const [batchSaving, setBatchSaving] = useState(false);
-  const [batchAgents, setBatchAgents] = useState<{ id: string; name: string; avatarIcon?: string | null; avatarBgColor?: string | null; avatarLogoColor?: string | null }[]>([]);
-  const [batchAgentsLoaded, setBatchAgentsLoaded] = useState(false);
-  const [showBatchAgentPicker, setShowBatchAgentPicker] = useState(false);
-  const batchAgentPickerRef = useRef<HTMLDivElement>(null);
+  const [showBatchPanel, setShowBatchPanel] = useState(false);
+  const [processingCardAgents, setProcessingCardAgents] = useState<Map<string, string>>(new Map());
+  const [agentInfoCache, setAgentInfoCache] = useState<Record<string, { name: string; avatarIcon?: string | null; avatarBgColor?: string | null; avatarLogoColor?: string | null }>>({});
+  const processingCardsPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const stopProcessingCardPolling = useCallback(() => {
+    if (processingCardsPollRef.current) {
+      clearInterval(processingCardsPollRef.current);
+      processingCardsPollRef.current = null;
+    }
+  }, []);
+
+  const pollProcessingCards = useCallback(async (collectionId: string) => {
+    try {
+      const nextProcessing = await fetchProcessingCardAgents(
+        `/collections/${collectionId}/agent-batch/runs`,
+        (runId) => `/collections/${collectionId}/agent-batch/runs/${runId}/items`,
+        200,
+      );
+      setProcessingCardAgents(nextProcessing);
+      const agentIds = new Set(nextProcessing.values());
+      setAgentInfoCache((prev) => {
+        const missing = [...agentIds].filter((aid) => !prev[aid]);
+        if (missing.length === 0) return prev;
+        for (const agentId of missing) {
+          api<{ id: string; name: string; avatarIcon?: string | null; avatarBgColor?: string | null; avatarLogoColor?: string | null }>(`/agents/${agentId}`)
+            .then((agent) => setAgentInfoCache((p) => ({ ...p, [agentId]: agent })))
+            .catch(() => {});
+        }
+        return prev;
+      });
+    } catch {
+      // ignore polling errors for non-critical UI hints
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!id) {
+      setProcessingCardAgents(new Map());
+      stopProcessingCardPolling();
+      return;
+    }
+
+    void pollProcessingCards(id);
+    processingCardsPollRef.current = setInterval(() => {
+      void pollProcessingCards(id);
+    }, 4000);
+
+    return () => stopProcessingCardPolling();
+  }, [id, pollProcessingCards, stopProcessingCardPolling]);
 
   /* ── Saved Views state ── */
   const [savedViews, setSavedViews] = useState<SavedView[]>(loadSavedViews);
@@ -639,18 +709,6 @@ export function CollectionDetailPage() {
 
 
 
-  // Close batch agent picker on outside click
-  useEffect(() => {
-    if (!showBatchAgentPicker) return;
-    function handleClick(e: MouseEvent) {
-      if (batchAgentPickerRef.current && !batchAgentPickerRef.current.contains(e.target as Node)) {
-        setShowBatchAgentPicker(false);
-      }
-    }
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, [showBatchAgentPicker]);
-
   // Close move dropdown on outside click
   useEffect(() => {
     if (!moveCardId) return;
@@ -1021,82 +1079,6 @@ export function CollectionDetailPage() {
     }
   }
 
-  function openBatchModal() {
-    if (!collection) return;
-    const cfg = collection.agentBatchConfig;
-    setBatchAgentId(cfg?.agentId ?? '');
-    setBatchPrompt(cfg?.prompt ?? '');
-    setBatchMaxParallel(cfg?.maxParallel ?? 3);
-    setBatchFilterSearch(cfg?.cardFilters?.search ?? '');
-    setBatchFilterTagId(cfg?.cardFilters?.tagId ?? '');
-    setShowBatchModal(true);
-    if (!batchAgentsLoaded) {
-      api<{ entries: { id: string; name: string }[] }>('/agents?limit=100')
-        .then((res) => { setBatchAgents(res.entries); setBatchAgentsLoaded(true); })
-        .catch(() => {/* leave batchAgentsLoaded false so next open retries */});
-    }
-  }
-
-  async function handleSaveBatchConfig() {
-    if (!id || !collection) return;
-    setBatchSaving(true);
-    try {
-      const agentBatchConfig: AgentBatchConfig = {
-        agentId: batchAgentId || null,
-        prompt: batchPrompt || null,
-        maxParallel: batchMaxParallel,
-        cardFilters: {
-          ...(batchFilterSearch ? { search: batchFilterSearch } : {}),
-          ...(batchFilterTagId ? { tagId: batchFilterTagId } : {}),
-        },
-      };
-      const updated = await api<Collection>(`/collections/${id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ agentBatchConfig }),
-      });
-      setCollection(updated);
-      toast.success('Batch run configuration saved');
-    } catch (err) {
-      if (err instanceof ApiError) toast.error(err.message);
-      else toast.error('Failed to save configuration');
-    } finally {
-      setBatchSaving(false);
-    }
-  }
-
-  async function handleRunBatch() {
-    if (!id || !batchAgentId || !batchPrompt.trim()) {
-      toast.error('Select an agent and enter a prompt');
-      return;
-    }
-    setBatchRunning(true);
-    try {
-      const cardFilters: AgentBatchConfig['cardFilters'] = {
-        ...(batchFilterSearch ? { search: batchFilterSearch } : {}),
-        ...(batchFilterTagId ? { tagId: batchFilterTagId } : {}),
-      };
-      const result = await api<{ total: number; queued: number; message: string }>(
-        `/collections/${id}/agent-batch`,
-        {
-          method: 'POST',
-          body: JSON.stringify({
-            agentId: batchAgentId,
-            prompt: batchPrompt,
-            maxParallel: batchMaxParallel,
-            cardFilters,
-          }),
-        },
-      );
-      toast.success(result.message);
-      setShowBatchModal(false);
-    } catch (err) {
-      if (err instanceof ApiError) toast.error(err.message);
-      else toast.error('Failed to start batch run');
-    } finally {
-      setBatchRunning(false);
-    }
-  }
-
   async function handleDeleteCollection() {
     if (!collection || isGeneralCollection(collection)) return;
 
@@ -1156,6 +1138,8 @@ export function CollectionDetailPage() {
         }}
         basePath="/collections"
         allLabel="All Collections"
+        onCreateNew={() => setShowCreateCollection(true)}
+        createLabel="New Collection"
       />
 
       <PageHeader
@@ -1217,7 +1201,7 @@ export function CollectionDetailPage() {
             <Button
               variant="secondary"
               size="md"
-              onClick={openBatchModal}
+              onClick={() => setShowBatchPanel(true)}
               title="Run an agent on cards in this collection"
             >
               <Bot size={14} />
@@ -1229,6 +1213,12 @@ export function CollectionDetailPage() {
             </Button>
           </div>
         }
+      />
+
+      <ActiveBatchRunsBanner
+        listEndpoint={`/collections/${id}/agent-batch/runs`}
+        cancelEndpointPrefix={`/collections/${id}/agent-batch/runs`}
+        itemsEndpoint={(runId) => `/collections/${id}/agent-batch/runs/${runId}/items`}
       />
 
       <div className={styles.toolbar}>
@@ -1533,16 +1523,27 @@ export function CollectionDetailPage() {
                     </thead>
                     <tbody>
                       {group.cards.map((card) => {
+                        const isProcessing = processingCardAgents.has(card.id);
+                        const procAgent = isProcessing ? agentInfoCache[processingCardAgents.get(card.id)!] : null;
                         return (
                           <tr
                             key={card.id}
-                            className={styles.tableRow}
+                            className={`${styles.tableRow}${isProcessing ? ` ${styles.tableRowProcessing}` : ''}`}
                             onClick={() => setQuickViewCardId(card.id)}
                           >
                             <td className={styles.tableTdName} onClick={(e) => e.stopPropagation()}>
                               <div className={styles.tableNameCell}>
                                 <div>
                                   <span className={styles.tableCardName}>{card.name}</span>
+                                  {isProcessing && (
+                                    <span className={styles.tableProcessingBadge}>
+                                      {procAgent && (
+                                        <AgentAvatar icon={procAgent.avatarIcon || 'spark'} bgColor={procAgent.avatarBgColor || '#1a1a2e'} logoColor={procAgent.avatarLogoColor || '#e94560'} size={14} />
+                                      )}
+                                      <span className={styles.batchLabel}>Batch run</span>
+                                      {procAgent && <><span className={styles.batchSep}>·</span><span>{procAgent.name}</span></>}
+                                    </span>
+                                  )}
                                   {card.description && <span className={styles.tableCardDesc}>{stripMarkdown(card.description)}</span>}
                                 </div>
                               </div>
@@ -1632,10 +1633,12 @@ export function CollectionDetailPage() {
             <tbody>
               {tableSortedCards.map((card, index) => {
                 const isFocused = focusedCardIndex === index;
+                const isProcessing = processingCardAgents.has(card.id);
+                const procAgent = isProcessing ? agentInfoCache[processingCardAgents.get(card.id)!] : null;
                 return (
                   <tr
                     key={card.id}
-                    className={`${styles.tableRow}${isFocused ? ` ${styles.tableRowFocused}` : ''}`}
+                    className={`${styles.tableRow}${isFocused ? ` ${styles.tableRowFocused}` : ''}${isProcessing ? ` ${styles.tableRowProcessing}` : ''}`}
                     onClick={() => setQuickViewCardId(card.id)}
                   >
                     <td className={styles.tableTdName} onClick={(e) => e.stopPropagation()}>
@@ -1658,6 +1661,15 @@ export function CollectionDetailPage() {
                             />
                           ) : (
                             <span className={styles.tableCardName}>{card.name}</span>
+                          )}
+                          {isProcessing && (
+                            <span className={styles.tableProcessingBadge}>
+                              {procAgent && (
+                                <AgentAvatar icon={procAgent.avatarIcon || 'spark'} bgColor={procAgent.avatarBgColor || '#1a1a2e'} logoColor={procAgent.avatarLogoColor || '#e94560'} size={14} />
+                              )}
+                              <span className={styles.batchLabel}>Batch run</span>
+                              {procAgent && <><span className={styles.batchSep}>·</span><span>{procAgent.name}</span></>}
+                            </span>
                           )}
                           {card.description && (
                             <span className={styles.tableCardDesc}>{stripMarkdown(card.description)}</span>
@@ -1789,16 +1801,27 @@ export function CollectionDetailPage() {
               {!collapsedGroups.has(group.key) && (
                 <div className={styles.cardsList}>
                   {group.cards.map((card) => {
+                    const isProcessing = processingCardAgents.has(card.id);
+                    const procAgent = isProcessing ? agentInfoCache[processingCardAgents.get(card.id)!] : null;
                     return (
                       <div key={card.id} className={styles.cardItemWrapper}>
                         <div
-                          className={styles.cardItem}
+                          className={`${styles.cardItem}${isProcessing ? ` ${styles.cardItemProcessing}` : ''}`}
                           role="button"
                           tabIndex={0}
                           onClick={() => setQuickViewCardId(card.id)}
                           onKeyDown={(e) => { if (e.key === 'Enter') setQuickViewCardId(card.id); }}
                         >
                           <div className={styles.cardBody}>
+                            {isProcessing && (
+                              <div className={styles.cardProcessingBadge}>
+                                {procAgent && (
+                                  <AgentAvatar icon={procAgent.avatarIcon || 'spark'} bgColor={procAgent.avatarBgColor || '#1a1a2e'} logoColor={procAgent.avatarLogoColor || '#e94560'} size={14} />
+                                )}
+                                <span className={styles.batchLabel}>Batch run</span>
+                                {procAgent && <><span className={styles.batchSep}>·</span><span>{procAgent.name}</span></>}
+                              </div>
+                            )}
                             <div className={styles.cardNameRow}>
                               <div className={styles.cardName}>{card.name}</div>
                             </div>
@@ -1865,16 +1888,27 @@ export function CollectionDetailPage() {
         <div className={styles.cardsList} ref={cardListRef}>
           {sortedCards.map((card, index) => {
             const isFocused = focusedCardIndex === index;
+            const isProcessing = processingCardAgents.has(card.id);
+            const procAgent = isProcessing ? agentInfoCache[processingCardAgents.get(card.id)!] : null;
             return (
               <div key={card.id} className={`${styles.cardItemWrapper}${isFocused ? ` ${styles.cardItemFocused}` : ''}`}>
                 <div
-                  className={styles.cardItem}
+                  className={`${styles.cardItem}${isProcessing ? ` ${styles.cardItemProcessing}` : ''}`}
                   role="button"
                   tabIndex={0}
                   onClick={() => { if (editingCardId !== card.id) setQuickViewCardId(card.id); }}
                   onKeyDown={(e) => { if (e.key === 'Enter' && editingCardId !== card.id) setQuickViewCardId(card.id); }}
                 >
                   <div className={styles.cardBody}>
+                    {isProcessing && (
+                      <div className={styles.cardProcessingBadge}>
+                        {procAgent && (
+                          <AgentAvatar icon={procAgent.avatarIcon || 'spark'} bgColor={procAgent.avatarBgColor || '#1a1a2e'} logoColor={procAgent.avatarLogoColor || '#e94560'} size={14} />
+                        )}
+                        <span className={styles.batchLabel}>Batch run</span>
+                        {procAgent && <><span className={styles.batchSep}>·</span><span>{procAgent.name}</span></>}
+                      </div>
+                    )}
                     {editingCardId === card.id ? (
                       <input
                         className={styles.cardNameInput}
@@ -2057,147 +2091,50 @@ export function CollectionDetailPage() {
         />
       )}
 
-      {showBatchModal && (
-        <Modal onClose={() => setShowBatchModal(false)} size="md" ariaLabel="Batch Run Configuration">
-          <div className={styles.batchModal}>
-            <div className={styles.batchModalHeader}>
-              <Bot size={18} />
-              <h2>Batch Run</h2>
-              <button className={styles.batchModalClose} onClick={() => setShowBatchModal(false)}>
-                <X size={16} />
-              </button>
-            </div>
-            <p className={styles.batchModalDesc}>
-              Run an agent on all cards matching the filters below.
-            </p>
-
-            <div className={styles.batchField}>
-              <label className={styles.batchLabel}>Agent</label>
-              <div ref={batchAgentPickerRef} className={styles.batchAgentPicker}>
-                <button
-                  type="button"
-                  className={styles.batchAgentTrigger}
-                  onClick={() => setShowBatchAgentPicker((v) => !v)}
-                >
-                  {batchAgentId ? (() => {
-                    const a = batchAgents.find((x) => x.id === batchAgentId);
-                    return a ? (
-                      <>
-                        <AgentAvatar icon={a.avatarIcon || 'spark'} bgColor={a.avatarBgColor || '#1a1a2e'} logoColor={a.avatarLogoColor || '#e94560'} size={16} />
-                        <span>{a.name}</span>
-                      </>
-                    ) : <span className={styles.batchAgentPlaceholder}>Select an agent...</span>;
-                  })() : (
-                    <span className={styles.batchAgentPlaceholder}>
-                      {!batchAgentsLoaded ? 'Loading agents...' : 'Select an agent...'}
-                    </span>
-                  )}
-                  <ChevronDown size={13} className={styles.batchAgentChevron} />
-                </button>
-                {showBatchAgentPicker && (
-                  <div className={styles.batchAgentDropdown}>
-                    {batchAgents.length === 0 ? (
-                      <div className={styles.batchAgentEmpty}>No agents available</div>
-                    ) : (
-                      batchAgents.map((a) => (
-                        <button
-                          key={a.id}
-                          type="button"
-                          className={`${styles.batchAgentOption}${batchAgentId === a.id ? ` ${styles.batchAgentOptionActive}` : ''}`}
-                          onClick={() => { setBatchAgentId(a.id); setShowBatchAgentPicker(false); }}
-                        >
-                          <AgentAvatar icon={a.avatarIcon || 'spark'} bgColor={a.avatarBgColor || '#1a1a2e'} logoColor={a.avatarLogoColor || '#e94560'} size={16} />
-                          <span>{a.name}</span>
-                          {batchAgentId === a.id && <Check size={12} className={styles.batchAgentCheck} />}
-                        </button>
-                      ))
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className={styles.batchField}>
-              <label className={styles.batchLabel}>Prompt</label>
-              <textarea
-                className={styles.batchTextarea}
-                value={batchPrompt}
-                onChange={(e) => setBatchPrompt(e.target.value)}
-                placeholder="Describe the task for the agent to perform on each card..."
-                rows={5}
+      {showCreateCollection && (
+        <Modal onClose={() => setShowCreateCollection(false)} size="sm" ariaLabel="New Collection">
+          <div className={styles.createModal}>
+            <div className={styles.createModalTitle}>New Collection</div>
+            <div className={styles.createModalField}>
+              <label className={styles.createModalLabel}>Name</label>
+              <input
+                className={styles.createModalInput}
+                value={newCollectionName}
+                onChange={(e) => setNewCollectionName(e.target.value)}
+                placeholder="Collection name"
+                autoFocus
+                onKeyDown={(e) => e.key === 'Enter' && handleCreateCollection()}
               />
-              <span className={styles.batchHint}>
-                The agent will receive the card name and description along with this prompt.
-              </span>
             </div>
-
-            <div className={styles.batchSection}>
-              <div className={styles.batchSectionTitle}><Settings2 size={13} /> Card Filters</div>
-
-              <div className={styles.batchFiltersGrid}>
-                <div className={styles.batchField}>
-                  <label className={styles.batchLabel}>Search</label>
-                  <input
-                    type="text"
-                    className={styles.batchInput}
-                    value={batchFilterSearch}
-                    onChange={(e) => setBatchFilterSearch(e.target.value)}
-                    placeholder="Search card name/description..."
-                  />
-                </div>
-
-                <div className={styles.batchField}>
-                  <label className={styles.batchLabel}>Tag</label>
-                  <select
-                    className={styles.batchSelect}
-                    value={batchFilterTagId}
-                    onChange={(e) => setBatchFilterTagId(e.target.value)}
-                  >
-                    <option value="">Any tag</option>
-                    {allTags.map((t) => (
-                      <option key={t.id} value={t.id}>{t.name}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
+            <div className={styles.createModalField}>
+              <label className={styles.createModalLabel}>Description (optional)</label>
+              <input
+                className={styles.createModalInput}
+                value={newCollectionDesc}
+                onChange={(e) => setNewCollectionDesc(e.target.value)}
+                placeholder="Brief description"
+              />
             </div>
-
-            <div className={styles.batchField}>
-              <label className={styles.batchLabel}>Max Parallel Agents</label>
-              <div className={styles.batchParallelRow}>
-                <input
-                  type="range"
-                  min={1}
-                  max={20}
-                  value={batchMaxParallel}
-                  onChange={(e) => setBatchMaxParallel(Number(e.target.value))}
-                  className={styles.batchRange}
-                />
-                <span className={styles.batchParallelValue}>{batchMaxParallel}</span>
-              </div>
-              <span className={styles.batchHint}>
-                Maximum number of agent instances running simultaneously.
-              </span>
-            </div>
-
-            <div className={styles.batchActions}>
-              <Button
-                variant="secondary"
-                onClick={() => { void handleSaveBatchConfig(); }}
-                disabled={batchSaving || batchRunning}
-              >
-                {batchSaving ? 'Saving...' : 'Save Config'}
-              </Button>
-              <Button
-                onClick={() => { void handleRunBatch(); }}
-                disabled={batchRunning || batchSaving || !batchAgentId || !batchPrompt.trim()}
-              >
-                <Play size={14} />
-                {batchRunning ? 'Starting...' : 'Run Now'}
+            <div className={styles.createModalActions}>
+              <Button variant="ghost" onClick={() => setShowCreateCollection(false)}>Cancel</Button>
+              <Button onClick={handleCreateCollection} disabled={creatingCollection || !newCollectionName.trim()}>
+                {creatingCollection ? 'Creating...' : 'Create'}
               </Button>
             </div>
           </div>
         </Modal>
+      )}
+
+      {showBatchPanel && id && (
+        <CollectionBatchRunPanel
+          collectionId={id}
+          tags={allTags}
+          initialConfig={collection?.agentBatchConfig}
+          onClose={() => setShowBatchPanel(false)}
+          onConfigSaved={(cfg) => {
+            if (collection) setCollection({ ...collection, agentBatchConfig: cfg });
+          }}
+        />
       )}
     </div>
   );

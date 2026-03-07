@@ -11,6 +11,7 @@ import { validateUploadedFile } from '../utils/file-validation.js';
 import { createAgentRateLimiter } from '../lib/api-helpers.js';
 import {
   listAgentConversations,
+  listRecentAgentConversations,
   createAgentConversation,
   validateConversationOwnership,
   deleteAgentConversation,
@@ -33,6 +34,25 @@ export const promptRateLimiter = createAgentRateLimiter();
 
 export async function agentChatRoutes(app: FastifyInstance) {
   const typedApp = app.withTypeProvider<ZodTypeProvider>();
+
+  // List recent agent chat conversations across all agents
+  typedApp.get(
+    '/api/agent-chat/recent',
+    {
+      onRequest: [app.authenticate, requirePermission('settings:read')],
+      schema: {
+        tags: ['Agent Chat'],
+        summary: 'List recent agent chat conversations across all agents',
+        querystring: z.object({
+          limit: z.coerce.number().int().min(1).max(50).default(8),
+        }),
+      },
+    },
+    async (request, reply) => {
+      const result = listRecentAgentConversations(request.query.limit);
+      return reply.send(result);
+    },
+  );
 
   // List conversations for an agent
   typedApp.get(
@@ -479,14 +499,14 @@ export async function agentChatRoutes(app: FastifyInstance) {
     },
   );
 
-  // Upload an image to agent chat
+  // Upload images to agent chat (up to 10)
   typedApp.post(
     '/api/agents/:id/chat/upload',
     {
       onRequest: [app.authenticate, requirePermission('settings:update')],
       schema: {
         tags: ['Agent Chat'],
-        summary: 'Upload an image to agent chat and create a message with the attachment',
+        summary: 'Upload up to 10 images to agent chat and create a message with the attachments',
         params: z.object({ id: z.string() }),
       },
     },
@@ -494,56 +514,73 @@ export async function agentChatRoutes(app: FastifyInstance) {
       const agent = getAgent(request.params.id);
       if (!agent) return reply.notFound('Agent not found');
 
-      const data = await request.file();
-      if (!data) return reply.badRequest('No file uploaded');
+      const MAX_IMAGES = 10;
+      const parts = request.parts();
+      let conversationId: string | undefined;
+      let caption: string | null = null;
+      const fileParts: Array<{ mimetype: string; filename: string; buffer: Buffer }> = [];
 
-      const conversationId = (data.fields.conversationId as { value: string } | undefined)?.value;
+      for await (const part of parts) {
+        if (part.type === 'field') {
+          if (part.fieldname === 'conversationId') conversationId = part.value as string;
+          else if (part.fieldname === 'caption') caption = (part.value as string) || null;
+        } else if (part.type === 'file') {
+          if (fileParts.length >= MAX_IMAGES) continue;
+          const chunks: Buffer[] = [];
+          for await (const chunk of part.file) {
+            chunks.push(chunk);
+          }
+          fileParts.push({
+            mimetype: part.mimetype || 'application/octet-stream',
+            filename: part.filename || 'image.jpg',
+            buffer: Buffer.concat(chunks),
+          });
+        }
+      }
+
+      if (fileParts.length === 0) return reply.badRequest('No files uploaded');
       if (!conversationId) return reply.badRequest('conversationId is required');
 
       const conv = validateConversationOwnership(conversationId, request.params.id);
       if (!conv) return reply.notFound('Conversation not found');
 
-      const mimeType = data.mimetype || 'application/octet-stream';
-      const filename = data.filename || 'image.jpg';
+      const attachments: Array<{
+        type: string;
+        fileName: string;
+        mimeType: string;
+        fileSize: number;
+        storagePath: string;
+      }> = [];
 
-      const fileCheck = validateUploadedFile(mimeType, filename);
-      if (!fileCheck.valid) return reply.badRequest(fileCheck.error!);
+      for (const filePart of fileParts) {
+        const fileCheck = validateUploadedFile(filePart.mimetype, filePart.filename);
+        if (!fileCheck.valid) return reply.badRequest(fileCheck.error!);
 
-      if (!mimeType.startsWith('image/')) {
-        return reply.badRequest('Only image files are supported');
+        if (!filePart.mimetype.startsWith('image/')) {
+          return reply.badRequest('Only image files are supported');
+        }
+
+        const ext = path.extname(filePart.filename) || '.jpg';
+        const uniqueName = `${crypto.randomUUID()}${ext}`;
+        const storagePath = '/chat-uploads';
+
+        const entry = await uploadFile(storagePath, uniqueName, filePart.mimetype, filePart.buffer);
+
+        attachments.push({
+          type: 'image',
+          fileName: filePart.filename,
+          mimeType: filePart.mimetype,
+          fileSize: filePart.buffer.length,
+          storagePath: entry.path,
+        });
       }
-
-      // Read file into buffer
-      const chunks: Buffer[] = [];
-      for await (const chunk of data.file) {
-        chunks.push(chunk);
-      }
-      const buffer = Buffer.concat(chunks);
-
-      // Save to storage under /chat-uploads/ with a unique name
-      const ext = path.extname(filename) || '.jpg';
-      const uniqueName = `${crypto.randomUUID()}${ext}`;
-      const storagePath = '/chat-uploads';
-
-      const entry = await uploadFile(storagePath, uniqueName, mimeType, buffer);
-
-      // Build attachment metadata
-      const attachment = {
-        type: 'image',
-        fileName: filename,
-        mimeType,
-        fileSize: buffer.length,
-        storagePath: entry.path,
-      };
-
-      const caption = (data.fields.caption as { value: string } | undefined)?.value || null;
 
       const message = saveAgentConversationMessage({
         conversationId,
         direction: 'outbound',
         content: caption || '',
         type: 'image',
-        attachments: [attachment],
+        attachments,
       });
 
       return reply.status(201).send(message);

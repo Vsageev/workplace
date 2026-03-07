@@ -369,25 +369,12 @@ async function syncContactFromTelegram(
 async function findOrCreateContact(telegramUser: TelegramUser) {
   const telegramUserId = String(telegramUser.id);
 
-  // 1. Primary lookup: direct telegramId on the contact record
   const directMatch = store.findOne('contacts', (r: any) => r.telegramId === telegramUserId);
   if (directMatch) {
     return syncContactFromTelegram(directMatch, telegramUser);
   }
 
-  // 2. Fallback: find via an existing conversation (backward compat for pre-migration data)
-  const existingConversation = store.findOne('conversations', r =>
-    r.channelType === 'telegram' && r.externalId === telegramUserId,
-  );
-
-  if (existingConversation) {
-    const contact = store.getById('contacts', existingConversation.contactId as string);
-    if (contact) {
-      return syncContactFromTelegram(contact, telegramUser);
-    }
-  }
-
-  // 3. Create a new contact from the Telegram user info
+  // Create a new contact from the Telegram user info.
   const contact = store.insert('contacts', {
     firstName: telegramUser.first_name,
     lastName: telegramUser.last_name ?? null,

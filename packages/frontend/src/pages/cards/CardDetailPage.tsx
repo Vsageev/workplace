@@ -4,7 +4,7 @@ import { useParams, Link, useNavigate, useLocation } from 'react-router-dom';
 import {
   Trash2, Plus, X, Link2, Columns3, GripVertical, FolderOpen,
   FileText, User, Send, Check, Pencil, Loader2, ChevronDown, Copy, CloudOff, Circle, CircleCheck, Star, ListChecks, History,
-  Bold, Italic, Code, List, Heading2, ChevronLeft, ChevronRight,
+  Bold, Italic, Code, List, Heading2, ChevronLeft, ChevronRight, Keyboard,
 } from 'lucide-react';
 import { Breadcrumb, Button, MarkdownContent, PageLoader, Tooltip } from '../../ui';
 import type { BreadcrumbItem } from '../../ui';
@@ -286,6 +286,7 @@ export function CardDetailPage() {
 
   // Collection picker
   const [showCollectionPicker, setShowCollectionPicker] = useState(false);
+  const [showShortcuts, setShowShortcuts] = useState(false);
   const [allCollections, setAllCollections] = useState<{ id: string; name: string }[]>([]);
   const [loadingCollections, setLoadingCollections] = useState(false);
   const [movingCollection, setMovingCollection] = useState(false);
@@ -427,7 +428,7 @@ export function CardDetailPage() {
       if (ta) {
         ta.focus();
         ta.style.height = 'auto';
-        ta.style.height = `${Math.max(160, ta.scrollHeight)}px`;
+        ta.style.height = `${Math.max(220, ta.scrollHeight)}px`;
       }
     }, 0);
   }
@@ -561,7 +562,7 @@ export function CardDetailPage() {
       ta.focus();
       ta.setSelectionRange(newStart, newEnd);
       ta.style.height = 'auto';
-      ta.style.height = `${Math.max(160, ta.scrollHeight)}px`;
+      ta.style.height = `${Math.max(220, ta.scrollHeight)}px`;
     });
   }
 
@@ -903,8 +904,16 @@ export function CardDetailPage() {
   const startEditDescRef = useRef(startEditDesc);
   startEditDescRef.current = startEditDesc;
 
+  const showShortcutsRef = useRef(showShortcuts);
+  showShortcutsRef.current = showShortcuts;
+
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape' && showShortcutsRef.current) {
+        e.preventDefault();
+        setShowShortcuts(false);
+        return;
+      }
       const tag = (e.target as HTMLElement).tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
       if ((e.target as HTMLElement).isContentEditable) return;
@@ -923,6 +932,9 @@ export function CardDetailPage() {
         if (!editingDescRef.current) {
           startEditDescRef.current();
         }
+      } else if (e.key === '?') {
+        e.preventDefault();
+        setShowShortcuts(prev => !prev);
       }
     }
     document.addEventListener('keydown', onKeyDown);
@@ -1263,11 +1275,44 @@ export function CardDetailPage() {
           <Copy size={14} />
           Duplicate
         </Button>
+        <Tooltip label="Keyboard shortcuts (?)">
+          <Button variant="ghost" size="sm" onClick={() => setShowShortcuts(s => !s)}>
+            <Keyboard size={14} />
+          </Button>
+        </Tooltip>
         <Button variant="ghost" size="sm" onClick={handleDelete}>
           <Trash2 size={14} />
           Delete
         </Button>
       </div>
+
+      {showShortcuts && (
+        <div className={styles.shortcutsBackdrop} onClick={() => setShowShortcuts(false)}>
+          <div className={styles.shortcutsModal} onClick={(e) => e.stopPropagation()}>
+            <div className={styles.shortcutsHeader}>
+              <span>Keyboard shortcuts</span>
+              <button className={styles.shortcutsClose} onClick={() => setShowShortcuts(false)}>
+                <X size={16} />
+              </button>
+            </div>
+            <div className={styles.shortcutsList}>
+              <div className={styles.shortcutRow}><kbd className={styles.kbd}>E</kbd><span>Edit description</span></div>
+              <div className={styles.shortcutRow}><kbd className={styles.kbd}>M</kbd><span>Focus comment input</span></div>
+              <div className={styles.shortcutRow}><kbd className={styles.kbd}>?</kbd><span>Toggle this overlay</span></div>
+              <div className={styles.shortcutsSep} />
+              <div className={styles.shortcutsGroup}>While editing description</div>
+              <div className={styles.shortcutRow}><kbd className={styles.kbd}>{navigator.platform?.includes('Mac') ? '\u2318' : 'Ctrl+'}Enter</kbd><span>Save description</span></div>
+              <div className={styles.shortcutRow}><kbd className={styles.kbd}>Esc</kbd><span>Close editor</span></div>
+              <div className={styles.shortcutRow}><kbd className={styles.kbd}>{navigator.platform?.includes('Mac') ? '\u2318' : 'Ctrl+'}B</kbd><span>Bold</span></div>
+              <div className={styles.shortcutRow}><kbd className={styles.kbd}>{navigator.platform?.includes('Mac') ? '\u2318' : 'Ctrl+'}I</kbd><span>Italic</span></div>
+              <div className={styles.shortcutsSep} />
+              <div className={styles.shortcutsGroup}>Navigation</div>
+              <div className={styles.shortcutRow}><kbd className={styles.kbd}>Alt+\u2190</kbd><span>Previous card</span></div>
+              <div className={styles.shortcutRow}><kbd className={styles.kbd}>Alt+\u2192</kbd><span>Next card</span></div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className={styles.grid}>
         {/* ── Left: name, description, activity ───────── */}
@@ -1300,16 +1345,9 @@ export function CardDetailPage() {
             <div className={styles.descriptionSection}>
               <div className={styles.descriptionHeader}>
                 <span className={styles.descriptionLabel}>Description</span>
-                {editingDesc && (
-                  <span className={`${styles.saveStatus} ${styles[`saveStatus_${descSaveStatus}`] || ''}`}>
-                    {descSaveStatus === 'saving' && <><Loader2 size={11} className={styles.spinner} /> Saving…</>}
-                    {descSaveStatus === 'saved' && <><Check size={11} /> Saved</>}
-                    {descSaveStatus === 'error' && <><CloudOff size={11} /> Save failed</>}
-                  </span>
-                )}
               </div>
               {editingDesc ? (
-                <>
+                <div className={styles.descriptionEditorWrapper}>
                   <div className={styles.descriptionTabs}>
                     <button
                       type="button"
@@ -1325,6 +1363,11 @@ export function CardDetailPage() {
                     >
                       Preview
                     </button>
+                    <span className={`${styles.saveStatus} ${styles[`saveStatus_${descSaveStatus}`] || ''}`}>
+                      {descSaveStatus === 'saving' && <><Loader2 size={11} className={styles.spinner} /> Saving…</>}
+                      {descSaveStatus === 'saved' && <><Check size={11} /> Saved</>}
+                      {descSaveStatus === 'error' && <><CloudOff size={11} /> Save failed</>}
+                    </span>
                   </div>
                   {!descPreview && (
                     <div className={styles.mdToolbar}>
@@ -1355,9 +1398,9 @@ export function CardDetailPage() {
                         scheduleDescAutosave(e.target.value);
                         // Auto-grow
                         e.target.style.height = 'auto';
-                        e.target.style.height = `${Math.max(160, e.target.scrollHeight)}px`;
+                        e.target.style.height = `${Math.max(220, e.target.scrollHeight)}px`;
                       }}
-                      placeholder="Write a description… (Markdown supported)"
+                      placeholder="Add a description..."
                       onSelect={(e) => {
                         const t = e.currentTarget;
                         descSelectionRef.current = { start: t.selectionStart, end: t.selectionEnd };
@@ -1393,12 +1436,14 @@ export function CardDetailPage() {
                     />
                   )}
                   <div className={styles.descriptionActions}>
-                    <span className={styles.descriptionHint}>Auto-saves as you type</span>
+                    <span className={styles.descriptionHint}>
+                      Markdown supported &middot; Esc to close
+                    </span>
                     <Button variant="ghost" size="sm" onClick={() => closeDescEditor()}>
                       Done
                     </Button>
                   </div>
-                </>
+                </div>
               ) : card.description ? (
                 <div className={styles.descriptionDisplay} onClick={startEditDesc}>
                   <MarkdownContent>{card.description}</MarkdownContent>
@@ -1406,8 +1451,8 @@ export function CardDetailPage() {
                 </div>
               ) : (
                 <div className={styles.descriptionPlaceholder} onClick={startEditDesc}>
-                  <Pencil size={12} />
-                  Click to add a description...
+                  <FileText size={14} />
+                  Add a description...
                 </div>
               )}
             </div>
@@ -1726,52 +1771,45 @@ export function CardDetailPage() {
 
         {/* ── Right sidebar: metadata ─────────────────── */}
         <div className={styles.sidebar}>
-          {/* Details */}
-          <div className={styles.sidePanel}>
-            <div className={styles.sidePanelHeader}>
-              <span className={styles.sidePanelTitle}>Details</span>
-            </div>
-            <div className={styles.sidePanelBody}>
-              {/* Collection */}
-              <div className={styles.collectionRow} ref={collectionPickerRef}>
-                <div className={styles.detailRow} style={{ borderTop: 'none', paddingTop: 0 }}>
-                  <span className={styles.detailLabel}>Collection</span>
-                  <button className={styles.collectionBtn} onClick={openCollectionPicker}>
-                    <FolderOpen size={11} />
-                    <span className={styles.detailValue}>{collectionName ?? 'Unknown'}</span>
-                    <ChevronDown size={10} />
-                  </button>
-                </div>
-                {showCollectionPicker && (
-                  <div className={styles.collectionDropdown}>
-                    {loadingCollections ? (
-                      <div className={styles.resultsEmpty}>
-                        <Loader2 size={14} className={styles.spinner} /> Loading…
-                      </div>
-                    ) : allCollections.length > 0 ? (
-                      <div className={styles.resultsList}>
-                        {allCollections.map((col) => (
-                          <button
-                            key={col.id}
-                            className={`${styles.resultItem}${col.id === card.collectionId ? ` ${styles.resultItemActive}` : ''}`}
-                            onClick={() => moveToCollection(col.id)}
-                            disabled={col.id === card.collectionId || movingCollection}
-                          >
-                            <FolderOpen size={12} /> {col.name}
-                            {col.id === card.collectionId && <Check size={12} className={styles.checkIcon} />}
-                          </button>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className={styles.resultsEmpty}>No collections found</div>
-                    )}
-                  </div>
-                )}
+          <div className={styles.sidebarCard}>
+            {/* ── Collection & Assignee ── */}
+            <div className={styles.sidebarSection} ref={collectionPickerRef}>
+              <div className={styles.sectionRow}>
+                <span className={styles.sectionLabel}>Collection</span>
+                <button className={styles.collectionBtn} onClick={openCollectionPicker}>
+                  <FolderOpen size={11} />
+                  <span className={styles.detailValue}>{collectionName ?? 'Unknown'}</span>
+                  <ChevronDown size={10} />
+                </button>
               </div>
+              {showCollectionPicker && (
+                <div className={styles.collectionDropdown}>
+                  {loadingCollections ? (
+                    <div className={styles.resultsEmpty}>
+                      <Loader2 size={14} className={styles.spinner} /> Loading…
+                    </div>
+                  ) : allCollections.length > 0 ? (
+                    <div className={styles.resultsList}>
+                      {allCollections.map((col) => (
+                        <button
+                          key={col.id}
+                          className={`${styles.resultItem}${col.id === card.collectionId ? ` ${styles.resultItemActive}` : ''}`}
+                          onClick={() => moveToCollection(col.id)}
+                          disabled={col.id === card.collectionId || movingCollection}
+                        >
+                          <FolderOpen size={12} /> {col.name}
+                          {col.id === card.collectionId && <Check size={12} className={styles.checkIcon} />}
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className={styles.resultsEmpty}>No collections found</div>
+                  )}
+                </div>
+              )}
 
-              {/* Assignee */}
-              <div className={styles.detailRow} ref={assigneeTriggerRef}>
-                <span className={styles.detailLabel}>Assignee</span>
+              <div className={styles.sectionRow} ref={assigneeTriggerRef}>
+                <span className={styles.sectionLabel}>Assignee</span>
                 {card.assignee ? (
                   <div className={styles.assigneeRow} onClick={openAssignee} style={{ cursor: 'pointer' }}>
                     <div className={`${styles.avatar}${card.assignee.type === 'agent' ? ` ${styles.avatarAgent}` : ''}`}>
@@ -1802,72 +1840,61 @@ export function CardDetailPage() {
                 />,
                 document.body,
               )}
-
-
-              {/* Created */}
-              <div className={styles.detailRow}>
-                <span className={styles.detailLabel}>Created</span>
-                <TimeAgo date={card.createdAt} className={styles.detailValue} />
-              </div>
-
-              {/* Updated */}
-              <div className={styles.detailRow}>
-                <span className={styles.detailLabel}>Updated</span>
-                <TimeAgo date={card.updatedAt} className={styles.detailValue} />
-              </div>
             </div>
-          </div>
 
-          {/* Boards */}
-          <div className={styles.sidePanel}>
-            <div className={styles.sidePanelHeader}>
-              <span className={styles.sidePanelTitle}>Boards</span>
-              <button className={styles.sidePanelAction} onClick={openBoardPicker}>
-                <Plus size={11} /> Add
-              </button>
-            </div>
-            <div className={styles.sidePanelBody}>
+            <div className={styles.sidebarDivider} />
+
+            {/* ── Boards ── */}
+            <div className={styles.sidebarSection}>
+              <div className={styles.sectionHeader}>
+                <Columns3 size={12} className={styles.sectionIcon} />
+                <span className={styles.sectionTitle}>Boards</span>
+                <button className={styles.sectionAction} onClick={openBoardPicker}>
+                  <Plus size={11} />
+                </button>
+              </div>
               {card.boards.length > 0 ? (
-                card.boards.map((bp) => {
-                  const columns = boardColumns.get(bp.boardId) || [];
-                  return (
-                    <div key={bp.boardId} className={styles.boardRow}>
-                      <Columns3 size={13} className={styles.linkIcon} />
-                      <Link to={`/boards/${bp.boardId}`} className={styles.linkName}>
-                        {bp.boardName}
-                      </Link>
-                      {columns.length > 1 ? (
-                        <div className={styles.columnSwitcher}>
-                          <select
-                            className={styles.columnSelect}
-                            value={bp.columnId}
-                            onChange={(e) => {
-                              const col = columns.find((c) => c.id === e.target.value);
-                              if (col) moveToColumn(bp.boardId, col.id, col.name);
-                            }}
-                            disabled={movingColumn !== null}
-                          >
-                            {columns.map((col) => (
-                              <option key={col.id} value={col.id}>
-                                {col.name}
-                              </option>
-                            ))}
-                          </select>
-                          <ChevronDown size={10} className={styles.columnSelectIcon} />
-                        </div>
-                      ) : bp.columnName ? (
-                        <span className={styles.boardColumn} style={bp.columnColor ? { background: bp.columnColor } : undefined}>
-                          {bp.columnName}
-                        </span>
-                      ) : null}
-                      <Tooltip label="Remove from board">
-                        <button className={styles.linkRemove} onClick={() => removeFromBoard(bp.boardId)} aria-label="Remove">
-                          <X size={11} />
-                        </button>
-                      </Tooltip>
-                    </div>
-                  );
-                })
+                <div className={styles.sectionItems}>
+                  {card.boards.map((bp) => {
+                    const columns = boardColumns.get(bp.boardId) || [];
+                    return (
+                      <div key={bp.boardId} className={styles.boardRow}>
+                        <Link to={`/boards/${bp.boardId}`} className={styles.linkName}>
+                          {bp.boardName}
+                        </Link>
+                        {columns.length > 1 ? (
+                          <div className={styles.columnSwitcher}>
+                            <select
+                              className={styles.columnSelect}
+                              value={bp.columnId}
+                              onChange={(e) => {
+                                const col = columns.find((c) => c.id === e.target.value);
+                                if (col) moveToColumn(bp.boardId, col.id, col.name);
+                              }}
+                              disabled={movingColumn !== null}
+                            >
+                              {columns.map((col) => (
+                                <option key={col.id} value={col.id}>
+                                  {col.name}
+                                </option>
+                              ))}
+                            </select>
+                            <ChevronDown size={10} className={styles.columnSelectIcon} />
+                          </div>
+                        ) : bp.columnName ? (
+                          <span className={styles.boardColumn} style={bp.columnColor ? { background: bp.columnColor } : undefined}>
+                            {bp.columnName}
+                          </span>
+                        ) : null}
+                        <Tooltip label="Remove from board">
+                          <button className={styles.linkRemove} onClick={() => removeFromBoard(bp.boardId)} aria-label="Remove">
+                            <X size={11} />
+                          </button>
+                        </Tooltip>
+                      </div>
+                    );
+                  })}
+                </div>
               ) : (
                 <span className={styles.panelEmpty}>Not on any board</span>
               )}
@@ -1895,17 +1922,18 @@ export function CardDetailPage() {
                 </div>
               )}
             </div>
-          </div>
 
-          {/* Tags */}
-          <div className={styles.sidePanel}>
-            <div className={styles.sidePanelHeader}>
-              <span className={styles.sidePanelTitle}>Tags</span>
-              <button className={styles.sidePanelAction} onClick={openTagMgr}>
-                <Plus size={11} /> Manage
-              </button>
-            </div>
-            <div className={styles.sidePanelBody}>
+            <div className={styles.sidebarDivider} />
+
+            {/* ── Tags ── */}
+            <div className={styles.sidebarSection}>
+              <div className={styles.sectionHeader}>
+                <span className={styles.sectionIconDot} />
+                <span className={styles.sectionTitle}>Tags</span>
+                <button className={styles.sectionAction} onClick={openTagMgr}>
+                  <Plus size={11} />
+                </button>
+              </div>
               {card.tags.length > 0 ? (
                 <div className={styles.tags}>
                   {card.tags.map((tag) => (
@@ -1920,7 +1948,7 @@ export function CardDetailPage() {
                   ))}
                 </div>
               ) : (
-                <span className={styles.noTags}>No tags</span>
+                <span className={styles.panelEmpty}>No tags</span>
               )}
 
               {showTagMgr && (
@@ -1941,7 +1969,7 @@ export function CardDetailPage() {
                       onChange={(e) => setNewTagColor(e.target.value)}
                       aria-label="Tag color"
                     />
-                    <button className={styles.sidePanelAction} onClick={createTag} disabled={!newTagName.trim() || creatingTag}>
+                    <button className={styles.sectionAction} onClick={createTag} disabled={!newTagName.trim() || creatingTag}>
                       {creatingTag ? '...' : 'Create'}
                     </button>
                   </div>
@@ -1955,7 +1983,7 @@ export function CardDetailPage() {
                           </div>
                           <div className={styles.tagMgrActions}>
                             <button
-                              className={styles.sidePanelAction}
+                              className={styles.sectionAction}
                               onClick={() => addTag(tag.id)}
                               disabled={tagIds.has(tag.id)}
                             >
@@ -1979,7 +2007,7 @@ export function CardDetailPage() {
                     <div className={styles.tagMgrEmpty}>No tags yet. Create one above.</div>
                   )}
                   <button
-                    className={styles.sidePanelAction}
+                    className={styles.sectionAction}
                     onClick={() => setShowTagMgr(false)}
                     style={{ alignSelf: 'flex-end' }}
                   >
@@ -1988,29 +2016,32 @@ export function CardDetailPage() {
                 </div>
               )}
             </div>
-          </div>
 
-          {/* Linked Cards */}
-          <div className={styles.sidePanel}>
-            <div className={styles.sidePanelHeader}>
-              <span className={styles.sidePanelTitle}>Linked Cards</span>
-              <button className={styles.sidePanelAction} onClick={() => setShowLinkSearch(!showLinkSearch)}>
-                <Link2 size={11} /> Link
-              </button>
-            </div>
-            <div className={styles.sidePanelBody}>
+            <div className={styles.sidebarDivider} />
+
+            {/* ── Linked Cards ── */}
+            <div className={styles.sidebarSection}>
+              <div className={styles.sectionHeader}>
+                <Link2 size={12} className={styles.sectionIcon} />
+                <span className={styles.sectionTitle}>Linked Cards</span>
+                <button className={styles.sectionAction} onClick={() => setShowLinkSearch(!showLinkSearch)}>
+                  <Plus size={11} />
+                </button>
+              </div>
               {card.linkedCards.length > 0 ? (
-                card.linkedCards.map((lc) => (
-                  <div key={lc.linkId} className={styles.linkRow}>
-                    <FileText size={13} className={styles.linkIcon} />
-                    <Link to={`/cards/${lc.id}`} className={styles.linkName}>{lc.name}</Link>
-                    <Tooltip label="Remove">
-                      <button className={styles.linkRemove} onClick={() => unlinkCard(lc.linkId)} aria-label="Remove">
-                        <X size={11} />
-                      </button>
-                    </Tooltip>
-                  </div>
-                ))
+                <div className={styles.sectionItems}>
+                  {card.linkedCards.map((lc) => (
+                    <div key={lc.linkId} className={styles.linkRow}>
+                      <FileText size={12} className={styles.linkIcon} />
+                      <Link to={`/cards/${lc.id}`} className={styles.linkName}>{lc.name}</Link>
+                      <Tooltip label="Remove">
+                        <button className={styles.linkRemove} onClick={() => unlinkCard(lc.linkId)} aria-label="Remove">
+                          <X size={11} />
+                        </button>
+                      </Tooltip>
+                    </div>
+                  ))}
+                </div>
               ) : (
                 <span className={styles.panelEmpty}>No linked cards</span>
               )}
@@ -2038,28 +2069,29 @@ export function CardDetailPage() {
                 </div>
               )}
             </div>
-          </div>
 
-          {/* Custom Fields */}
-          <div className={styles.sidePanel}>
-            <div className={styles.sidePanelHeader}>
-              <span className={styles.sidePanelTitle}>Custom Fields</span>
-              {!addingCf && (
-                <button
-                  className={styles.sidePanelAction}
-                  onClick={() => {
-                    setAddingCf(true);
-                    setEditingCfKey(null);
-                    setTimeout(() => cfKeyInputRef.current?.focus(), 0);
-                  }}
-                >
-                  <Plus size={11} /> Add
-                </button>
-              )}
-            </div>
-            <div className={styles.sidePanelBody}>
+            <div className={styles.sidebarDivider} />
+
+            {/* ── Custom Fields ── */}
+            <div className={styles.sidebarSection}>
+              <div className={styles.sectionHeader}>
+                <FileText size={12} className={styles.sectionIcon} />
+                <span className={styles.sectionTitle}>Custom Fields</span>
+                {!addingCf && (
+                  <button
+                    className={styles.sectionAction}
+                    onClick={() => {
+                      setAddingCf(true);
+                      setEditingCfKey(null);
+                      setTimeout(() => cfKeyInputRef.current?.focus(), 0);
+                    }}
+                  >
+                    <Plus size={11} />
+                  </button>
+                )}
+              </div>
               {cfEntries.length === 0 && !addingCf && (
-                <span className={styles.cfEmpty}>No custom fields</span>
+                <span className={styles.panelEmpty}>No custom fields</span>
               )}
               {cfEntries.map(([key, value]) => (
                 <div key={key} className={styles.fieldRow}>
@@ -2141,6 +2173,19 @@ export function CardDetailPage() {
                   </div>
                 </div>
               )}
+            </div>
+
+            {/* ── Dates ── */}
+            <div className={styles.sidebarDivider} />
+            <div className={styles.sidebarDates}>
+              <div className={styles.dateRow}>
+                <span className={styles.dateLabel}>Created</span>
+                <TimeAgo date={card.createdAt} className={styles.dateValue} />
+              </div>
+              <div className={styles.dateRow}>
+                <span className={styles.dateLabel}>Updated</span>
+                <TimeAgo date={card.updatedAt} className={styles.dateValue} />
+              </div>
             </div>
           </div>
         </div>

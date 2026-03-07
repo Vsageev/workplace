@@ -6,6 +6,7 @@
     "dev": "pnpm --parallel -r run dev",
     "dev:backend": "pnpm --filter backend dev",
     "dev:frontend": "pnpm --filter frontend dev",
+    "db:bootstrap": "pnpm --filter backend db:bootstrap",
     "build": "pnpm -r run build",
     "build:backend": "pnpm --filter backend build",
     "build:frontend": "pnpm --filter frontend build",

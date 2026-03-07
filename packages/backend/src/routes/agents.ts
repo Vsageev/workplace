@@ -32,6 +32,7 @@ import {
 } from '../services/agents.js';
 import { getWorkspaceById } from '../services/workspaces.js';
 import { syncAgentCronJobs } from '../services/agent-cron.js';
+import { getProjectDefaultAgentKeyId } from '../services/project-settings.js';
 
 export async function agentRoutes(app: FastifyInstance) {
   const typedApp = app.withTypeProvider<ZodTypeProvider>();
@@ -85,7 +86,7 @@ export async function agentRoutes(app: FastifyInstance) {
       let all = listAgents();
 
       if (request.query.workspaceId) {
-        const workspace = await getWorkspaceById(request.query.workspaceId) as any;
+        const workspace = (await getWorkspaceById(request.query.workspaceId)) as any;
         if (workspace && Array.isArray(workspace.agentGroupIds)) {
           const idSet = new Set(workspace.agentGroupIds);
           all = all.filter((a: any) => a.groupId && idSet.has(a.groupId));
@@ -113,7 +114,8 @@ export async function agentRoutes(app: FastifyInstance) {
           modelId: z.string().max(200).nullable().optional(),
           thinkingLevel: z.enum(['low', 'medium', 'high']).nullable().optional(),
           preset: z.string().min(1).max(100),
-          apiKeyId: z.string().min(1),
+          apiKeyId: z.string().min(1).optional(),
+          workspaceId: z.uuid().optional(),
           skipPermissions: z.boolean().optional(),
           groupId: z.string().nullable().optional(),
           avatarIcon: z.string().max(50).optional(),
@@ -138,9 +140,20 @@ export async function agentRoutes(app: FastifyInstance) {
         avatarLogoColor,
       } = request.body;
 
+      let resolvedApiKeyId = apiKeyId;
+      if (!resolvedApiKeyId) {
+        resolvedApiKeyId = getProjectDefaultAgentKeyId() ?? undefined;
+      }
+
+      if (!resolvedApiKeyId) {
+        return reply.badRequest(
+          'API key is required. Set apiKeyId or configure project default agent key',
+        );
+      }
+
       // Look up the API key to populate derived fields
-      const apiKey = store.getById('apiKeys', apiKeyId);
-      if (!apiKey) {
+      const apiKey = store.getById('apiKeys', resolvedApiKeyId);
+      if (!apiKey || apiKey.isActive === false) {
         return reply.badRequest('API key not found');
       }
 
@@ -152,7 +165,7 @@ export async function agentRoutes(app: FastifyInstance) {
           modelId,
           thinkingLevel,
           preset,
-          apiKeyId,
+          apiKeyId: resolvedApiKeyId,
           apiKeyName: apiKey.name as string,
           apiKeyPrefix: apiKey.keyPrefix as string,
           capabilities: (apiKey.permissions as string[]) || [],
@@ -212,12 +225,19 @@ export async function agentRoutes(app: FastifyInstance) {
           avatarIcon: z.string().max(50).optional(),
           avatarBgColor: z.string().max(20).optional(),
           avatarLogoColor: z.string().max(20).optional(),
-          cronJobs: z.array(z.object({
-            id: z.string().min(1),
-            cron: z.string().min(1).refine((val) => cron.validate(val), { message: 'Invalid cron expression' }),
-            prompt: z.string().min(1).max(5000),
-            enabled: z.boolean(),
-          })).optional(),
+          cronJobs: z
+            .array(
+              z.object({
+                id: z.string().min(1),
+                cron: z
+                  .string()
+                  .min(1)
+                  .refine((val) => cron.validate(val), { message: 'Invalid cron expression' }),
+                prompt: z.string().min(1).max(5000),
+                enabled: z.boolean(),
+              }),
+            )
+            .optional(),
         }),
       },
     },
@@ -274,7 +294,7 @@ export async function agentRoutes(app: FastifyInstance) {
       let groups = listAgentGroups();
 
       if (request.query.workspaceId) {
-        const workspace = await getWorkspaceById(request.query.workspaceId) as any;
+        const workspace = (await getWorkspaceById(request.query.workspaceId)) as any;
         if (workspace && Array.isArray(workspace.agentGroupIds)) {
           const idSet = new Set(workspace.agentGroupIds);
           groups = groups.filter((g: any) => idSet.has(g.id));
@@ -558,7 +578,12 @@ export async function agentRoutes(app: FastifyInstance) {
       const agent = getAgent(request.params.id);
       if (!agent) return reply.notFound('Agent not found');
       try {
-        const entry = createAgentReference(request.params.id, request.body.path, request.body.name, request.body.target);
+        const entry = createAgentReference(
+          request.params.id,
+          request.body.path,
+          request.body.name,
+          request.body.target,
+        );
         return reply.status(201).send(entry);
       } catch (err) {
         return reply.badRequest((err as Error).message);

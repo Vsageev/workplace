@@ -14,7 +14,7 @@ function loadCerts() {
 }
 
 const https = loadCerts();
-const backendUrl = process.env.VITE_API_URL ?? (https ? 'https://localhost:3000' : 'http://localhost:3000');
+const backendUrl = process.env.VITE_API_URL ?? (https ? 'https://localhost:3847' : 'http://localhost:3847');
 
 export default defineConfig({
   plugins: [react()],

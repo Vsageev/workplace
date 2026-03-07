@@ -53,9 +53,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const activeWorkspace = activeId
-    ? workspaces.find((w) => w.id === activeId) ?? null
-    : null;
+  const activeWorkspace = activeId ? (workspaces.find((w) => w.id === activeId) ?? null) : null;
 
   return (
     <WorkspaceContext.Provider

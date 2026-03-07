@@ -4,6 +4,8 @@ import styles from './ApiKeyFormFields.module.css';
 const API_RESOURCES = [
   'contacts', 'cards', 'tasks', 'boards', 'folders',
   'messages', 'activities', 'templates', 'webhooks',
+  'settings', 'collections', 'users', 'backups', 'reports', 'audit-logs',
+  'storage', 'tags', 'conversations',
 ] as const;
 
 type AccessLevel = 'none' | 'read' | 'write';

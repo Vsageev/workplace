@@ -5,6 +5,7 @@ import { requirePermission } from '../middleware/rbac.js';
 import { store } from '../db/index.js';
 import { env } from '../config/env.js';
 import { promptRateLimiter } from './agent-chat.js';
+import { getProjectSettings, updateProjectSettings } from '../services/project-settings.js';
 
 const SETTINGS_COLLECTION = 'settings';
 const RATE_LIMIT_SETTINGS_ID = 'rate-limits';
@@ -46,6 +47,62 @@ export async function settingsRoutes(app: FastifyInstance) {
       return {
         agentPromptMax: settings.agentPromptMax,
         agentPromptWindowS: settings.agentPromptWindowS,
+      };
+    },
+  );
+
+  // GET /api/settings/agent-defaults
+  typedApp.get(
+    '/api/settings/agent-defaults',
+    {
+      onRequest: [app.authenticate, requirePermission('settings:read')],
+      schema: {
+        tags: ['Settings'],
+        summary: 'Get project-level default agent settings',
+      },
+    },
+    async () => {
+      const settings = getProjectSettings();
+      return {
+        defaultAgentKeyId: settings.defaultAgentKeyId,
+      };
+    },
+  );
+
+  // PATCH /api/settings/agent-defaults
+  typedApp.patch(
+    '/api/settings/agent-defaults',
+    {
+      onRequest: [app.authenticate, requirePermission('settings:update')],
+      schema: {
+        tags: ['Settings'],
+        summary: 'Update project-level default agent settings',
+        body: z
+          .object({
+            defaultAgentKeyId: z.uuid().nullable().optional(),
+          })
+          .strict(),
+      },
+    },
+    async (request, reply) => {
+      if (request.body.defaultAgentKeyId) {
+        const apiKey = store.getById('apiKeys', request.body.defaultAgentKeyId);
+        if (!apiKey || apiKey.isActive === false) {
+          return reply.badRequest('Default agent key not found or inactive');
+        }
+        if ((apiKey.createdById as string) !== request.user.sub) {
+          return reply.forbidden('Not authorized to use this API key');
+        }
+      }
+
+      const updated = updateProjectSettings({
+        ...(request.body.defaultAgentKeyId !== undefined
+          ? { defaultAgentKeyId: request.body.defaultAgentKeyId }
+          : {}),
+      });
+
+      return {
+        defaultAgentKeyId: updated.defaultAgentKeyId,
       };
     },
   );

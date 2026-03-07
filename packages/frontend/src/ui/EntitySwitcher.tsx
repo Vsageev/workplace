@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, Plus } from 'lucide-react';
 import styles from './EntitySwitcher.module.css';
 
 interface EntitySwitcherProps {
@@ -10,9 +10,11 @@ interface EntitySwitcherProps {
   basePath: string;
   allLabel: string;
   size?: 'default' | 'large';
+  onCreateNew?: () => void;
+  createLabel?: string;
 }
 
-export function EntitySwitcher({ currentId, currentName, fetchEntries, basePath, allLabel, size = 'default' }: EntitySwitcherProps) {
+export function EntitySwitcher({ currentId, currentName, fetchEntries, basePath, allLabel, size = 'default', onCreateNew, createLabel = 'Create New' }: EntitySwitcherProps) {
   const [open, setOpen] = useState(false);
   const [entries, setEntries] = useState<{ id: string; name: string }[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -94,6 +96,19 @@ export function EntitySwitcher({ currentId, currentName, fetchEntries, basePath,
                   </Link>
                 ))}
               </div>
+              {onCreateNew && (
+                <>
+                  <div className={styles.divider} />
+                  <button
+                    className={styles.createNew}
+                    onClick={() => { setOpen(false); onCreateNew(); }}
+                    type="button"
+                  >
+                    <Plus size={14} />
+                    {createLabel}
+                  </button>
+                </>
+              )}
               <div className={styles.divider} />
               <Link
                 to={`${basePath}?list=1`}

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { X, Bot, Play, Check, CheckCircle2, Minus, Plus, Zap, Layers, ChevronDown } from 'lucide-react';
+import { X, Bot, Play, Check, CheckCircle2, Minus, Plus, Zap, Layers, ChevronDown, Search } from 'lucide-react';
 import { Button, Tooltip } from '../../ui';
 import { api } from '../../lib/api';
 import { toast } from '../../stores/toast';
@@ -23,6 +23,7 @@ interface AgentEntry {
 }
 
 interface BatchResult {
+  runId: string | null;
   total: number;
   queued: number;
   message: string;
@@ -41,11 +42,17 @@ export function BoardBatchRunPanel({ boardId, columns, onClose }: BoardBatchRunP
   const [selectedColumnIds, setSelectedColumnIds] = useState<Set<string>>(
     () => new Set(columns.map((c) => c.id)),
   );
+  const [textFilter, setTextFilter] = useState('');
   const [maxParallel, setMaxParallel] = useState(3);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<BatchResult | null>(null);
   const [showAgentPicker, setShowAgentPicker] = useState(false);
   const agentPickerRef = useRef<HTMLDivElement>(null);
+
+  // Preview count
+  const [previewCount, setPreviewCount] = useState<number | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const previewAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     api<{ entries: AgentEntry[] }>('/agents?limit=100').then((res) => {
@@ -72,6 +79,45 @@ export function BoardBatchRunPanel({ boardId, columns, onClose }: BoardBatchRunP
     document.addEventListener('mousedown', onClickOutside);
     return () => document.removeEventListener('mousedown', onClickOutside);
   }, []);
+
+  // Fetch preview count when filters change (debounced for text filter)
+  useEffect(() => {
+    // No columns selected → 0 cards, no need to call API
+    if (selectedColumnIds.size === 0) {
+      setPreviewCount(0);
+      setPreviewLoading(false);
+      return;
+    }
+
+    const timeout = setTimeout(() => {
+      previewAbortRef.current?.abort();
+      const abort = new AbortController();
+      previewAbortRef.current = abort;
+
+      const params = new URLSearchParams();
+      if (selectedColumnIds.size < columns.length) {
+        params.set('columnIds', Array.from(selectedColumnIds).join(','));
+      }
+      if (textFilter.trim()) {
+        params.set('textFilter', textFilter.trim());
+      }
+
+      setPreviewLoading(true);
+      api<{ count: number }>(`/boards/${boardId}/batch-run/preview?${params}`, { signal: abort.signal })
+        .then((res) => {
+          if (!abort.signal.aborted) setPreviewCount(res.count);
+        })
+        .catch(() => {})
+        .finally(() => {
+          if (!abort.signal.aborted) setPreviewLoading(false);
+        });
+    }, 300);
+
+    return () => {
+      clearTimeout(timeout);
+      previewAbortRef.current?.abort();
+    };
+  }, [boardId, selectedColumnIds, textFilter, columns.length]);
 
   function toggleColumn(id: string) {
     setSelectedColumnIds((prev) => {
@@ -116,6 +162,7 @@ export function BoardBatchRunPanel({ boardId, columns, onClose }: BoardBatchRunP
           agentId,
           prompt: prompt.trim(),
           columnIds,
+          textFilter: textFilter.trim() || undefined,
           maxParallel,
         }),
       });
@@ -276,6 +323,22 @@ export function BoardBatchRunPanel({ boardId, columns, onClose }: BoardBatchRunP
             </div>
           )}
 
+          {/* Text Filter */}
+          <div className={styles.section}>
+            <div className={styles.sectionHeader}>
+              <Search size={14} className={styles.sectionIcon} />
+              <span className={styles.sectionLabel}>Filter cards</span>
+            </div>
+            <input
+              className={styles.textFilterInput}
+              type="text"
+              placeholder="Filter by card name…"
+              value={textFilter}
+              onChange={(e) => setTextFilter(e.target.value)}
+              maxLength={200}
+            />
+          </div>
+
           {/* Concurrency */}
           <div className={styles.section}>
             <div className={styles.sectionHeader}>
@@ -318,9 +381,9 @@ export function BoardBatchRunPanel({ boardId, columns, onClose }: BoardBatchRunP
 
         <div className={styles.footer}>
           <div className={styles.footerMeta}>
-            {selectedAgent && (
-              <span className={styles.footerAgent}>
-                {selectedAgent.name}
+            {previewCount !== null && (
+              <span className={styles.footerCount}>
+                {previewLoading ? '…' : previewCount} card{previewCount !== 1 ? 's' : ''}
               </span>
             )}
             {selectedColumnIds.size > 0 && selectedColumnIds.size < columns.length && (

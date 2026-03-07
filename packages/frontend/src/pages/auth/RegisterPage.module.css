@@ -1,0 +1,424 @@
+.wrapper {
+  display: flex;
+  flex-direction: column;
+}
+
+.header {
+  margin-bottom: 32px;
+}
+
+.title {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  color: var(--color-text);
+  margin-bottom: 8px;
+  line-height: 1.2;
+}
+
+.subtitle {
+  font-size: 15px;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+}
+
+/* Error banner */
+.errorBanner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: rgba(239, 68, 68, 0.06);
+  border: 1px solid rgba(239, 68, 68, 0.15);
+  border-radius: var(--radius-lg);
+  color: #EF4444;
+  font-size: 14px;
+  margin-bottom: 24px;
+  animation: slideDown 0.2s ease-out;
+}
+
+.errorIcon {
+  flex-shrink: 0;
+  opacity: 0.9;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Form */
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.nameRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+@media (max-width: 400px) {
+  .nameRow {
+    grid-template-columns: 1fr;
+  }
+}
+
+.fieldGroup {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Password strength */
+.strengthSection {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: -8px;
+}
+
+.strengthBar {
+  display: flex;
+  gap: 4px;
+  height: 4px;
+}
+
+.strengthSegment {
+  flex: 1;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--color-border);
+  transition: background 0.2s ease;
+}
+
+.strengthSegment[data-active='true'][data-level='weak'] {
+  background: #EF4444;
+}
+
+.strengthSegment[data-active='true'][data-level='medium'] {
+  background: #F59E0B;
+}
+
+.strengthSegment[data-active='true'][data-level='strong'] {
+  background: #10B981;
+}
+
+.strengthLabel {
+  font-size: 12px;
+  font-weight: 500;
+  transition: color 0.2s ease;
+}
+
+.strengthLabel[data-level='weak'] {
+  color: #EF4444;
+}
+
+.strengthLabel[data-level='medium'] {
+  color: #F59E0B;
+}
+
+.strengthLabel[data-level='strong'] {
+  color: #10B981;
+}
+
+/* Requirements checklist */
+.requirements {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.requirement {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+  transition: color 0.2s ease;
+}
+
+.requirement[data-met='true'] {
+  color: #10B981;
+}
+
+.requirementIcon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+/* Field error */
+.fieldError {
+  font-size: 13px;
+  color: #EF4444;
+  margin-top: 4px;
+}
+
+/* Submit button */
+.submitButton {
+  width: 100%;
+  margin-top: 8px;
+  height: 48px;
+  font-size: 15px;
+  font-weight: 600;
+  border-radius: var(--radius-md);
+  transition: background 0.2s ease, opacity 0.2s ease;
+}
+
+.loadingContent {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #ffffff;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Divider */
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin: 24px 0;
+  color: var(--color-text-tertiary);
+  font-size: 13px;
+}
+
+.divider::before,
+.divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--color-border);
+}
+
+/* Footer */
+.footer {
+  text-align: center;
+  font-size: 14px;
+  color: var(--color-text-secondary);
+}
+
+.link {
+  color: #3B82F6;
+  font-weight: 500;
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+.link:hover {
+  text-decoration: underline;
+}
+
+/* ─────────────────────────────────────────────
+   Mobile styles
+   ───────────────────────────────────────────── */
+
+/* ─── Tablet / small desktop: 768px ─── */
+@media (max-width: 768px) {
+  .wrapper {
+    gap: 0;
+  }
+
+  .header {
+    margin-bottom: 24px;
+  }
+
+  .title {
+    font-size: 24px;
+  }
+
+  .subtitle {
+    font-size: 14px;
+  }
+
+  .form {
+    gap: 16px;
+  }
+
+  .nameRow {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  /* 16px font-size prevents iOS auto-zoom on input focus */
+  .form input,
+  .form select,
+  .form textarea {
+    font-size: 16px;
+    min-height: 44px;
+  }
+
+  .submitButton {
+    min-height: 48px;
+    font-size: 16px;
+    margin-top: 12px;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .strengthSegment {
+    height: 5px;
+  }
+
+  .requirement {
+    min-height: 28px;
+    gap: 6px;
+    font-size: 13px;
+  }
+
+  .requirementIcon {
+    width: 15px;
+    height: 15px;
+  }
+
+  .footer {
+    font-size: 14px;
+    padding-top: 4px;
+    padding-bottom: 8px;
+  }
+
+  /* Remove hover effects — use focus states on mobile */
+  .link:hover {
+    text-decoration: none;
+  }
+
+  .link:focus-visible {
+    outline: 2px solid #3B82F6;
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+}
+
+/* ─── Small phones: 480px ─── */
+@media (max-width: 480px) {
+  .header {
+    margin-bottom: 20px;
+  }
+
+  .form {
+    gap: 14px;
+  }
+
+  .errorBanner {
+    padding: 10px 12px;
+    font-size: 13px;
+    margin-bottom: 20px;
+  }
+
+  .strengthSection {
+    gap: 6px;
+  }
+
+  .requirements {
+    gap: 3px;
+  }
+
+  .divider {
+    margin: 20px 0;
+  }
+}
+
+/* ─── iPhone 14 / 15 and similar: 390px ─── */
+@media (max-width: 390px) {
+  .title {
+    font-size: 22px;
+  }
+
+  .subtitle {
+    font-size: 13px;
+  }
+
+  .form {
+    gap: 12px;
+  }
+
+  .requirement {
+    font-size: 12px;
+    gap: 5px;
+  }
+
+  .requirementIcon {
+    width: 13px;
+    height: 13px;
+  }
+}
+
+/* ─── iPhone SE / small phones: 375px ─── */
+@media (max-width: 375px) {
+  .header {
+    margin-bottom: 16px;
+  }
+
+  .title {
+    font-size: 20px;
+    margin-bottom: 4px;
+  }
+
+  .subtitle {
+    font-size: 12px;
+  }
+
+  .form {
+    gap: 10px;
+  }
+
+  .errorBanner {
+    padding: 8px 10px;
+    font-size: 12px;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+
+  .strengthBar {
+    gap: 3px;
+  }
+
+  .strengthLabel {
+    font-size: 11px;
+  }
+
+  .requirements {
+    gap: 2px;
+    margin-top: 2px;
+  }
+
+  .requirement {
+    font-size: 11px;
+    min-height: 24px;
+  }
+
+  .submitButton {
+    margin-top: 8px;
+  }
+
+  .divider {
+    margin: 16px 0;
+    font-size: 12px;
+  }
+
+  .footer {
+    font-size: 13px;
+  }
+}

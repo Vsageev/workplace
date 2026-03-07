@@ -601,6 +601,11 @@
 }
 
 
+/* ── Mobile back button (hidden on desktop) ── */
+.backBtn {
+  display: none;
+}
+
 /* ── Right panel: Thread view + Reply ── */
 .threadPanel {
   flex: 1;
@@ -1772,26 +1777,48 @@ a.inlineKeyboardBtn:hover {
 }
 
 @media (max-width: 768px) {
-  .container {
-    flex-direction: column;
-  }
-
   .sidebar {
     width: 100%;
     min-width: 0;
-    max-height: 40vh;
     border-right: none;
-    border-bottom: 1px solid var(--color-border);
   }
 
+  .sidebarHidden {
+    display: none;
+  }
 
   .threadPanel {
     min-height: 0;
     flex: 1;
   }
 
+  .threadPanelHidden {
+    display: none;
+  }
+
   .threadHeader {
     padding: var(--space-3) var(--space-4);
+  }
+
+  .backBtn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    flex-shrink: 0;
+    margin-right: var(--space-1);
+    transition: background var(--transition-fast), color var(--transition-fast);
+  }
+
+  .backBtn:hover {
+    background: var(--color-surface);
+    color: var(--color-text);
   }
 
   .messagesArea {
@@ -1804,6 +1831,19 @@ a.inlineKeyboardBtn:hover {
 
   .messageBubble {
     max-width: 85%;
+  }
+
+  .threadActions {
+    flex-wrap: wrap;
+    gap: var(--space-1);
+  }
+
+  .threadContactMeta {
+    display: none;
+  }
+
+  .threadAssigneeBadge {
+    display: none;
   }
 
   .keyboardPopover,

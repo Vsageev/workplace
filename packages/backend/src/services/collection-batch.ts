@@ -1,6 +1,7 @@
+import { store } from '../db/index.js';
 import { listCards } from './cards.js';
 import { getAgent } from './agents.js';
-import { executeCardTask } from './agent-chat.js';
+import { enqueueAgentBatchRun, type AgentBatchRunStatus } from './agent-batch-queue.js';
 
 export interface CollectionBatchCardFilters {
   search?: string;
@@ -18,6 +19,8 @@ export interface CollectionBatchOptions {
 }
 
 export interface CollectionBatchResult {
+  runId: string | null;
+  status: AgentBatchRunStatus | null;
   total: number;
   queued: number;
   message: string;
@@ -46,48 +49,33 @@ export async function runCollectionAgentBatch(
   });
 
   if (cards.length === 0) {
-    return { total: 0, queued: 0, message: 'No cards matched the filters' };
+    return {
+      runId: null,
+      status: null,
+      total: 0,
+      queued: 0,
+      message: 'No cards matched the filters',
+    };
   }
 
-  const total = cards.length;
-  let activeCount = 0;
-  let queueIdx = 0;
+  const collection = store.getById('collections', collectionId) as any;
+  const result = enqueueAgentBatchRun({
+    sourceType: 'collection',
+    sourceId: collectionId,
+    sourceName: collection?.name ?? null,
+    agentId,
+    prompt,
+    maxParallel,
+    cards: cards.map((card: any) => ({
+      id: card.id as string,
+      name: card.name as string,
+      description:
+        typeof card.description === 'string'
+          ? card.description
+          : null,
+      collectionId,
+    })),
+  });
 
-  // Process cards with a sliding-window concurrency controller
-  function processNext() {
-    while (activeCount < maxParallel && queueIdx < cards.length) {
-      const card = cards[queueIdx++];
-      activeCount++;
-
-      executeCardTask(
-        agentId,
-        {
-          id: card.id,
-          name: card.name,
-          description: card.description ?? null,
-          collectionId,
-        },
-        {
-          onDone: () => {
-            activeCount--;
-            processNext();
-          },
-          onError: (err) => {
-            console.error(`[collection-batch] Card ${card.id} (${card.name}) error: ${err}`);
-            activeCount--;
-            processNext();
-          },
-        },
-        prompt,
-      );
-    }
-  }
-
-  processNext();
-
-  return {
-    total,
-    queued: total,
-    message: `Batch started: processing ${total} card(s) with up to ${maxParallel} parallel agents`,
-  };
+  return result;
 }

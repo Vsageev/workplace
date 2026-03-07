@@ -105,9 +105,7 @@ export function WorkspaceModal({ workspace, onClose, onSaved }: WorkspaceModalPr
   return (
     <Modal onClose={onClose} size="md" ariaLabel={workspace ? 'Edit Workspace' : 'New Workspace'}>
       <div className={styles.content}>
-        <div className={styles.modalTitle}>
-          {workspace ? 'Edit Workspace' : 'New Workspace'}
-        </div>
+        <div className={styles.modalTitle}>{workspace ? 'Edit Workspace' : 'New Workspace'}</div>
 
         <div className={styles.field}>
           <label className={styles.label}>Name</label>
@@ -128,9 +126,7 @@ export function WorkspaceModal({ workspace, onClose, onSaved }: WorkspaceModalPr
                 <input
                   type="checkbox"
                   checked={selectedCollectionIds.has(c.id)}
-                  onChange={() =>
-                    setSelectedCollectionIds(toggleId(selectedCollectionIds, c.id))
-                  }
+                  onChange={() => setSelectedCollectionIds(toggleId(selectedCollectionIds, c.id))}
                 />
                 <span>{c.name}</span>
               </label>
@@ -149,16 +145,12 @@ export function WorkspaceModal({ workspace, onClose, onSaved }: WorkspaceModalPr
                 <input
                   type="checkbox"
                   checked={selectedBoardIds.has(b.id)}
-                  onChange={() =>
-                    setSelectedBoardIds(toggleId(selectedBoardIds, b.id))
-                  }
+                  onChange={() => setSelectedBoardIds(toggleId(selectedBoardIds, b.id))}
                 />
                 <span>{b.name}</span>
               </label>
             ))}
-            {boards.length === 0 && (
-              <span className={styles.emptyNote}>No boards found</span>
-            )}
+            {boards.length === 0 && <span className={styles.emptyNote}>No boards found</span>}
           </div>
         </div>
 
@@ -170,9 +162,7 @@ export function WorkspaceModal({ workspace, onClose, onSaved }: WorkspaceModalPr
                 <input
                   type="checkbox"
                   checked={selectedAgentGroupIds.has(g.id)}
-                  onChange={() =>
-                    setSelectedAgentGroupIds(toggleId(selectedAgentGroupIds, g.id))
-                  }
+                  onChange={() => setSelectedAgentGroupIds(toggleId(selectedAgentGroupIds, g.id))}
                 />
                 <span>{g.name}</span>
               </label>

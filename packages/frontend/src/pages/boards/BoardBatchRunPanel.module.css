@@ -345,6 +345,28 @@
   flex-shrink: 0;
 }
 
+/* ── Text Filter ── */
+
+.textFilterInput {
+  padding: 8px 10px;
+  font-size: 13px;
+  color: var(--color-text);
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  outline: none;
+  font-family: inherit;
+  transition: border-color 0.15s ease;
+}
+
+.textFilterInput::placeholder {
+  color: var(--color-text-tertiary);
+}
+
+.textFilterInput:focus {
+  border-color: var(--color-text-secondary);
+}
+
 /* ── Stepper ── */
 
 .stepperRow {
@@ -446,6 +468,7 @@
   overflow: hidden;
 }
 
+.footerCount,
 .footerAgent,
 .footerColumns {
   font-size: 12px;
@@ -455,14 +478,193 @@
   text-overflow: ellipsis;
 }
 
+.footerCount {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-secondary);
+}
+
+.footerCount::after,
 .footerAgent::after {
   content: '·';
   margin-left: 8px;
   color: var(--color-border);
 }
 
+.footerCount:last-child::after,
 .footerAgent:last-child::after {
   display: none;
+}
+
+/* ── Progress Card (banner-style) ── */
+
+@keyframes liveDotPulse {
+  0%, 100% { opacity: 0.4; transform: scale(0.85); }
+  50% { opacity: 1; transform: scale(1); }
+}
+
+.progressCard {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 14px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 10px;
+  position: relative;
+  overflow: hidden;
+}
+
+
+.progressTopRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* Status chip */
+.statusChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px 2px 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.statusChip.runActive {
+  background: rgba(124, 58, 237, 0.1);
+  color: #7c3aed;
+}
+
+.statusChip.runCompleted {
+  background: rgba(16, 185, 129, 0.1);
+  color: #10b981;
+}
+
+.statusChip.runFailed {
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+}
+
+.statusChip.runCancelled {
+  background: var(--color-border-subtle);
+  color: var(--color-text-tertiary);
+}
+
+.liveDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: liveDotPulse 1.6s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+.progressAgentName {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 120px;
+  flex-shrink: 0;
+}
+
+.progressStats {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.counter {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.counterDone {
+  color: #10b981;
+}
+
+.counterSep {
+  color: var(--color-text-tertiary);
+  margin: 0 1px;
+}
+
+
+.cancelBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: none;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+  padding: 0;
+}
+
+.cancelBtn:hover {
+  background: rgba(239, 68, 68, 0.06);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #ef4444;
+}
+
+/* ── Failed items detail ── */
+
+.failedList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.failedItem {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  font-size: 11px;
+  line-height: 1.4;
+  padding: 2px 0;
+}
+
+.failedItemIcon {
+  color: #ef4444;
+  flex-shrink: 0;
+  position: relative;
+  top: 1px;
+}
+
+.failedItemName {
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 120px;
+  flex-shrink: 0;
+}
+
+.failedItemMsg {
+  color: #ef4444;
+  opacity: 0.85;
+  word-break: break-word;
 }
 
 @media (max-width: 640px) {

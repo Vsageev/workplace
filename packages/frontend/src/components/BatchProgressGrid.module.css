@@ -1,0 +1,102 @@
+@keyframes cellPulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* ── Grid of status squares ── */
+.grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--cell-gap, 3px);
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.cell {
+  width: var(--cell-size, 10px);
+  height: var(--cell-size, 10px);
+  border-radius: 2px;
+  transition: opacity 0.3s ease, background 0.3s ease, transform 0.15s ease;
+  flex-shrink: 0;
+}
+
+.cell:hover {
+  transform: scale(1.35);
+  z-index: 1;
+}
+
+.cell_queued {
+  background: var(--color-border);
+  opacity: 0.3;
+}
+
+.cell_processing {
+  background: #7c3aed;
+  animation: cellPulse 1.5s ease-in-out infinite;
+}
+
+.cell_completed {
+  background: #10b981;
+}
+
+.cell_failed {
+  background: #ef4444;
+}
+
+.cell_cancelled {
+  background: var(--color-text-tertiary);
+  opacity: 0.3;
+}
+
+/* ── Legend ── */
+.legend {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.legendItems {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.legendItem {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+}
+
+.legendDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 1px;
+  flex-shrink: 0;
+}
+
+.legendCount {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.legendTotal {
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  flex-shrink: 0;
+}

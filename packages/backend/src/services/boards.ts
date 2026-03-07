@@ -188,13 +188,6 @@ export async function getBoardById(id: string) {
   const board = store.getById('boards', id) as any;
   if (!board) return null;
 
-  // Lazy backfill: ensure defaultCollectionId is set for pre-existing boards
-  if (!board.defaultCollectionId) {
-    const generalFolder = await getOrCreateGeneralCollection();
-    board.defaultCollectionId = generalFolder.id;
-    store.update('boards', id, { defaultCollectionId: generalFolder.id });
-  }
-
   const columns = store.find('boardColumns', (r: any) => r.boardId === id) as any[];
   columns.sort((a, b) => a.position - b.position);
 

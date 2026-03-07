@@ -1,3 +1,7 @@
+# Discalimer
+
+This is an experimenal preview. If anything broke - ask your cli agent to fix or contact me. Any feedback is alos welcomed
+
 # Workspace
 
 A workspace platform with boards, cards, folders, unified inbox, Telegram integration, AI agents, and webhook automation.
@@ -25,15 +29,13 @@ cp .env.example .env
 cp packages/backend/.env.example packages/backend/.env
 ```
 
-### 3. Seed the database (optional)
+### 3. Bootstrap backend data (optional)
 
 ```bash
-cd packages/backend
-pnpm db:seed
-cd ../..
+pnpm db:bootstrap
 ```
 
-Populates the JSON store with sample data: users, tags, folders, cards, boards, conversations, and more. See [Seed Data](#seed-data) for details.
+Initializes the backend JSON store with the default workspace records needed for a fresh environment: admin and starter users, project settings, the general collection, the `auto-dev-cards` board, and the default workspace. See [Bootstrap Data](#bootstrap-data) for details.
 
 ### 4. Generate HTTPS certs (optional)
 
@@ -48,8 +50,8 @@ pnpm dev
 ```
 
 - **Frontend:** https://localhost:5173
-- **Backend API:** http://localhost:3000
-- **Swagger docs:** http://localhost:3000/docs
+- **Backend API:** http://localhost:3847
+- **Swagger docs:** http://localhost:3847/docs
 
 ## Project Structure
 
@@ -121,7 +123,7 @@ Usage example:
 | `pnpm docker:full`       | Start everything in Docker                  |
 | `pnpm docker:full:stop`  | Stop Docker containers                      |
 | `pnpm docker:down`       | Stop and remove Docker containers           |
-| `pnpm db:seed`           | Seed JSON store with sample data (backend/) |
+| `pnpm db:bootstrap`      | Bootstrap backend JSON data for a fresh environment |
 | `pnpm certs:generate`    | Generate local HTTPS certs via mkcert       |
 
 ## Features
@@ -137,9 +139,9 @@ Usage example:
 - **Storage** — file upload and media management
 - **Security** — JWT auth, API key scoped permissions, 2FA (TOTP), rate limiting, audit logging, backups
 
-## Seed Data
+## Bootstrap Data
 
-Run `pnpm db:seed` from `packages/backend/` to populate the JSON store with sample data.
+Run `pnpm db:bootstrap` from the repo root, or `cd packages/backend && pnpm db:bootstrap`, to initialize a fresh backend data directory.
 
 **Test accounts:**
 
@@ -148,7 +150,6 @@ Run `pnpm db:seed` from `packages/backend/` to populate the JSON store with samp
 | `admin@workspace.local`   | `admin123`   |
 | `manager@workspace.local` | `manager123` |
 | `agent1@workspace.local`  | `agent123`   |
-| `agent2@workspace.local`  | `agent123`   |
 
 ## Docker (full stack)
 

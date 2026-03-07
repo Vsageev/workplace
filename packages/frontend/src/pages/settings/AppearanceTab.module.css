@@ -452,3 +452,16 @@
 .toggleOn .toggleThumb {
   transform: translateX(18px);
 }
+
+/* ── Mobile responsive ── */
+
+@media (max-width: 640px) {
+  .themeOptions {
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--space-3);
+  }
+
+  .prefRow {
+    padding: var(--space-3);
+  }
+}

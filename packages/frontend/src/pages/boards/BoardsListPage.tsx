@@ -18,6 +18,7 @@ import styles from './BoardsListPage.module.css';
 import { useDocumentTitle } from '../../hooks/useDocumentTitle';
 import { useDebounce } from '../../hooks/useDebounce';
 import { highlightMatch } from '../../components/SearchHighlight';
+import { ActiveBatchRunsBanner } from '../../components/ActiveBatchRunsBanner';
 
 type SortOption = 'name-asc' | 'name-desc' | 'created-desc' | 'created-asc';
 const SORT_STORAGE_KEY = 'boards-sort';
@@ -80,6 +81,7 @@ export function BoardsListPage() {
   const [provisioningStarter, setProvisioningStarter] = useState(false);
   const [deletingBoardId, setDeletingBoardId] = useState<string | null>(null);
   const [boardDetails, setBoardDetails] = useState<Record<string, BoardDetail>>({});
+  const [loadingDetails, setLoadingDetails] = useState(false);
   const debouncedSearch = useDebounce(search, 300);
 
   const fetchBoards = useCallback(async () => {
@@ -109,6 +111,7 @@ export function BoardsListPage() {
   useEffect(() => {
     if (boards.length === 0) return;
     let cancelled = false;
+    setLoadingDetails(true);
     const fetchDetails = async () => {
       const results = await Promise.allSettled(
         boards.map((b) =>
@@ -123,6 +126,7 @@ export function BoardsListPage() {
         }
       }
       setBoardDetails(details);
+      setLoadingDetails(false);
     };
     void fetchDetails();
     return () => { cancelled = true; };
@@ -164,10 +168,14 @@ export function BoardsListPage() {
     }
   }, [searchParams, loading]);
 
-  useEffect(() => {
+  const willRedirect = useMemo(() => {
     const forceList = searchParams.get('list') === '1';
     const forceCreate = searchParams.get('action') === 'create';
-    if (activeWorkspaceId || forceList || forceCreate || search || loading || provisioningStarter || error || boards.length === 0) return;
+    return !forceList && !forceCreate && !search && !loading && !provisioningStarter && !error && boards.length > 0;
+  }, [searchParams, search, loading, provisioningStarter, error, boards.length]);
+
+  useEffect(() => {
+    if (!willRedirect) return;
 
     const preferredBoardId = getPreferredBoardId();
     const targetBoardId =
@@ -176,7 +184,7 @@ export function BoardsListPage() {
         : boards[0].id;
 
     navigate(`/boards/${targetBoardId}`, { replace: true });
-  }, [activeWorkspaceId, searchParams, search, loading, provisioningStarter, error, boards, navigate]);
+  }, [willRedirect, boards, navigate]);
 
   async function handleCreate() {
     if (!createName.trim()) return;
@@ -277,6 +285,12 @@ export function BoardsListPage() {
         }
       />
 
+      <ActiveBatchRunsBanner
+        listEndpoint="/boards/batch-runs"
+        cancelEndpointPrefix="/boards/batch-runs"
+        showEmpty
+      />
+
       <div className={styles.toolbar}>
         <div className={styles.searchWrapper}>
           <input
@@ -304,7 +318,7 @@ export function BoardsListPage() {
         </select>
       </div>
 
-      {loading || provisioningStarter ? (
+      {loading || loadingDetails || provisioningStarter || willRedirect ? (
         <div className={styles.loadingState}>
           <div className={styles.skeletonGrid}>
             {[0, 1, 2].map((i) => (

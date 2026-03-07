@@ -23,6 +23,31 @@ export interface UpdateWorkspaceData {
   agentGroupIds?: string[];
 }
 
+type WorkspaceRecord = {
+  id: string;
+  name: string;
+  userId: string;
+  boardIds: string[];
+  collectionIds: string[];
+  agentGroupIds: string[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+function asWorkspace(rec: Record<string, unknown>): WorkspaceRecord {
+  const now = new Date().toISOString();
+  return {
+    id: typeof rec.id === 'string' ? rec.id : '',
+    name: typeof rec.name === 'string' ? rec.name : '',
+    userId: typeof rec.userId === 'string' ? rec.userId : '',
+    boardIds: Array.isArray(rec.boardIds) ? (rec.boardIds as string[]) : [],
+    collectionIds: Array.isArray(rec.collectionIds) ? (rec.collectionIds as string[]) : [],
+    agentGroupIds: Array.isArray(rec.agentGroupIds) ? (rec.agentGroupIds as string[]) : [],
+    createdAt: typeof rec.createdAt === 'string' ? rec.createdAt : now,
+    updatedAt: typeof rec.updatedAt === 'string' ? rec.updatedAt : now,
+  };
+}
+
 export async function listWorkspaces(query: WorkspaceListQuery) {
   const limit = query.limit ?? 50;
   const offset = query.offset ?? 0;
@@ -38,19 +63,17 @@ export async function listWorkspaces(query: WorkspaceListQuery) {
     all = all.filter((w: any) => w.name?.toLowerCase().includes(term));
   }
 
-  all.sort(
-    (a, b) =>
-      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-  );
+  all.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
   const total = all.length;
-  const entries = all.slice(offset, offset + limit);
+  const entries = all.slice(offset, offset + limit).map(asWorkspace);
 
   return { entries, total };
 }
 
 export async function getWorkspaceById(id: string) {
-  return store.getById('workspaces', id) ?? null;
+  const workspace = store.getById('workspaces', id);
+  return workspace ? asWorkspace(workspace) : null;
 }
 
 export async function createWorkspace(
@@ -77,7 +100,7 @@ export async function createWorkspace(
     });
   }
 
-  return workspace;
+  return asWorkspace(workspace);
 }
 
 export async function updateWorkspace(
@@ -108,7 +131,7 @@ export async function updateWorkspace(
     });
   }
 
-  return updated;
+  return asWorkspace(updated);
 }
 
 export async function deleteWorkspace(

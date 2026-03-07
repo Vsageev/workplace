@@ -110,6 +110,10 @@
   border-bottom: none;
 }
 
+.sidebarGroup + .sidebarGroup {
+  border-top: 1px solid var(--color-border);
+}
+
 .sidebarGroup:last-child {
   border-bottom: none;
 }
@@ -118,7 +122,6 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  margin-top: var(--space-1);
   padding: 6px 16px;
   cursor: pointer;
   font-size: 12px;
@@ -200,21 +203,46 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-2) var(--space-4);
+  padding: var(--space-3) var(--space-4);
   border-bottom: 1px solid var(--color-border-subtle);
 }
 
 .manageGroupsTitle {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
-  color: var(--color-text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  color: var(--color-text);
+}
+
+.manageGroupsCount {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-text-tertiary);
+  background: var(--color-border-subtle);
+  padding: 1px 6px;
+  border-radius: 10px;
+  margin-left: var(--space-2);
 }
 
 .manageGroupsList {
-  max-height: 200px;
+  max-height: 240px;
   overflow-y: auto;
+  padding: var(--space-1) 0;
+}
+
+.manageGroupsEmpty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-5) var(--space-4);
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+  text-align: center;
+}
+
+.manageGroupsEmptyIcon {
+  color: var(--color-text-tertiary);
+  opacity: 0.5;
 }
 
 .manageGroupItem {
@@ -222,11 +250,26 @@
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-2) var(--space-4);
-  border-bottom: 1px solid var(--color-border-subtle);
+  transition: background var(--transition-fast);
+  border-radius: 0;
+  position: relative;
+}
+
+.manageGroupItem:hover {
+  background: var(--color-card);
 }
 
 .manageGroupItem:last-child {
   border-bottom: none;
+}
+
+.manageGroupDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  flex-shrink: 0;
+  opacity: 0.7;
 }
 
 .manageGroupName {
@@ -237,22 +280,32 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  cursor: default;
+}
+
+.manageGroupAgentCount {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+  margin-right: var(--space-1);
 }
 
 .manageGroupInput {
   flex: 1;
   min-width: 0;
-  padding: 4px 8px;
-  border: 1px solid var(--color-border);
+  padding: 5px 10px;
+  border: 1px solid var(--color-link);
   border-radius: var(--radius-sm);
   font-size: 13px;
   color: var(--color-text);
   background: var(--color-card);
   outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-link) 15%, transparent);
 }
 
 .manageGroupInput:focus {
   border-color: var(--color-link);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-link) 20%, transparent);
 }
 
 .manageGroupActions {
@@ -260,14 +313,50 @@
   align-items: center;
   gap: 2px;
   flex-shrink: 0;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.manageGroupItem:hover .manageGroupActions {
+  opacity: 1;
 }
 
 .manageGroupAddRow {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  padding: var(--space-2) var(--space-4);
+  padding: var(--space-3) var(--space-4);
   border-top: 1px solid var(--color-border-subtle);
+}
+
+.manageGroupAddRow input::placeholder {
+  color: var(--color-text-tertiary);
+}
+
+.manageGroupAddBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-card);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all var(--transition-fast);
+}
+
+.manageGroupAddBtn:hover:not(:disabled) {
+  background: var(--color-primary);
+  color: white;
+  border-color: var(--color-primary);
+}
+
+.manageGroupAddBtn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
 }
 
 /* ── Agent context menu (right-click) ── */
@@ -332,7 +421,9 @@
 /* Agent group */
 .agentGroup {
   border-bottom: none;
-  margin-bottom: 1px;
+}
+
+.agentGroup + .agentGroup {
 }
 
 .agentAvatarWrapper {
@@ -660,6 +751,7 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
+  min-height: 0;
 }
 
 .chatHeader {
@@ -745,6 +837,17 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+}
+
+/* ── Chat loading spinner ── */
+
+.chatSpinner {
+  animation: chatSpin 1s linear infinite;
+  color: var(--color-text-tertiary);
+}
+
+@keyframes chatSpin {
+  to { transform: rotate(360deg); }
 }
 
 .messageRow {
@@ -873,39 +976,40 @@
 
 
 /* ── Staged image preview ── */
-.stagedImagePreview {
+.stagedImagesRow {
   display: flex;
-  align-items: center;
   gap: var(--space-2);
   padding: var(--space-2) 0;
+  overflow-x: auto;
+  flex-wrap: wrap;
+}
+
+.stagedImagePreview {
+  position: relative;
+  flex-shrink: 0;
 }
 
 .stagedImageThumb {
-  width: 48px;
-  height: 48px;
+  width: 56px;
+  height: 56px;
   border-radius: var(--radius-sm);
   object-fit: cover;
   border: 1px solid var(--color-border);
-}
-
-.stagedImageName {
-  flex: 1;
-  font-size: 12px;
-  color: var(--color-text-secondary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  display: block;
 }
 
 .stagedImageRemove {
+  position: absolute;
+  top: -6px;
+  right: -6px;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: var(--color-bg-tertiary);
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--color-border);
+  border-radius: 50%;
+  background: var(--color-bg-primary);
   color: var(--color-text-secondary);
   cursor: pointer;
   transition: background var(--transition-fast), color var(--transition-fast);
@@ -1032,6 +1136,33 @@
 
 .streamingQueueCount:hover {
   opacity: 1;
+}
+
+/* ── Stop run button ── */
+.stopRunBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  margin-top: 6px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  background: rgba(239, 68, 68, 0.08);
+  color: var(--color-error);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.stopRunBtn:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.5);
+}
+
+.stopRunBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* ── Queue panel ── */
@@ -2295,28 +2426,84 @@ button.filesColName:hover .filesFileName {
   background: var(--color-text-tertiary);
 }
 
+/* ── Mobile back button (hidden on desktop) ── */
+.mobileBackBtn {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all var(--transition-fast);
+}
+
+.mobileBackBtn:hover {
+  color: var(--color-text);
+  background: var(--color-surface);
+}
+
 /* ── Responsive ── */
 @media (max-width: 1024px) {
   .wrapper {
     height: calc(100vh - var(--mobile-header-height) - var(--space-4) * 2);
   }
+
+  .settingsGrid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 768px) {
-  .container {
-    flex-direction: column;
+  .wrapper {
+    height: calc(100vh - var(--mobile-header-height) - var(--space-3) * 2);
   }
 
+  .container {
+    flex-direction: column;
+    position: relative;
+  }
+
+  /* Sidebar takes full height on mobile, toggle via JS classes */
   .sidebar {
     width: 100%;
     min-width: 0;
-    max-height: 40vh;
     border-right: none;
     border-bottom: 1px solid var(--color-border);
   }
 
+  .sidebarMobileOpen {
+    flex: 1;
+    max-height: none;
+  }
+
+  .sidebarMobileHidden {
+    display: none;
+  }
+
+  .chatPanelMobileHidden {
+    display: none;
+  }
+
+  .chatPanelMobileOpen {
+    display: flex;
+  }
+
+  .mobileBackBtn {
+    display: flex;
+  }
+
   .chatHeader {
     padding: var(--space-3) var(--space-4);
+  }
+
+  .chatHeaderActions {
+    flex-wrap: wrap;
+    gap: var(--space-1);
   }
 
   .messagesArea {
@@ -2342,10 +2529,174 @@ button.filesColName:hover .filesFileName {
   .newConvBtn {
     padding-left: 40px;
   }
+
+  /* Files table: hide date column on tablet */
+  .filesTableHeader,
+  .filesRow {
+    grid-template-columns: 1fr 80px 100px;
+  }
+
+  .filesColDate {
+    display: none;
+  }
+
+  /* Settings modal */
+  .settingsModalWide,
+  .modal {
+    max-width: calc(100vw - var(--space-4) * 2);
+    max-height: calc(100vh - var(--space-4) * 2);
+  }
+
+  .settingsHero {
+    padding: var(--space-4);
+  }
+
+  /* Model grid: 2 columns on tablet */
+  .modelGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .cronFormRow {
+    flex-direction: column;
+  }
+
+  /* Touch devices can't hover — always show action buttons */
+  .agentGroupActions {
+    opacity: 1;
+  }
+
+  .copyBtn {
+    opacity: 1;
+  }
+
+  .agentGroupChevron {
+    opacity: 1;
+  }
+
+  .filesPanel {
+    padding: var(--space-3) var(--space-4);
+  }
 }
 
-@media (max-width: 640px) {
+@media (max-width: 480px) {
   .wrapper {
-    height: calc(100vh - var(--mobile-header-height) - var(--space-3) * 2);
+    height: calc(100vh - var(--mobile-header-height) - var(--space-2) * 2);
+  }
+
+  .container {
+    border-radius: var(--radius-md);
+  }
+
+  .sidebarHeader {
+    padding: var(--space-3);
+  }
+
+  .searchRow {
+    padding: var(--space-2) var(--space-3);
+  }
+
+  /* Files table: hide size + date columns on small mobile */
+  .filesTableHeader,
+  .filesRow {
+    grid-template-columns: 1fr 80px;
+  }
+
+  .filesColSize {
+    display: none;
+  }
+
+  /* Model grid: single column */
+  .modelGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .modelOptionsRow {
+    flex-direction: column;
+  }
+
+  .chatHeader {
+    padding: var(--space-2) var(--space-3);
+    gap: var(--space-2);
+  }
+
+  .chatHeaderName {
+    font-size: 14px;
+  }
+
+  .chatTabs {
+    padding: 1px;
+  }
+
+  .chatTabBtn {
+    padding: var(--space-1) var(--space-2);
+    font-size: 12px;
+  }
+
+  .replyBox {
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .replyInput {
+    min-height: 38px;
+    font-size: 14px;
+  }
+
+  .messagesArea {
+    padding: var(--space-2);
+  }
+
+  .messageBubble {
+    padding: var(--space-2) var(--space-3);
+    font-size: 14px;
+  }
+
+  .messageContent {
+    max-width: 90%;
+  }
+
+  /* Modal adjustments */
+  .modalBody {
+    padding: var(--space-4);
+  }
+
+  .modalHeader,
+  .modalFooter {
+    padding: var(--space-3) var(--space-4);
+  }
+
+  .settingsHero {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: var(--space-3);
+  }
+
+  .settingsHeroInfo {
+    align-items: center;
+  }
+
+  .settingsActions {
+    flex-wrap: wrap;
+  }
+
+  .filesPanel {
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .agentGroupHeader {
+    padding: 8px 12px;
+    gap: 8px;
+  }
+
+  .convItem {
+    padding-left: 36px;
+  }
+
+  .convItemActive {
+    padding-left: 36px;
+  }
+
+  .newConvBtn {
+    padding-left: 36px;
   }
 }

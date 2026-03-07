@@ -1,8 +1,9 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { Plus, Trash2, Bot, FolderOpen, ChevronDown, Check, Clock, Search, X, ExternalLink, ArrowRight, MoveRight, Copy, CopyPlus, SearchX, ChevronsLeft, ChevronsRight, SlidersHorizontal, Star, Tag, Users, ArrowUpDown, ListChecks, GripVertical, RefreshCw, MoreHorizontal, Layers, User, AlignLeft } from 'lucide-react';
-import { Button, EntitySwitcher, CreateCardModal } from '../../ui';
+import { Button, EntitySwitcher, CreateCardModal, Modal } from '../../ui';
 import { AgentAvatar } from '../../components/AgentAvatar';
+import { ActiveBatchRunsBanner } from '../../components/ActiveBatchRunsBanner';
 
 import { useAuth } from '../../stores/useAuth';
 import { api, ApiError } from '../../lib/api';
@@ -11,10 +12,13 @@ import { useConfirm } from '../../hooks/useConfirm';
 import { clearPreferredBoardId, setPreferredBoardId } from '../../lib/navigation-preferences';
 import { addRecentVisit } from '../../lib/recent-visits';
 import { stripMarkdown } from '../../lib/file-utils';
+import { fetchProcessingCardAgents } from '../../lib/agent-batch';
 import { useWorkspace } from '../../stores/WorkspaceContext';
 import { BoardCronTemplatesPanel } from './BoardCronTemplatesPanel';
 import { BoardBatchRunPanel } from './BoardBatchRunPanel';
 import { CardQuickView } from './CardQuickView';
+import { CardContextMenu } from './CardContextMenu';
+import type { TagEntry as ContextMenuTagEntry } from './CardContextMenu';
 import { useFavorites } from '../../hooks/useFavorites';
 import styles from './BoardPage.module.css';
 import { useDocumentTitle } from '../../hooks/useDocumentTitle';
@@ -233,6 +237,40 @@ export function BoardPage() {
   const filterInputRef = useRef<HTMLInputElement>(null);
   const pendingDeleteTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
+  /* ── Create New Board ── */
+  const [showCreateBoard, setShowCreateBoard] = useState(false);
+  const [newBoardName, setNewBoardName] = useState('');
+  const [newBoardDesc, setNewBoardDesc] = useState('');
+  const [creatingBoard, setCreatingBoard] = useState(false);
+
+  async function handleCreateBoard() {
+    if (!newBoardName.trim()) return;
+    setCreatingBoard(true);
+    try {
+      const created = await api<{ id: string }>('/boards', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: newBoardName.trim(),
+          description: newBoardDesc.trim() || null,
+          columns: [
+            { name: 'To Do', color: '#6B7280', position: 0 },
+            { name: 'In Progress', color: '#3B82F6', position: 1 },
+            { name: 'Done', color: '#10B981', position: 2 },
+          ],
+        }),
+      });
+      setShowCreateBoard(false);
+      setNewBoardName('');
+      setNewBoardDesc('');
+      toast.success('Board created');
+      navigate(`/boards/${created.id}`);
+    } catch (err) {
+      if (err instanceof ApiError) toast.error(err.message);
+    } finally {
+      setCreatingBoard(false);
+    }
+  }
+
   // Auto-refresh polling
   const AUTO_REFRESH_INTERVAL = 30_000; // 30 seconds
   const [lastRefreshedAt, setLastRefreshedAt] = useState<number | null>(null);
@@ -345,6 +383,25 @@ export function BoardPage() {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [board, id, silentRefresh]);
+
+  // Processing cards: cardId → agentId for cards currently processed by batch runs
+  const [processingCards, setProcessingCards] = useState<Map<string, string>>(new Map());
+  useEffect(() => {
+    if (!id) return;
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const map = await fetchProcessingCardAgents(
+          `/boards/${id}/batch-runs`,
+          (runId) => `/boards/${id}/batch-runs/${runId}/items`,
+        );
+        if (!cancelled) setProcessingCards(map);
+      } catch { /* ignore */ }
+    };
+    void poll();
+    const interval = setInterval(poll, 4000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [id]);
 
   // Clean up pending delete timers on unmount
   useEffect(() => {
@@ -1133,6 +1190,8 @@ export function BoardPage() {
           basePath="/boards"
           allLabel="All Boards"
           size="large"
+          onCreateNew={() => setShowCreateBoard(true)}
+          createLabel="New Board"
         />
         {board && (
           <button
@@ -1247,6 +1306,14 @@ export function BoardPage() {
 
       {error && <div className={styles.alert}>{error}</div>}
 
+      {id && (
+        <ActiveBatchRunsBanner
+          listEndpoint={`/boards/${id}/batch-runs`}
+          cancelEndpointPrefix={`/boards/${id}/batch-runs`}
+          itemsEndpoint={(runId) => `/boards/${id}/batch-runs/${runId}/items`}
+        />
+      )}
+
       {(allBoardTags.length > 0 || allBoardAssignees.entries.length > 0 || board.cards.length > 0) && (
         <div className={styles.filtersRow}>
           {allBoardTags.length > 0 && (
@@ -1332,6 +1399,7 @@ export function BoardPage() {
               agents={agents}
               users={boardUsers}
               tags={boardTags}
+              processingCards={processingCards}
               currentUserId={user?.id ?? null}
               allColumns={sortedColumns}
               isCollapsed={collapsedCols.has(col.id)}
@@ -1411,6 +1479,40 @@ export function BoardPage() {
           onNavigate={setQuickViewCardId}
         />
       )}
+
+      {showCreateBoard && (
+        <Modal onClose={() => setShowCreateBoard(false)} size="sm" ariaLabel="New Board">
+          <div className={styles.createModal}>
+            <div className={styles.createModalTitle}>New Board</div>
+            <div className={styles.createModalField}>
+              <label className={styles.createModalLabel}>Name</label>
+              <input
+                className={styles.createModalInput}
+                value={newBoardName}
+                onChange={(e) => setNewBoardName(e.target.value)}
+                placeholder="Board name"
+                autoFocus
+                onKeyDown={(e) => e.key === 'Enter' && handleCreateBoard()}
+              />
+            </div>
+            <div className={styles.createModalField}>
+              <label className={styles.createModalLabel}>Description (optional)</label>
+              <input
+                className={styles.createModalInput}
+                value={newBoardDesc}
+                onChange={(e) => setNewBoardDesc(e.target.value)}
+                placeholder="Brief description"
+              />
+            </div>
+            <div className={styles.createModalActions}>
+              <Button variant="ghost" onClick={() => setShowCreateBoard(false)}>Cancel</Button>
+              <Button onClick={handleCreateBoard} disabled={creatingBoard || !newBoardName.trim()}>
+                {creatingBoard ? 'Creating...' : 'Create'}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
@@ -1421,6 +1523,7 @@ interface ColumnProps {
   agents: AgentEntry[];
   users: UserEntry[];
   tags: CardTag[];
+  processingCards: Map<string, string>;
   currentUserId: string | null;
   allColumns: BoardColumn[];
   isCollapsed: boolean;
@@ -1447,14 +1550,14 @@ interface ColumnProps {
   isColumnDropTarget: boolean;
 }
 
-function Column({ column, cards, agents, users, tags, currentUserId, allColumns, isCollapsed, onToggleCollapse, onDragStart, onDragEnd, onDrop, onAddCard, onQuickAddCard, onBulkAddCards, onUpdateColumn, onDeleteColumn, onDeleteCard, onMoveCard, onDuplicateCard, onCardClick, sortOption, onSortChange, onColumnDragStart, onColumnDragEnd, onColumnDragOver, onColumnDragLeave, onColumnDrop, isColumnDropTarget }: ColumnProps) {
+function Column({ column, cards, agents, users, tags, processingCards, currentUserId, allColumns, isCollapsed, onToggleCollapse, onDragStart, onDragEnd, onDrop, onAddCard, onQuickAddCard, onBulkAddCards, onUpdateColumn, onDeleteColumn, onDeleteCard, onMoveCard, onDuplicateCard, onCardClick, sortOption, onSortChange, onColumnDragStart, onColumnDragEnd, onColumnDragOver, onColumnDragLeave, onColumnDrop, isColumnDropTarget }: ColumnProps) {
   const navigate = useNavigate();
   const [isDragOver, setIsDragOver] = useState(false);
   const [showAgentMenu, setShowAgentMenu] = useState(false);
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(column.name);
   const [showColorPicker, setShowColorPicker] = useState(false);
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; cardId: string; cardName: string; showMoveMenu?: boolean } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; cardId: string; columnId: string; cardName: string; cardAssignee?: CardAssignee | null; cardTags?: CardTag[] } | null>(null);
   const [showSortMenu, setShowSortMenu] = useState(false);
   const sortMenuRef = useRef<HTMLDivElement>(null);
   const [showWipInput, setShowWipInput] = useState(false);
@@ -1976,10 +2079,13 @@ function Column({ column, cards, agents, users, tags, currentUserId, allColumns,
             <span className={styles.emptyColumnHint}>Drop a card here or click + below</span>
           </div>
         ) : (
-          displayCards.map((bc) => (
+          displayCards.map((bc) => {
+            const processingAgentId = processingCards.get(bc.cardId);
+            const processingAgent = processingAgentId ? agents.find((a) => a.id === processingAgentId) : null;
+            return (
             <div
               key={bc.id}
-              className={styles.card}
+              className={`${styles.card}${processingAgentId ? ` ${styles.cardProcessing}` : ''}`}
               draggable
               onDragStart={(e) => onDragStart(e, bc)}
               onDragEnd={onDragEnd}
@@ -1992,9 +2098,31 @@ function Column({ column, cards, agents, users, tags, currentUserId, allColumns,
               }}
               onContextMenu={(e) => {
                 e.preventDefault();
-                setContextMenu({ x: e.clientX, y: e.clientY, cardId: bc.cardId, cardName: bc.card?.name ?? 'Unknown card' });
+                setContextMenu({
+                  x: e.clientX,
+                  y: e.clientY,
+                  cardId: bc.cardId,
+                  columnId: column.id,
+                  cardName: bc.card?.name ?? 'Unknown card',
+                  cardAssignee: bc.card?.assignee ?? null,
+                  cardTags: bc.card?.tags ?? [],
+                });
               }}
             >
+              {processingAgentId && (
+                <div className={styles.cardProcessingBadge}>
+                  {processingAgent && (
+                    <AgentAvatar
+                      icon={processingAgent.avatarIcon || 'spark'}
+                      bgColor={processingAgent.avatarBgColor || '#1a1a2e'}
+                      logoColor={processingAgent.avatarLogoColor || '#e94560'}
+                      size={16}
+                    />
+                  )}
+                  <span className={styles.batchLabel}>Batch run</span>
+                  {processingAgent && <><span className={styles.batchSep}>·</span><span>{processingAgent.name}</span></>}
+                </div>
+              )}
               {!!(bc.card?.tags?.length) && (
                 <div className={styles.cardTags}>
                   {bc.card?.tags?.slice(0, 3).map((tag: CardTag) => (
@@ -2064,7 +2192,7 @@ function Column({ column, cards, agents, users, tags, currentUserId, allColumns,
                 );
               })()}
             </div>
-          ))
+          ); })
         )}
       </div>
 
@@ -2293,92 +2421,78 @@ function Column({ column, cards, agents, users, tags, currentUserId, allColumns,
       )}
 
       {contextMenu && (
-        <div
-          ref={contextMenuRef}
-          className={styles.cardContextMenu}
-          style={{ top: contextMenu.y, left: contextMenu.x }}
-        >
-          <button
-            className={styles.cardContextMenuItemNeutral}
-            onClick={() => {
-              navigate(`/cards/${contextMenu.cardId}`);
-              setContextMenu(null);
-            }}
-          >
-            <ArrowRight size={13} />
-            Open card
-          </button>
-          <button
-            className={styles.cardContextMenuItemNeutral}
-            onClick={() => {
-              window.open(`/cards/${contextMenu.cardId}`, '_blank');
-              setContextMenu(null);
-            }}
-          >
-            <ExternalLink size={13} />
-            Open in new tab
-          </button>
-          <button
-            className={styles.cardContextMenuItemNeutral}
-            onClick={() => {
-              const url = `${window.location.origin}/cards/${contextMenu.cardId}`;
-              navigator.clipboard.writeText(url).then(() => {
-                toast.success('Link copied to clipboard');
-              }).catch(() => {
-                toast.error('Failed to copy link');
+        <CardContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          cardId={contextMenu.cardId}
+          cardName={contextMenu.cardName}
+          currentAssignee={contextMenu.cardAssignee}
+          currentTags={contextMenu.cardTags}
+          allTags={tags}
+          allColumns={allColumns.map((col) => ({ id: col.id, name: col.name, color: col.color }))}
+          currentColumnId={contextMenu.columnId}
+          agents={agents}
+          users={users as UserEntry[]}
+          currentUserId={currentUserId || ''}
+          onClose={() => setContextMenu(null)}
+          onOpenCard={(cardId) => {
+            navigate(`/cards/${cardId}`);
+            setContextMenu(null);
+          }}
+          onMoveCard={(cardId, columnId) => {
+            onMoveCard(cardId, columnId);
+            setContextMenu(null);
+          }}
+          onDuplicateCard={(cardId, columnId) => {
+            onDuplicateCard(cardId, columnId);
+            setContextMenu(null);
+          }}
+          onDeleteCard={(cardId, cardName) => {
+            onDeleteCard(cardId, cardName);
+            setContextMenu(null);
+          }}
+          onAssignCard={async (cardId, assigneeId) => {
+            try {
+              await api(`/cards/${cardId}`, {
+                method: 'PATCH',
+                body: JSON.stringify({ assigneeId }),
               });
+              const userName = users.find((u) => u.id === assigneeId);
+              const agentName = agents.find((a) => a.id === assigneeId);
+              const assigneeName = assigneeId ? (userName?.firstName || agentName?.name || 'Assignee') : 'Unassigned';
+              toast.success(`Assigned to ${assigneeName}`);
               setContextMenu(null);
-            }}
-          >
-            <Copy size={13} />
-            Copy link
-          </button>
-          <button
-            className={styles.cardContextMenuItemNeutral}
-            onClick={() => {
-              onDuplicateCard(contextMenu.cardId, column.id);
+            } catch (err) {
+              if (err instanceof ApiError) toast.error(err.message);
+              else toast.error('Failed to update assignee');
+            }
+          }}
+          onToggleTag={async (cardId, tagId) => {
+            try {
+              const tag = tags.find((t) => t.id === tagId);
+              if (!tag) return;
+              
+              // Check if tag is already assigned by looking at the card
+              const card = cards.find((c) => c.cardId === cardId);
+              const hasTag = card?.card?.tags?.some((t) => t.id === tagId);
+              
+              if (hasTag) {
+                await api(`/cards/${cardId}/tags/${tagId}`, { method: 'DELETE' });
+                toast.success(`Removed tag "${tag.name}"`);
+              } else {
+                await api(`/cards/${cardId}/tags`, {
+                  method: 'POST',
+                  body: JSON.stringify({ tagId }),
+                });
+                toast.success(`Added tag "${tag.name}"`);
+              }
               setContextMenu(null);
-            }}
-          >
-            <CopyPlus size={13} />
-            Duplicate
-          </button>
-          {allColumns.length > 1 && (
-            <>
-              <div className={styles.cardContextMenuDivider} />
-              <div className={styles.cardContextMenuLabel}>
-                <MoveRight size={12} />
-                Move to
-              </div>
-              {allColumns
-                .filter((col) => col.id !== column.id)
-                .map((col) => (
-                  <button
-                    key={col.id}
-                    className={styles.cardContextMenuItemNeutral}
-                    onClick={() => {
-                      onMoveCard(contextMenu.cardId, col.id);
-                      setContextMenu(null);
-                    }}
-                  >
-                    <span className={styles.contextMenuDot} style={{ background: col.color }} />
-                    {col.name}
-                  </button>
-                ))}
-            </>
-          )}
-          <div className={styles.cardContextMenuDivider} />
-          <button
-            className={styles.cardContextMenuItem}
-            onClick={() => {
-              onDeleteCard(contextMenu.cardId, contextMenu.cardName);
-              setContextMenu(null);
-            }}
-          >
-            <Trash2 size={13} />
-            Delete card
-          </button>
-        </div>
+            } catch (err) {
+              if (err instanceof ApiError) toast.error(err.message);
+              else toast.error('Failed to update tags');
+            }
+          }}
+        />
       )}
     </div>
   );

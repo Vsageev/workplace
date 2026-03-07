@@ -6,10 +6,10 @@ services:
     container_name: workplace-backend
     restart: unless-stopped
     ports:
-      - '${BACKEND_PORT:-3000}:3000'
+      - '${BACKEND_PORT:-3847}:3847'
     environment:
       NODE_ENV: development
-      PORT: 3000
+      PORT: 3847
       HOST: 0.0.0.0
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5173}
     volumes:
@@ -26,7 +26,7 @@ services:
     ports:
       - '${FRONTEND_PORT:-5173}:5173'
     environment:
-      VITE_API_URL: http://backend:3000
+      VITE_API_URL: http://backend:3847
     depends_on:
       - backend
     profiles:

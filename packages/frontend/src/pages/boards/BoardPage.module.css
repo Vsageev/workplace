@@ -770,10 +770,40 @@
   user-select: none;
 }
 
+.cardProcessing {
+  border-color: #8B5CF6;
+}
+
 .card:hover {
   border-color: var(--color-border);
   background: var(--color-surface);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+}
+
+.cardProcessing:hover {
+  border-color: #8B5CF6;
+}
+
+.cardProcessingBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px 2px 6px;
+  border-radius: 999px;
+  background: rgba(139, 92, 246, 0.1);
+  font-size: 11px;
+  font-weight: 500;
+  color: #8B5CF6;
+  align-self: flex-start;
+}
+
+.cardProcessingBadge .batchLabel {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.cardProcessingBadge .batchSep {
+  color: rgba(139, 92, 246, 0.4);
 }
 
 .card:active {
@@ -1680,6 +1710,54 @@
   justify-content: flex-end;
 }
 
+/* ── Create Board Modal ─────────────────────────────── */
+
+.createModal {
+  padding: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.createModalTitle {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.createModalField {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.createModalLabel {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+
+.createModalInput {
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  color: var(--color-text);
+  background: var(--color-surface);
+}
+
+.createModalInput:focus {
+  outline: none;
+  border-color: var(--color-link);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.createModalActions {
+  display: flex;
+  gap: var(--space-2);
+  justify-content: flex-end;
+}
+
 /* Card context menu */
 .cardContextMenu {
   position: fixed;
@@ -1841,33 +1919,262 @@
 
 @media (max-width: 1024px) {
   .wrapper {
-    height: auto;
-    min-height: calc(100vh - var(--mobile-header-height) - 48px);
+    height: calc(100vh - var(--mobile-header-height) - 48px);
+    min-height: 0;
+  }
+
+  .board {
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x proximity;
+    overscroll-behavior-x: contain;
+  }
+
+  .column {
+    scroll-snap-align: start;
   }
 }
 
 @media (max-width: 640px) {
+  .wrapper {
+    height: calc(100vh - var(--mobile-header-height) - 24px);
+    gap: 0;
+  }
+
+  /* ── Top bar: stack into two rows ── */
+  .topBar {
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    margin-bottom: var(--space-2);
+    padding: 0 var(--space-1);
+  }
+
+  .topBarActions {
+    gap: var(--space-2);
+  }
+
+  .cardCountInline {
+    display: none;
+  }
+
+  /* ── Filter bar: full width ── */
+  .filterBar {
+    min-width: 0;
+    max-width: none;
+    flex: 1;
+    order: 10;
+  }
+
+  /* ── Filter chips row ── */
+  .filtersRow {
+    gap: var(--space-2);
+    margin-bottom: var(--space-2);
+    padding: 0 var(--space-1);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    flex-wrap: nowrap;
+    scrollbar-width: none;
+  }
+
+  .filtersRow::-webkit-scrollbar {
+    display: none;
+  }
+
+  .chipGroup {
+    flex-wrap: nowrap;
+    flex-shrink: 0;
+  }
+
+  /* ── Board: horizontal scroll with momentum ── */
+  .board {
+    gap: var(--space-3);
+    padding: 0 var(--space-2) var(--space-3);
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x proximity;
+    overscroll-behavior-x: contain;
+  }
+
+  /* ── Columns: sized for phone screens ── */
   .column {
-    min-width: 260px;
-    max-width: 260px;
+    min-width: 78vw;
+    max-width: 78vw;
+    scroll-snap-align: start;
   }
 
   .columnCollapsed {
     min-width: 38px;
     max-width: 38px;
+    scroll-snap-align: start;
   }
 
-  .board {
-    gap: var(--space-3);
-    padding-bottom: var(--space-3);
+  .columnHeader {
+    padding: var(--space-2) var(--space-3);
+    padding-left: var(--space-2);
   }
 
-  .filterBar {
-    min-width: 140px;
-    max-width: 180px;
+  /* Always show drag handle on touch */
+  .columnDragHandle {
+    opacity: 0.4;
   }
 
-  .topBar {
-    flex-wrap: wrap;
+  /* ── Cards: touch-friendly ── */
+  .card {
+    padding: var(--space-3) var(--space-3);
+    min-height: 44px;
   }
+
+  /* Always show complete button on mobile (no hover) */
+  .completeBtn {
+    opacity: 1;
+  }
+
+  .cardTitle {
+    font-size: 14px;
+    -webkit-line-clamp: 3;
+  }
+
+  .cardDesc {
+    font-size: 13px;
+  }
+
+  .cardTag {
+    max-width: 100px;
+  }
+
+  /* ── Add card button: larger tap target ── */
+  .addCardBtn {
+    padding: var(--space-3);
+    min-height: 44px;
+    font-size: 14px;
+  }
+
+  /* ── Inline add card ── */
+  .inlineAddInput {
+    font-size: 16px; /* prevent iOS zoom on focus */
+  }
+
+  .inlineDescInput {
+    font-size: 14px;
+  }
+
+  .inlineToolbarBtn {
+    width: 36px;
+    height: 36px;
+  }
+
+  /* ── Dropdown/menu positioning: prevent off-screen ── */
+  .automationMenu {
+    right: auto;
+    left: 0;
+    max-width: calc(100vw - 32px);
+  }
+
+  .boardActionsMenu {
+    right: 0;
+    max-width: calc(100vw - 32px);
+  }
+
+  .collectionPickerMenu {
+    max-width: calc(100vw - 32px);
+  }
+
+  .wipPopover {
+    left: auto;
+    right: 0;
+    max-width: calc(100vw - 32px);
+  }
+
+  /* ── Collapsed column adjustments ── */
+  .collapsedName {
+    max-height: 140px;
+    font-size: 12px;
+  }
+
+  /* ── Filter no-results overlay ── */
+  .filterNoResults {
+    padding: var(--space-6) var(--space-4);
+  }
+
+  /* ── Refresh button: slightly bigger tap target ── */
+  .refreshBtn {
+    width: 36px;
+    height: 36px;
+  }
+
+  .favoriteBtn {
+    width: 36px;
+    height: 36px;
+  }
+
+  .boardActionsBtn {
+    width: 36px;
+    height: 36px;
+  }
+
+  /* ── Completed toggle: bigger tap target ── */
+  .completedToggle {
+    padding: 5px 12px;
+    font-size: 13px;
+  }
+
+}
+
+/* Context menu submenu for assignee/tags */
+.cardContextMenuSubmenu {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 0;
+}
+
+.cardContextMenuSubmenuDivider {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--color-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 6px var(--space-3) 4px;
+}
+
+.cardContextMenuItemActive {
+  background: rgba(59, 130, 246, 0.12);
+  color: var(--color-primary, #3B82F6);
+  font-weight: 500;
+}
+
+.cardContextMenuItemYou {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  font-weight: 400;
+}
+
+.cardContextMenuItemTag {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px var(--space-3);
+  border: 1px solid;
+  border-radius: var(--radius-md);
+  background: transparent;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  margin: 2px var(--space-2);
+}
+
+.cardContextMenuItemTag:hover {
+  opacity: 0.85;
+}
+
+.cardContextMenuItemTagSelected {
+  color: white;
+  font-weight: 500;
+}
+
+.cardContextMenuEmpty {
+  padding: var(--space-2) var(--space-3);
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  text-align: center;
 }

@@ -1,0 +1,229 @@
+.cardContextMenu {
+  position: fixed;
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg, 0 4px 12px rgba(0, 0, 0, 0.12));
+  z-index: 1000;
+  padding: var(--space-1) 0;
+  min-width: 220px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.menuSection {
+  padding: var(--space-1) 0;
+}
+
+.menuSection:first-child {
+  padding-top: 0;
+}
+
+.menuSection:last-child {
+  padding-bottom: 0;
+}
+
+.menuLabel {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-3) 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.menuItemNeutral {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  background: none;
+  color: var(--color-text-primary);
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--transition-fast);
+}
+
+.menuItemNeutral:hover {
+  background: var(--color-surface-hover, rgba(0, 0, 0, 0.05));
+}
+
+.menuItemDanger {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  background: none;
+  color: var(--color-error);
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--transition-fast);
+}
+
+.menuItemDanger:hover {
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.menuItemLabel {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.menuItemChevron {
+  opacity: 0.5;
+}
+
+.menuDivider {
+  height: 1px;
+  background: var(--color-border);
+  margin: var(--space-1) 0;
+}
+
+.columnDot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* Assignee avatar in menu */
+.assigneeAvatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  color: white;
+  font-size: 11px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+/* Assignee dropdown */
+.menuItemWrap {
+  position: relative;
+}
+
+.assigneeDropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  z-index: 1001;
+  min-width: 200px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.assigneeDropdownContent {
+  padding: var(--space-1) 0;
+}
+
+.assigneeOption {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  background: none;
+  color: var(--color-text-primary);
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--transition-fast);
+}
+
+.assigneeOption:hover {
+  background: var(--color-surface-hover, rgba(0, 0, 0, 0.05));
+}
+
+.assigneeOptionActive {
+  background: var(--color-primary-alpha, rgba(59, 130, 246, 0.1));
+}
+
+.assigneeOptionActive .assigneeName {
+  font-weight: 600;
+}
+
+.assigneeDivider {
+  height: 1px;
+  background: var(--color-border);
+  margin: var(--space-1) 0;
+  padding: 0;
+}
+
+.assigneeName {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.assigneeCheck {
+  color: var(--color-primary);
+  flex-shrink: 0;
+}
+
+.assigneeYou {
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+  margin-left: 4px;
+}
+
+/* Tags list in context menu */
+.tagsList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 12px;
+}
+
+.tagChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid;
+  border-radius: 12px;
+  background: transparent;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.tagChip:hover {
+  opacity: 0.85;
+  transform: translateY(-1px);
+}
+
+.tagChipActive {
+  color: white;
+  font-weight: 600;
+}
+
+.menuItemDisabled {
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  cursor: not-allowed;
+}

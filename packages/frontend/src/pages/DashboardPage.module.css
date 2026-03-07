@@ -337,6 +337,7 @@
   display: flex;
   align-items: center;
   gap: 0;
+  min-width: 0;
 }
 
 .myCardItem {
@@ -431,6 +432,7 @@
   display: flex;
   align-items: center;
   gap: 0;
+  min-width: 0;
 }
 
 .taskRow .taskItem {
@@ -597,6 +599,98 @@
   white-space: nowrap;
 }
 
+/* Agent Chats */
+.agentChatsSection {
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  margin-bottom: var(--space-5);
+}
+
+.agentChatsList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.agentChatItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  text-decoration: none;
+  color: var(--color-text);
+  transition: background var(--transition-fast);
+}
+
+.agentChatItem:hover {
+  background: var(--color-surface);
+  text-decoration: none;
+}
+
+.agentChatItemUnread {
+  background: rgba(59, 130, 246, 0.04);
+}
+
+.agentChatItemUnread:hover {
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.agentChatContent {
+  flex: 1;
+  min-width: 0;
+}
+
+.agentChatTopRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.agentChatName {
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.agentChatNameUnread {
+  font-weight: 600;
+}
+
+.agentChatSubject {
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.4;
+}
+
+.agentChatMeta {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+}
+
+.agentChatUnreadDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-link);
+}
+
+.agentChatTime {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+}
+
 /* Scratchpad */
 .scratchpadSection {
   background: var(--color-card);
@@ -758,6 +852,8 @@
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   padding: var(--space-5);
+  min-width: 0;
+  overflow: hidden;
 }
 
 .cardHeader {
@@ -1037,6 +1133,240 @@
   .statsGrid,
   .skeletonGrid {
     grid-template-columns: 1fr;
+  }
+}
+
+/* ── Mobile layout fixes ── */
+@media (max-width: 768px) {
+  .wrapper {
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  /* Search bar: hide kbd shortcut, tighten padding */
+  .searchBar {
+    padding: 10px var(--space-3);
+    font-size: 13px;
+    margin-bottom: var(--space-4);
+  }
+
+  .searchBarKbd {
+    display: none;
+  }
+
+  /* Stat cards: compact padding */
+  .statCard {
+    padding: var(--space-3) var(--space-4);
+    gap: var(--space-3);
+  }
+
+  .statValue {
+    font-size: 20px;
+  }
+
+  .statsGrid {
+    gap: var(--space-3);
+    margin-bottom: var(--space-4);
+  }
+
+  /* Jump back in: horizontal scroll instead of wrapping off-screen */
+  .jumpBackInList {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    gap: var(--space-2);
+    padding-bottom: 2px;
+  }
+
+  .jumpBackInList::-webkit-scrollbar {
+    display: none;
+  }
+
+  .jumpBackInItemWrapper {
+    flex-shrink: 0;
+    max-width: 200px;
+  }
+
+  /* Card sections: reduce padding */
+  .myCardsSection,
+  .inboxPreview,
+  .agentChatsSection,
+  .card {
+    padding: var(--space-3) var(--space-3);
+  }
+
+  .scratchpadBody {
+    padding: 0 var(--space-3) var(--space-3);
+  }
+
+  .scratchpadHeader {
+    padding: var(--space-3);
+  }
+
+  /* Card header: tighten */
+  .cardHeader {
+    margin-bottom: var(--space-3);
+  }
+
+  .cardTitle {
+    font-size: 14px;
+  }
+
+  /* Grid gap */
+  .grid {
+    gap: var(--space-4);
+  }
+
+  /* Inbox items: handle overflow */
+  .inboxAvatar {
+    width: 28px;
+    height: 28px;
+    font-size: 10px;
+  }
+
+  .inboxItem {
+    gap: var(--space-2);
+    padding: var(--space-2);
+  }
+
+  .inboxMeta {
+    display: none;
+  }
+
+  .inboxContactName {
+    font-size: 12px;
+  }
+
+  .inboxSubject,
+  .inboxPreviewText {
+    font-size: 11px;
+  }
+
+  /* Scratchpad footer: stack on mobile */
+  .scratchpadFooter {
+    flex-wrap: wrap;
+  }
+
+  .scratchpadActions {
+    flex-wrap: wrap;
+  }
+
+  /* Header actions */
+  .lastRefreshed {
+    font-size: 11px;
+  }
+
+  /* Empty states: reduce padding */
+  .emptyState {
+    padding: var(--space-4) var(--space-3);
+  }
+
+  .emptyIcon {
+    width: 44px;
+    height: 44px;
+  }
+
+  .emptyIcon svg {
+    width: 24px;
+    height: 24px;
+  }
+
+  /* Task items */
+  .taskItem {
+    padding: var(--space-2);
+    gap: var(--space-2);
+  }
+
+  .taskStatus {
+    font-size: 10px;
+    padding: 2px 6px;
+  }
+
+  .taskTitle {
+    font-size: 13px;
+  }
+
+  /* My card items */
+  .myCardItem {
+    padding: var(--space-2);
+  }
+
+  .myCardName {
+    font-size: 13px;
+  }
+
+  /* Skeleton */
+  .skeletonPanels {
+    grid-template-columns: 1fr;
+  }
+
+  /* Context menu: prevent offscreen */
+  .cardContextMenu {
+    max-width: calc(100vw - 16px);
+  }
+
+  /* Error state */
+  .errorState {
+    padding: var(--space-6) var(--space-4);
+  }
+
+  .errorTitle {
+    font-size: 16px;
+  }
+
+  .errorDescription {
+    font-size: 13px;
+  }
+}
+
+/* Extra small screens */
+@media (max-width: 480px) {
+  .searchBarText {
+    font-size: 12px;
+  }
+
+  .statCard {
+    padding: var(--space-3);
+  }
+
+  .statIcon {
+    width: 34px;
+    height: 34px;
+  }
+
+  .statIcon svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .statValue {
+    font-size: 18px;
+  }
+
+  .statLabel {
+    font-size: 12px;
+  }
+
+  .jumpBackInItemWrapper {
+    max-width: 170px;
+  }
+
+  .jumpBackInName {
+    font-size: 12px;
+  }
+
+  .viewAllLink {
+    font-size: 12px;
+  }
+
+  .inlineAddInput {
+    font-size: 12px;
+  }
+
+  /* Hide "Updated X ago" on very small screens */
+  .lastRefreshed {
+    display: none;
   }
 }
 

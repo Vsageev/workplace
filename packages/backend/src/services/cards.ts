@@ -94,7 +94,23 @@ export async function listCards(query: CardListQuery) {
       .filter(Boolean)
       .map((t: any) => ({ id: t.id, name: t.name, color: t.color }));
 
-    return { ...card, assignee, tags };
+    // Load board placements
+    const boardCards = store.find('boardCards', (r: any) => r.cardId === card.id) as any[];
+    const boards: any[] = [];
+    for (const bc of boardCards) {
+      const board = store.getById('boards', bc.boardId) as any;
+      if (!board) continue;
+      const column = store.getById('boardColumns', bc.columnId) as any;
+      boards.push({
+        boardId: board.id,
+        boardName: board.name,
+        columnId: bc.columnId,
+        columnName: column?.name ?? null,
+        columnColor: column?.color ?? null,
+      });
+    }
+
+    return { ...card, assignee, tags, boards };
   });
 
   return { entries: hydrated, total };

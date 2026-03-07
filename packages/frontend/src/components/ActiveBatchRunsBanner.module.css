@@ -1,0 +1,387 @@
+@keyframes liveDot {
+  0%, 100% { opacity: 0.4; transform: scale(0.85); }
+  50% { opacity: 1; transform: scale(1); }
+}
+
+.banner {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+/* ── Card ── */
+.card {
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-3) var(--space-4);
+}
+
+.cardCompleted,
+.cardFailed,
+.cardCancelled {
+  opacity: 0.7;
+}
+
+/* ── Header: agent + status ── */
+.cardHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.agentInfo {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.agentName {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.headerMeta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
+/* ── Status badge ── */
+.statusBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.statusBadge.cardActive {
+  background: rgba(16, 185, 129, 0.1);
+  color: var(--color-success);
+}
+
+.statusBadge.cardCompleted {
+  background: rgba(107, 114, 128, 0.1);
+  color: var(--color-text-secondary);
+}
+
+.statusBadge.cardFailed {
+  background: rgba(239, 68, 68, 0.08);
+  color: var(--color-error);
+}
+
+.statusBadge.cardCancelled {
+  background: rgba(107, 114, 128, 0.1);
+  color: var(--color-text-secondary);
+}
+
+.liveDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-success);
+  animation: liveDot 1.4s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+/* ── Cancel button ── */
+.cancelBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  background: none;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  flex-shrink: 0;
+  padding: 0;
+}
+
+.cancelBtn:hover {
+  color: var(--color-error);
+  border-color: rgba(239, 68, 68, 0.3);
+  background: rgba(239, 68, 68, 0.06);
+}
+
+/* ── Prompt ── */
+.prompt {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  margin-top: var(--space-2);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.45;
+}
+
+/* ── Progress section ── */
+.progressSection {
+  margin-top: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.statsRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: 12px;
+}
+
+.statRemaining {
+  font-weight: 600;
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.statDetails {
+  display: flex;
+  gap: var(--space-2);
+  color: var(--color-text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.statDone {
+  color: var(--color-success);
+}
+
+.statProcessing {
+  color: var(--color-info);
+}
+
+.statFailed {
+  color: var(--color-error);
+}
+
+.statTotal {
+  margin-left: auto;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Elapsed time ── */
+.elapsedRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.parallelHint {
+  margin-left: auto;
+  color: var(--color-text-tertiary);
+}
+
+/* ── Error toggle ── */
+.errorToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: var(--space-2);
+  padding: 4px 10px;
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  border-radius: var(--radius-sm);
+  background: rgba(239, 68, 68, 0.04);
+  color: var(--color-error);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all var(--transition-fast);
+}
+
+.errorToggle:hover {
+  background: rgba(239, 68, 68, 0.08);
+  border-color: rgba(239, 68, 68, 0.35);
+}
+
+.errorList {
+  margin-top: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.errorItem {
+  padding: var(--space-2) var(--space-3);
+  background: rgba(239, 68, 68, 0.04);
+  border: 1px solid rgba(239, 68, 68, 0.1);
+  border-radius: var(--radius-md);
+}
+
+.errorItemName {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text);
+}
+
+.errorItemMsg {
+  margin: var(--space-1) 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--color-error);
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: 'SF Mono', 'Fira Code', 'Fira Mono', 'Roboto Mono', monospace;
+}
+
+/* ── Minimized card ── */
+.cardMini {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 6px var(--space-3);
+  min-height: 34px;
+}
+
+.cardMini.cardCompleted,
+.cardMini.cardFailed,
+.cardMini.cardCancelled {
+  opacity: 0.7;
+}
+
+.miniLeft {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  flex-shrink: 1;
+}
+
+.miniName {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 140px;
+}
+
+.miniRight {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.miniBar {
+  width: 80px;
+  flex-shrink: 0;
+}
+
+.miniBarTrack {
+  display: flex;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--color-border);
+  overflow: hidden;
+}
+
+.miniBarCompleted {
+  background: #10b981;
+  height: 100%;
+  transition: width 0.3s ease;
+}
+
+.miniBarFailed {
+  background: #ef4444;
+  height: 100%;
+  transition: width 0.3s ease;
+}
+
+.miniBarProcessing {
+  background: #7c3aed;
+  height: 100%;
+  transition: width 0.3s ease;
+}
+
+.miniCount {
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+}
+
+.miniToggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  background: none;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  flex-shrink: 0;
+  padding: 0;
+}
+
+.miniToggle:hover {
+  color: var(--color-text-secondary);
+  background: var(--color-bg-hover);
+  border-color: var(--color-border);
+}
+
+/* ── Empty state ── */
+.emptyBanner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px dashed var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
+
+.emptyIcon {
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+}
+
+/* ── Responsive ── */
+@media (max-width: 768px) {
+  .cardHeader {
+    gap: var(--space-2);
+  }
+
+  .card {
+    padding: var(--space-3);
+  }
+
+  .statsRow {
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+}

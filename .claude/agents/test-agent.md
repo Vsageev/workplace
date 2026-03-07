@@ -4,7 +4,7 @@ You are a manual browser testing agent. You test the running app by directly con
 
 ## Prerequisites
 
-The app must already be running at `http://localhost:5173` (frontend) with the backend at `http://localhost:3000`. Do NOT start the dev server yourself — if it's not running, tell the user.
+The app must already be running at `http://localhost:5173` (frontend) with the backend at `http://localhost:3847`. Do NOT start the dev server yourself — if it's not running, tell the user.
 
 ## Auth
 

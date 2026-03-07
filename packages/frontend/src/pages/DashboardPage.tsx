@@ -25,6 +25,7 @@ import {
   Copy,
   RefreshCw,
   WifiOff,
+  MessagesSquare,
 } from 'lucide-react';
 import { PageHeader } from '../layout';
 import { AgentAvatar } from '../components/AgentAvatar';
@@ -80,17 +81,31 @@ interface ConversationPreview {
   contact: ConversationContact | null;
 }
 
+type AgentRunTriggerType = 'chat' | 'cron_job' | 'card_assignment';
+
 interface AgentRun {
   id: string;
   agentId: string;
   agentName: string;
-  triggerType: 'chat' | 'cron' | 'card';
+  triggerType: AgentRunTriggerType;
   status: 'running' | 'completed' | 'error';
   conversationId: string | null;
   cardId: string | null;
   startedAt: string;
   finishedAt: string | null;
   durationMs: number | null;
+}
+
+interface RecentAgentChat {
+  id: string;
+  subject: string | null;
+  lastMessageAt: string | null;
+  isUnread: boolean;
+  agentId: string;
+  agentName: string;
+  agentAvatarIcon: string | null;
+  agentAvatarBgColor: string | null;
+  agentAvatarLogoColor: string | null;
 }
 
 const STAT_CARDS = [
@@ -100,10 +115,10 @@ const STAT_CARDS = [
   { key: 'agents', label: 'Agents', to: '/agents', icon: Bot, bg: 'rgba(16,185,129,0.1)', color: '#10B981' },
 ] as const;
 
-const TRIGGER_CONFIG = {
+const TRIGGER_CONFIG: Record<AgentRunTriggerType, { label: string; icon: React.ComponentType<{ size?: number }> }> = {
   chat: { label: 'Chat', icon: MessageSquare },
-  cron: { label: 'Cron', icon: Clock },
-  card: { label: 'Card', icon: Zap },
+  cron_job: { label: 'Cron', icon: Clock },
+  card_assignment: { label: 'Card', icon: Zap },
 };
 
 function formatDuration(ms: number): string {
@@ -176,6 +191,7 @@ export function DashboardPage() {
   const [recentRuns, setRecentRuns] = useState<AgentRun[]>([]);
   const [recentConversations, setRecentConversations] = useState<ConversationPreview[]>([]);
   const [unreadConversationCount, setUnreadConversationCount] = useState(0);
+  const [recentAgentChats, setRecentAgentChats] = useState<RecentAgentChat[]>([]);
   const [recentVisits, setRecentVisits] = useState<RecentVisit[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
@@ -210,7 +226,7 @@ export function DashboardPage() {
     setLoadError(false);
     const wsParam = activeWorkspaceId ? `&workspaceId=${activeWorkspaceId}` : '';
     try {
-      const [collectionsRes, boardsRes, cardsRes, agentsRes, runsRes, myCardsRes, conversationsRes, unreadRes, collectionsListRes] =
+      const [collectionsRes, boardsRes, cardsRes, agentsRes, runsRes, myCardsRes, conversationsRes, unreadRes, collectionsListRes, agentChatsRes] =
         await Promise.all([
           api<{ total: number }>(`/collections?limit=0${wsParam}`),
           api<{ total: number }>(`/boards?limit=0${wsParam}`),
@@ -223,6 +239,7 @@ export function DashboardPage() {
           api<{ entries: ConversationPreview[] }>('/conversations?limit=5&sort=lastMessageAt:desc').catch(() => ({ entries: [] })),
           api<{ total: number }>('/conversations?isUnread=true&countOnly=true').catch(() => ({ total: 0 })),
           api<{ entries: { id: string; name: string; isGeneral?: boolean }[] }>(`/collections?limit=50${wsParam}`).catch(() => ({ entries: [] })),
+          api<{ entries: RecentAgentChat[] }>('/agent-chat/recent?limit=8').catch(() => ({ entries: [] })),
         ]);
 
       setStats({
@@ -237,6 +254,7 @@ export function DashboardPage() {
       setRecentConversations(conversationsRes.entries);
       setUnreadConversationCount(unreadRes.total);
       setCollections(collectionsListRes.entries);
+      setRecentAgentChats(agentChatsRes.entries);
       setLastRefreshed(Date.now());
     } catch {
       setLoadError(true);
@@ -494,12 +512,38 @@ export function DashboardPage() {
             ))}
           </div>
 
-          {recentVisits.length > 0 && (
+          {(recentVisits.length > 0 || recentAgentChats.length > 0) && (
             <div className={styles.jumpBackIn}>
               <div className={styles.jumpBackInHeader}>
                 <span className={styles.jumpBackInTitle}>Jump back in</span>
               </div>
               <div className={styles.jumpBackInList}>
+                {recentAgentChats.length > 0 && (() => {
+                  const chat = recentAgentChats[0];
+                  return (
+                    <div key={`agent-chat-${chat.id}`} className={styles.jumpBackInItemWrapper}>
+                      <Link
+                        to={`/agents?agentId=${chat.agentId}&conversationId=${chat.id}`}
+                        className={styles.jumpBackInItem}
+                      >
+                        <div className={styles.jumpBackInIcon}>
+                          <AgentAvatar
+                            icon={chat.agentAvatarIcon || 'spark'}
+                            bgColor={chat.agentAvatarBgColor || '#1a1a2e'}
+                            logoColor={chat.agentAvatarLogoColor || '#e94560'}
+                            size={18}
+                          />
+                        </div>
+                        <div className={styles.jumpBackInContent}>
+                          <span className={styles.jumpBackInName}>{chat.subject || chat.agentName}</span>
+                          <span className={styles.jumpBackInType}>
+                            Agent Chat{chat.lastMessageAt ? <> &middot; <TimeAgo date={chat.lastMessageAt} /></> : ''}
+                          </span>
+                        </div>
+                      </Link>
+                    </div>
+                  );
+                })()}
                 {recentVisits.slice(0, 6).map((visit) => {
                   const Icon = RECENT_VISIT_ICONS[visit.type];
                   const typeLabel = RECENT_VISIT_TYPE_LABEL[visit.type];
@@ -673,6 +717,53 @@ export function DashboardPage() {
               </div>
             )}
           </div>
+
+          {/* Recent Agent Chats */}
+          {recentAgentChats.length > 0 && (
+            <div className={styles.agentChatsSection}>
+              <div className={styles.cardHeader}>
+                <h2 className={styles.cardTitle}>
+                  <MessagesSquare size={16} className={styles.inboxIcon} />
+                  Agent Chats
+                </h2>
+                <Link to="/agents" className={styles.viewAllLink}>
+                  View all <ArrowRight size={14} />
+                </Link>
+              </div>
+              <div className={styles.agentChatsList}>
+                {recentAgentChats.map((chat) => (
+                  <Link
+                    key={chat.id}
+                    to={`/agents?agentId=${chat.agentId}&conversationId=${chat.id}`}
+                    className={`${styles.agentChatItem}${chat.isUnread ? ` ${styles.agentChatItemUnread}` : ''}`}
+                  >
+                    <AgentAvatar
+                      icon={chat.agentAvatarIcon || 'spark'}
+                      bgColor={chat.agentAvatarBgColor || '#1a1a2e'}
+                      logoColor={chat.agentAvatarLogoColor || '#e94560'}
+                      size={32}
+                    />
+                    <div className={styles.agentChatContent}>
+                      <div className={styles.agentChatTopRow}>
+                        <span className={`${styles.agentChatName}${chat.isUnread ? ` ${styles.agentChatNameUnread}` : ''}`}>
+                          {chat.agentName}
+                        </span>
+                      </div>
+                      {chat.subject && (
+                        <div className={styles.agentChatSubject}>{chat.subject}</div>
+                      )}
+                    </div>
+                    <div className={styles.agentChatMeta}>
+                      {chat.isUnread && <div className={styles.agentChatUnreadDot} />}
+                      {chat.lastMessageAt && (
+                        <TimeAgo date={chat.lastMessageAt} className={styles.agentChatTime} />
+                      )}
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Quick Scratchpad */}
           <div className={styles.scratchpadSection}>

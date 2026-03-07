@@ -1,6 +1,8 @@
 import fs from 'node:fs';
+import path from 'node:path';
 import type { SecureContextOptions } from 'node:tls';
 import Fastify from 'fastify';
+import fastifyStatic from '@fastify/static';
 import multipart from '@fastify/multipart';
 import sensible from '@fastify/sensible';
 import { env } from './config/env.js';
@@ -45,8 +47,7 @@ import { initAllCronJobs, shutdownAgentCronJobs } from './services/agent-cron.js
 import { initAllBoardCronJobs } from './services/board-cron.js';
 import { reconcileRunsOnStartup, cleanupOldRunLogs } from './services/agent-runs.js';
 import { initializeAgentChatQueue, reattachRunningProcess, RUNS_DIR } from './services/agent-chat.js';
-import { ensureAgentServiceAccounts } from './services/agents.js';
-import { consolidateGeneralCollections } from './services/collections.js';
+import { initializeAgentBatchQueue } from './services/agent-batch-queue.js';
 
 function buildHttpsOptions(): SecureContextOptions | undefined {
   if (!env.TLS_CERT_PATH || !env.TLS_KEY_PATH) return undefined;
@@ -82,8 +83,6 @@ export async function buildApp() {
 
   // Initialize JSON store before anything else
   await store.init();
-  await consolidateGeneralCollections();
-  await ensureAgentServiceAccounts();
 
   await app.register(sensible);
   await app.register(multipart, { limits: { fileSize: 10 * 1024 * 1024 } });
@@ -128,6 +127,23 @@ export async function buildApp() {
   await app.register(agentRunRoutes);
   await app.register(settingsRoutes);
 
+  // Serve frontend static files in production
+  const staticDir = process.env.STATIC_DIR;
+  if (staticDir && fs.existsSync(staticDir)) {
+    await app.register(fastifyStatic, {
+      root: path.resolve(staticDir),
+      prefix: '/',
+      wildcard: false,
+    });
+    // SPA fallback: serve index.html for non-API routes
+    app.setNotFoundHandler((req, reply) => {
+      if (req.url.startsWith('/api')) {
+        return reply.status(404).send({ error: 'Not found' });
+      }
+      return reply.sendFile('index.html');
+    });
+  }
+
   // Apply persisted rate-limit settings to the in-memory limiter
   initRateLimiterFromSettings();
 
@@ -149,6 +165,7 @@ export async function buildApp() {
   cleanupOldRunLogs();
   reconcileRunsOnStartup((run) => reattachRunningProcess(run));
   initializeAgentChatQueue({ preserveActiveProcessing: true });
+  initializeAgentBatchQueue({ preserveActiveProcessing: true });
 
   return app;
 }

@@ -14,14 +14,20 @@ import {
   CheckSquare,
   Minus,
   Trash2,
+  ChevronDown,
+  ChevronRight,
+  Layers,
 } from 'lucide-react';
 import { PageHeader } from '../layout';
+import { Button, Tooltip } from '../ui';
 import { api, ApiError } from '../lib/api';
 import { toast } from '../stores/toast';
 import { useAuth } from '../stores/useAuth';
 import { useConfirm } from '../hooks/useConfirm';
 import { AgentAvatar } from '../components/AgentAvatar';
 import { CardQuickView } from './boards/CardQuickView';
+import { CreateCardModal } from '../ui/CreateCardModal';
+import type { CreateCardData } from '../ui/CreateCardModal';
 import { stripMarkdown } from '../lib/file-utils';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { highlightMatch } from '../components/SearchHighlight';
@@ -60,8 +66,49 @@ interface CardsResponse {
   entries: CardItem[];
 }
 
+type SortOption =
+  | 'name-asc'
+  | 'name-desc'
+  | 'created-newest'
+  | 'created-oldest'
+  | 'updated-newest'
+  | 'updated-oldest'
+  | 'collection';
+
+const SORT_LABELS: Record<SortOption, string> = {
+  'name-asc': 'Name (A-Z)',
+  'name-desc': 'Name (Z-A)',
+  'created-newest': 'Created (newest)',
+  'created-oldest': 'Created (oldest)',
+  'updated-newest': 'Updated (newest)',
+  'updated-oldest': 'Updated (oldest)',
+  collection: 'Collection',
+};
+
+const SORT_OPTIONS = Object.keys(SORT_LABELS) as SortOption[];
+
+interface CollectionGroup {
+  collectionId: string;
+  collectionName: string;
+  cards: CardItem[];
+}
 
 const PAGE_SIZE = 100;
+
+function timeAgo(dateStr: string): string {
+  const now = Date.now();
+  const then = new Date(dateStr).getTime();
+  const diff = now - then;
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}d ago`;
+  const months = Math.floor(days / 30);
+  return `${months}mo ago`;
+}
 
 export function MyCardsPage() {
   useDocumentTitle('My Cards');
@@ -69,7 +116,7 @@ export function MyCardsPage() {
   const navigate = useNavigate();
   const [cards, setCards] = useState<CardItem[]>([]);
   const [total, setTotal] = useState(0);
-  const [totalCount, setTotalCount] = useState(0); // total assigned cards regardless of completion status
+  const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState(false);
   const [search, setSearch] = useState('');
@@ -80,36 +127,53 @@ export function MyCardsPage() {
     } catch { /* ignore */ }
     return new Set();
   });
+  const [sort, setSort] = useState<SortOption>(() => {
+    try {
+      const saved = localStorage.getItem('my-cards-page-sort');
+      if (saved && SORT_OPTIONS.includes(saved as SortOption)) return saved as SortOption;
+    } catch { /* ignore */ }
+    return 'updated-newest';
+  });
+  const [groupByCollection, setGroupByCollection] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('my-cards-page-group-by-collection');
+      if (saved !== null) return JSON.parse(saved) as boolean;
+    } catch { /* ignore */ }
+    return false;
+  });
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [quickViewCardId, setQuickViewCardId] = useState<string | null>(null);
   const [focusedIndex, setFocusedIndex] = useState(-1);
   const cardRowRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const [collectionNames, setCollectionNames] = useState<Map<string, string>>(new Map());
-  const [collections, setCollections] = useState<{ id: string; name: string; isGeneral?: boolean }[]>([]);
-  const [inlineAddName, setInlineAddName] = useState('');
-  const [inlineAddSubmitting, setInlineAddSubmitting] = useState(false);
-  const inlineAddRef = useRef<HTMLInputElement>(null);
 
-  // Bulk selection
+  const [showCreateModal, setShowCreateModal] = useState(false);
+
   const [selectedCardIds, setSelectedCardIds] = useState<Set<string>>(new Set());
   const [bulkActionsOpen, setBulkActionsOpen] = useState<string | null>(null);
   const [bulkProcessing, setBulkProcessing] = useState(false);
   const { confirm, dialog: confirmDialog } = useConfirm();
   const bulkBarRef = useRef<HTMLDivElement>(null);
 
-  // Fetch collection names for context display on card rows
   useEffect(() => {
-    api<{ entries: { id: string; name: string; isGeneral?: boolean }[]; total: number }>('/collections?limit=200')
+    api<{ entries: { id: string; name: string }[]; total: number }>('/collections?limit=200')
       .then((data) => {
         setCollectionNames(new Map(data.entries.map((c) => [c.id, c.name])));
-        setCollections(data.entries);
       })
-      .catch(() => {}); // supplementary info — silently ignore failures
+      .catch(() => {});
   }, []);
 
-  // Persist tag filters to localStorage
   useEffect(() => {
     localStorage.setItem('my-cards-page-tag-filters', JSON.stringify([...tagFilters]));
   }, [tagFilters]);
+
+  useEffect(() => {
+    localStorage.setItem('my-cards-page-sort', sort);
+  }, [sort]);
+
+  useEffect(() => {
+    localStorage.setItem('my-cards-page-group-by-collection', JSON.stringify(groupByCollection));
+  }, [groupByCollection]);
 
   const fetchCards = useCallback(async () => {
     if (!user) return;
@@ -139,7 +203,6 @@ export function MyCardsPage() {
     return () => clearTimeout(id);
   }, [fetchCards, search]);
 
-
   const handleCardUpdated = useCallback((
     cardId: string,
     updates: { name?: string; description?: string | null; assigneeId?: string | null; customFields?: Record<string, unknown> },
@@ -148,49 +211,32 @@ export function MyCardsPage() {
   }, []);
 
   const openQuickView = useCallback((e: React.MouseEvent, cardId: string) => {
-    if (e.metaKey || e.ctrlKey) return; // allow ctrl/cmd+click to open in new tab
+    if (e.metaKey || e.ctrlKey) return;
     e.preventDefault();
     setQuickViewCardId(cardId);
   }, []);
 
-  const handleInlineAdd = useCallback(async () => {
-    const trimmed = inlineAddName.trim();
-    if (!trimmed || inlineAddSubmitting || !user) return;
-    // Prefer the general collection, fall back to the first available
-    const col = collections.find((c) => c.isGeneral) ?? collections[0];
-    if (!col) {
-      toast.error('No collection available. Create a collection first.');
-      return;
-    }
-    setInlineAddSubmitting(true);
-    try {
-      const card = await api<CardItem>('/cards', {
-        method: 'POST',
-        body: JSON.stringify({
-          collectionId: col.id,
-          name: trimmed,
-          description: null,
-          assigneeId: user.id,
-        }),
-      });
-      setInlineAddName('');
-      // Optimistically add the card to the list
-      setCards((prev) => [card, ...prev]);
-      setTotal((t) => t + 1);
-      setTotalCount((t) => t + 1);
-      inlineAddRef.current?.focus();
-      toast.success('Card created', {
-        action: { label: 'Open', onClick: () => navigate(`/cards/${card.id}`) },
-      });
-    } catch (err) {
-      if (err instanceof ApiError) toast.error(err.message);
-      else toast.error('Failed to create card');
-    } finally {
-      setInlineAddSubmitting(false);
-    }
-  }, [inlineAddName, inlineAddSubmitting, user, collections, navigate]);
+  const handleCreateCard = useCallback(async (data: CreateCardData) => {
+    if (!data.collectionId) throw new Error('No collection selected.');
+    const card = await api<CardItem>('/cards', {
+      method: 'POST',
+      body: JSON.stringify({
+        collectionId: data.collectionId,
+        name: data.name,
+        description: data.description,
+        assigneeId: data.assigneeId,
+        tagIds: data.tagIds,
+        linkedCardIds: data.linkedCardIds,
+      }),
+    });
+    setCards((prev) => [card, ...prev]);
+    setTotal((t) => t + 1);
+    setTotalCount((t) => t + 1);
+    toast.success('Card created', {
+      action: { label: 'Open', onClick: () => navigate(`/cards/${card.id}`) },
+    });
+  }, [navigate]);
 
-  // Close bulk dropdown on outside click
   useEffect(() => {
     if (!bulkActionsOpen) return;
     function handleClick(e: MouseEvent) {
@@ -202,7 +248,6 @@ export function MyCardsPage() {
     return () => document.removeEventListener('mousedown', handleClick);
   }, [bulkActionsOpen]);
 
-  // Clear selection when card list changes
   useEffect(() => {
     setSelectedCardIds(new Set());
   }, [search, tagFilters]);
@@ -215,7 +260,6 @@ export function MyCardsPage() {
       return next;
     });
   }, []);
-
 
   const handleBulkDelete = useCallback(async () => {
     if (selectedCardIds.size === 0 || bulkProcessing) return;
@@ -248,20 +292,73 @@ export function MyCardsPage() {
   const activeCards = useMemo(() => {
     let filtered = cards;
     if (tagFilters.size > 0) filtered = filtered.filter((c) => c.tags?.some((t) => tagFilters.has(t.id)));
-    return filtered;
-  }, [cards, tagFilters]);
+
+    const sorted = [...filtered];
+    switch (sort) {
+      case 'name-asc':
+        sorted.sort((a, b) => a.name.localeCompare(b.name));
+        break;
+      case 'name-desc':
+        sorted.sort((a, b) => b.name.localeCompare(a.name));
+        break;
+      case 'created-newest':
+        sorted.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        break;
+      case 'created-oldest':
+        sorted.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+        break;
+      case 'updated-newest':
+        sorted.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+        break;
+      case 'updated-oldest':
+        sorted.sort((a, b) => new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime());
+        break;
+      case 'collection':
+        sorted.sort((a, b) => {
+          const aName = collectionNames.get(a.collectionId) ?? '';
+          const bName = collectionNames.get(b.collectionId) ?? '';
+          return aName.localeCompare(bName) || a.name.localeCompare(b.name);
+        });
+        break;
+    }
+    return sorted;
+  }, [cards, tagFilters, sort, collectionNames]);
 
   const allVisibleCards = activeCards;
   const quickViewCardIds = useMemo(() => allVisibleCards.map((c) => c.id), [allVisibleCards]);
 
-  // Keyboard navigation: J/K to move, Enter to open quick view, X to toggle complete, Space to select
+  const collectionGroups = useMemo<CollectionGroup[]>(() => {
+    if (!groupByCollection) return [];
+    const groupMap = new Map<string, CardItem[]>();
+    for (const card of allVisibleCards) {
+      const existing = groupMap.get(card.collectionId);
+      if (existing) existing.push(card);
+      else groupMap.set(card.collectionId, [card]);
+    }
+    return Array.from(groupMap.entries())
+      .map(([collectionId, groupCards]) => ({
+        collectionId,
+        collectionName: collectionNames.get(collectionId) ?? 'Unknown collection',
+        cards: groupCards,
+      }))
+      .sort((a, b) => a.collectionName.localeCompare(b.collectionName));
+  }, [allVisibleCards, groupByCollection, collectionNames]);
+
+  const toggleGroupCollapsed = useCallback((collectionId: string) => {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(collectionId)) next.delete(collectionId);
+      else next.add(collectionId);
+      return next;
+    });
+  }, []);
+
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       const target = e.target as HTMLElement;
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
-      if (quickViewCardId) return; // don't navigate when quick view is open
+      if (quickViewCardId) return;
 
-      // Ctrl/Cmd+A to select all visible cards
       if (e.key === 'a' && (e.metaKey || e.ctrlKey) && allVisibleCards.length > 0) {
         e.preventDefault();
         if (selectedCardIds.size === allVisibleCards.length) {
@@ -272,7 +369,6 @@ export function MyCardsPage() {
         return;
       }
 
-      // Escape: clear selection first, then clear focus
       if (e.key === 'Escape') {
         e.preventDefault();
         if (selectedCardIds.size > 0) {
@@ -293,7 +389,6 @@ export function MyCardsPage() {
           return prev > 0 ? prev - 1 : 0;
         });
       } else if (e.key === ' ' && focusedIndex >= 0 && focusedIndex < allVisibleCards.length) {
-        // Space to toggle selection of focused card
         e.preventDefault();
         toggleSelectCard(allVisibleCards[focusedIndex].id);
       } else if (e.key === 'Enter' && focusedIndex >= 0 && focusedIndex < allVisibleCards.length) {
@@ -308,7 +403,6 @@ export function MyCardsPage() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [allVisibleCards, focusedIndex, quickViewCardId, navigate, selectedCardIds, toggleSelectCard]);
 
-  // Scroll focused card into view
   useEffect(() => {
     if (focusedIndex >= 0 && focusedIndex < allVisibleCards.length) {
       const el = cardRowRefs.current.get(allVisibleCards[focusedIndex].id);
@@ -316,12 +410,21 @@ export function MyCardsPage() {
     }
   }, [focusedIndex, allVisibleCards]);
 
-  // Reset focus when card list changes
   useEffect(() => {
     setFocusedIndex(-1);
   }, [search, tagFilters]);
 
   const hasSelection = selectedCardIds.size > 0;
+
+  const allTags = useMemo(() => {
+    const map = new Map<string, CardTag>();
+    for (const card of cards) {
+      for (const tag of card.tags ?? []) {
+        if (!map.has(tag.id)) map.set(tag.id, tag);
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [cards]);
 
   function renderCardRow(card: CardItem, index: number) {
     const isFocused = focusedIndex === index;
@@ -335,11 +438,10 @@ export function MyCardsPage() {
         <button
           className={`${styles.selectBtn}${hasSelection ? ` ${styles.selectBtnVisible}` : ''}`}
           onClick={() => toggleSelectCard(card.id)}
-          title={isSelected ? 'Deselect' : 'Select'}
           aria-label={isSelected ? 'Deselect' : 'Select'}
           tabIndex={-1}
         >
-          {isSelected ? <CheckSquare size={16} /> : <Square size={16} />}
+          {isSelected ? <CheckSquare size={15} /> : <Square size={15} />}
         </button>
         <Link
           to={`/cards/${card.id}`}
@@ -347,32 +449,30 @@ export function MyCardsPage() {
           onClick={(e) => openQuickView(e, card.id)}
           tabIndex={-1}
         >
-          <div className={styles.cardInfo}>
-            <div className={styles.cardName}>
-              {highlightMatch(card.name, search)}
+          <div className={styles.cardLeft}>
+            <div className={styles.cardHeader}>
+              <span className={styles.cardName}>
+                {highlightMatch(card.name, search)}
+              </span>
+              {!groupByCollection && collectionNames.get(card.collectionId) && (
+                <span className={styles.cardCollection}>
+                  {collectionNames.get(card.collectionId)}
+                </span>
+              )}
             </div>
             {card.description && (
               <div className={styles.cardDesc}>{highlightMatch(stripMarkdown(card.description), search)}</div>
             )}
-            {collectionNames.get(card.collectionId) && (
-              <div className={styles.cardCollection}>
-                <FolderOpen size={11} />
-                <span>{collectionNames.get(card.collectionId)}</span>
-              </div>
-            )}
           </div>
-          <div className={styles.cardMeta}>
+          <div className={styles.cardRight}>
             {(() => {
               const cl = card.customFields?.checklist as { id: string; text: string; done: boolean }[] | undefined;
               if (!cl || cl.length === 0) return null;
               const done = cl.filter((i) => i.done).length;
               const allDone = done === cl.length;
               return (
-                <span
-                  className={`${styles.cardChecklist}${allDone ? ` ${styles.cardChecklistComplete}` : ''}`}
-                  title={`Checklist: ${done}/${cl.length} done`}
-                >
-                  <ListChecks size={11} />
+                <span className={`${styles.cardChecklist}${allDone ? ` ${styles.cardChecklistComplete}` : ''}`}>
+                  <ListChecks size={12} />
                   {done}/{cl.length}
                 </span>
               );
@@ -384,13 +484,12 @@ export function MyCardsPage() {
                     key={tag.id}
                     className={styles.cardTagPill}
                     style={{ '--tag-color': tag.color } as React.CSSProperties}
-                    title={tag.name}
                   >
                     {tag.name}
                   </span>
                 ))}
                 {card.tags.length > 2 && (
-                  <span className={styles.cardTagMore} title={card.tags.slice(2).map((t) => t.name).join(', ')}>
+                  <span className={styles.cardTagMore}>
                     +{card.tags.length - 2}
                   </span>
                 )}
@@ -406,159 +505,201 @@ export function MyCardsPage() {
                 />
               </div>
             )}
+            <span className={styles.cardTime}>
+              {timeAgo(card.updatedAt)}
+            </span>
           </div>
         </Link>
       </div>
     );
   }
 
-  const allTags = useMemo(() => {
-    const map = new Map<string, CardTag>();
-    for (const card of cards) {
-      for (const tag of card.tags ?? []) {
-        if (!map.has(tag.id)) map.set(tag.id, tag);
-      }
-    }
-    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
-  }, [cards]);
+  function renderGroupedCards() {
+    return (
+      <div className={styles.cardsList}>
+        {collectionGroups.map((group) => {
+          const isCollapsed = collapsedGroups.has(group.collectionId);
+          return (
+            <div key={group.collectionId} className={styles.group}>
+              <button
+                className={styles.groupHeader}
+                onClick={() => toggleGroupCollapsed(group.collectionId)}
+              >
+                <span className={styles.groupChevron}>
+                  {isCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+                </span>
+                <FolderOpen size={13} />
+                <span className={styles.groupLabel}>{group.collectionName}</span>
+                <span className={styles.groupCount}>{group.cards.length}</span>
+              </button>
+              {!isCollapsed && (
+                <div className={styles.groupCards}>
+                  {group.cards.map((card) => renderCardRow(card, allVisibleCards.indexOf(card)))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+        {total > PAGE_SIZE && (
+          <div className={styles.moreNote}>
+            Showing {PAGE_SIZE} of {total} cards. Use search to find specific cards.
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className={styles.page}>
       <PageHeader
         title="My Cards"
-        description={`${totalCount} card${totalCount !== 1 ? 's' : ''} assigned to you`}
+        description="Cards assigned to you across all collections"
         actions={
-          <button
-            className={styles.createBtn}
-            onClick={() => window.dispatchEvent(new CustomEvent('open-quick-create'))}
-            title="Create a new card"
+          <Button
+            size="md"
+            onClick={() => setShowCreateModal(true)}
           >
-            <Plus size={14} />
-            New card
-          </button>
+            <Plus size={16} />
+            New Card
+          </Button>
         }
       />
 
       <div className={styles.toolbar}>
         <div className={styles.searchWrapper}>
-          <Search size={14} className={styles.searchIcon} />
           <input
             className={styles.searchInput}
-            placeholder="Search your cards..."
+            placeholder="Search cards..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
+            aria-label="Search cards"
           />
           {search && (
-            <button className={styles.searchClear} onClick={() => setSearch('')}>
+            <button className={styles.searchClear} onClick={() => setSearch('')} aria-label="Clear search">
               <X size={12} />
             </button>
           )}
+        </div>
+        <div className={styles.toolbarRight}>
+          <select
+            className={styles.sortSelect}
+            value={sort}
+            onChange={(e) => setSort(e.target.value as SortOption)}
+            aria-label="Sort cards"
+          >
+            {SORT_OPTIONS.map((opt) => (
+              <option key={opt} value={opt}>{SORT_LABELS[opt]}</option>
+            ))}
+          </select>
+          <Tooltip label={groupByCollection ? 'Show flat list' : 'Group by collection'}>
+            <button
+              className={`${styles.controlBtn}${groupByCollection ? ` ${styles.controlBtnActive}` : ''}`}
+              onClick={() => setGroupByCollection((v) => !v)}
+              aria-label={groupByCollection ? 'Show flat list' : 'Group by collection'}
+            >
+              <Layers size={14} />
+            </button>
+          </Tooltip>
         </div>
       </div>
 
       {allTags.length > 0 && (
         <div className={styles.tagFiltersRow}>
           <Tag size={12} className={styles.tagFiltersIcon} />
-          {allTags.map((tag) => {
-            const isActive = tagFilters.has(tag.id);
-            return (
-              <button
-                key={tag.id}
-                className={`${styles.tagPill}${isActive ? ` ${styles.tagPillActive}` : ''}`}
-                style={{ '--tag-color': tag.color } as React.CSSProperties}
-                onClick={() =>
-                  setTagFilters((prev) => {
-                    const next = new Set(prev);
-                    if (next.has(tag.id)) next.delete(tag.id);
-                    else next.add(tag.id);
-                    return next;
-                  })
-                }
-                title={isActive ? `Remove filter: ${tag.name}` : `Filter by: ${tag.name}`}
-              >
-                {tag.name}
-              </button>
-            );
-          })}
+          <div className={styles.tagScroll}>
+            {allTags.map((tag) => {
+              const isActive = tagFilters.has(tag.id);
+              return (
+                <button
+                  key={tag.id}
+                  className={`${styles.tagPill}${isActive ? ` ${styles.tagPillActive}` : ''}`}
+                  style={{ '--tag-color': tag.color } as React.CSSProperties}
+                  onClick={() =>
+                    setTagFilters((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(tag.id)) next.delete(tag.id);
+                      else next.add(tag.id);
+                      return next;
+                    })
+                  }
+                >
+                  {tag.name}
+                </button>
+              );
+            })}
+          </div>
           {tagFilters.size > 0 && (
-            <button
-              className={styles.tagFiltersClear}
-              onClick={() => setTagFilters(new Set())}
-              title="Clear tag filters"
-            >
-              <X size={11} />
-            </button>
+            <Tooltip label="Clear tag filters">
+              <button
+                className={styles.tagFiltersClear}
+                onClick={() => setTagFilters(new Set())}
+                aria-label="Clear tag filters"
+              >
+                <X size={11} />
+              </button>
+            </Tooltip>
           )}
         </div>
       )}
 
-      <div className={styles.inlineAddRow}>
-        <Plus size={14} className={styles.inlineAddIcon} />
-        <input
-          ref={inlineAddRef}
-          className={styles.inlineAddInput}
-          placeholder="Add a card... (press Enter)"
-          value={inlineAddName}
-          onChange={(e) => setInlineAddName(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault();
-              void handleInlineAdd();
-            }
-            if (e.key === 'Escape') {
-              setInlineAddName('');
-              (e.target as HTMLInputElement).blur();
-            }
-          }}
-          disabled={inlineAddSubmitting}
+      {showCreateModal && (
+        <CreateCardModal
+          onClose={() => setShowCreateModal(false)}
+          onSubmit={handleCreateCard}
+          showCollectionPicker
+          allowCreateAnother
         />
-        {inlineAddName.trim() && (
-          <button
-            className={styles.inlineAddSubmit}
-            onClick={() => void handleInlineAdd()}
-            disabled={inlineAddSubmitting}
-          >
-            {inlineAddSubmitting ? 'Adding...' : 'Add'}
-          </button>
-        )}
-      </div>
+      )}
 
       {loading ? (
         <div className={styles.loadingState}>
-          {[0, 1, 2, 3].map((i) => <div key={i} className={styles.skeletonRow} />)}
+          {[0, 1, 2, 3, 4].map((i) => (
+            <div key={i} className={styles.skeletonRow} />
+          ))}
         </div>
       ) : fetchError ? (
         <div className={styles.emptyState}>
-          <AlertTriangle size={32} className={styles.emptyIcon} />
+          <div className={styles.emptyIcon}>
+            <AlertTriangle size={48} strokeWidth={1.2} />
+          </div>
           <div className={styles.emptyTitle}>Failed to load cards</div>
           <div className={styles.emptyDesc}>Something went wrong while fetching your cards.</div>
-          <button className={styles.retryBtn} onClick={() => void fetchCards()}>
+          <Button variant="ghost" onClick={() => void fetchCards()}>
             <RotateCcw size={14} />
             Try again
-          </button>
+          </Button>
         </div>
       ) : allVisibleCards.length === 0 ? (
         <div className={styles.emptyState}>
           {tagFilters.size > 0 && !search ? (
             <>
-              <Tag size={32} className={styles.emptyIcon} />
+              <div className={styles.emptyIcon}><Tag size={48} strokeWidth={1.2} /></div>
               <div className={styles.emptyTitle}>No cards with selected tags</div>
-              <button className={styles.emptyClear} onClick={() => setTagFilters(new Set())}>Clear tag filters</button>
+              <Button variant="ghost" onClick={() => setTagFilters(new Set())}>Clear tag filters</Button>
             </>
           ) : search ? (
             <>
-              <Search size={32} className={styles.emptyIcon} />
-              <div className={styles.emptyTitle}>No cards match "{search}"</div>
-              <button className={styles.emptyClear} onClick={() => setSearch('')}>Clear search</button>
+              <div className={styles.emptyIcon}><Search size={48} strokeWidth={1.2} /></div>
+              <div className={styles.emptyTitle}>No cards match &quot;{search}&quot;</div>
+              <Button variant="ghost" onClick={() => setSearch('')}>Clear search</Button>
             </>
           ) : (
             <>
-              <FileText size={32} className={styles.emptyIcon} />
+              <div className={styles.emptyIcon}><FileText size={48} strokeWidth={1.2} /></div>
               <div className={styles.emptyTitle}>No cards assigned to you</div>
               <div className={styles.emptyDesc}>Cards assigned to you will appear here.</div>
+              <Button
+                size="sm"
+                onClick={() => setShowCreateModal(true)}
+              >
+                <Plus size={14} />
+                Create your first card
+              </Button>
             </>
           )}
         </div>
+      ) : groupByCollection ? (
+        renderGroupedCards()
       ) : (
         <div className={styles.cardsList}>
           {allVisibleCards.map((card, i) => renderCardRow(card, i))}
@@ -580,39 +721,38 @@ export function MyCardsPage() {
         />
       )}
 
-      {/* Bulk action bar */}
       {selectedCardIds.size > 0 && (
         <div className={styles.bulkBar} ref={bulkBarRef}>
           <div className={styles.bulkBarInner}>
-            <button
-              className={styles.bulkSelectAll}
-              onClick={() => {
-                if (selectedCardIds.size === allVisibleCards.length) {
-                  setSelectedCardIds(new Set());
-                } else {
-                  setSelectedCardIds(new Set(allVisibleCards.map((c) => c.id)));
-                }
-              }}
-              title={selectedCardIds.size === allVisibleCards.length ? 'Deselect all' : 'Select all'}
-            >
-              {selectedCardIds.size === allVisibleCards.length
-                ? <CheckSquare size={14} />
-                : selectedCardIds.size > 0
-                  ? <Minus size={14} />
-                  : <Square size={14} />}
-            </button>
+            <Tooltip label={selectedCardIds.size === allVisibleCards.length ? 'Deselect all' : 'Select all'}>
+              <button
+                className={styles.bulkSelectAll}
+                onClick={() => {
+                  if (selectedCardIds.size === allVisibleCards.length) {
+                    setSelectedCardIds(new Set());
+                  } else {
+                    setSelectedCardIds(new Set(allVisibleCards.map((c) => c.id)));
+                  }
+                }}
+                aria-label={selectedCardIds.size === allVisibleCards.length ? 'Deselect all' : 'Select all'}
+              >
+                {selectedCardIds.size === allVisibleCards.length
+                  ? <CheckSquare size={14} />
+                  : selectedCardIds.size > 0
+                    ? <Minus size={14} />
+                    : <Square size={14} />}
+              </button>
+            </Tooltip>
             <span className={styles.bulkCount}>
               {selectedCardIds.size} selected
             </span>
 
             <div className={styles.bulkDivider} />
 
-            {/* Delete */}
             <button
               className={`${styles.bulkActionBtn} ${styles.bulkActionBtnDanger}`}
               onClick={() => void handleBulkDelete()}
               disabled={bulkProcessing}
-              title="Delete selected cards"
             >
               <Trash2 size={13} />
               Delete
@@ -620,13 +760,15 @@ export function MyCardsPage() {
 
             <div className={styles.bulkDivider} />
 
-            <button
-              className={styles.bulkClearBtn}
-              onClick={() => { setSelectedCardIds(new Set()); setBulkActionsOpen(null); }}
-              title="Clear selection"
-            >
-              <X size={14} />
-            </button>
+            <Tooltip label="Clear selection">
+              <button
+                className={styles.bulkClearBtn}
+                onClick={() => { setSelectedCardIds(new Set()); setBulkActionsOpen(null); }}
+                aria-label="Clear selection"
+              >
+                <X size={14} />
+              </button>
+            </Tooltip>
           </div>
         </div>
       )}

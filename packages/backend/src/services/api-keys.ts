@@ -10,8 +10,7 @@ function hashKey(rawKey: string): string {
 }
 
 function isActive(record: Record<string, unknown>): boolean {
-  // Backward compatibility: older keys may be missing isActive.
-  return record.isActive !== false;
+  return record.isActive === true;
 }
 
 export interface CreateApiKeyParams {

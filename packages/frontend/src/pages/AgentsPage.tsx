@@ -1,4 +1,14 @@
-import { type ClipboardEvent as ReactClipboardEvent, type DragEvent as ReactDragEvent, type FormEvent, type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  type ClipboardEvent as ReactClipboardEvent,
+  type DragEvent as ReactDragEvent,
+  type FormEvent,
+  type KeyboardEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   Plus,
@@ -40,15 +50,46 @@ import {
   ListOrdered,
   GripVertical,
   Save,
+  Square,
+  ChevronsDownUp,
+  ChevronsUpDown,
 } from 'lucide-react';
-import { Button, Badge, Input, Textarea, Select, CronEditor, ApiKeyFormFields, MarkdownContent, Tooltip } from '../ui';
+import {
+  Button,
+  Badge,
+  Input,
+  Textarea,
+  Select,
+  CronEditor,
+  ApiKeyFormFields,
+  MarkdownContent,
+  Tooltip,
+} from '../ui';
 import { api, apiUpload, ApiError } from '../lib/api';
-import { formatFileSize, formatFileDate, isTextPreviewable, isImagePreviewable, isPreviewable } from '../lib/file-utils';
-import { getFirstImageFromClipboardData, getFirstImageFromFileList, isImageFile, prepareImageForUpload } from '../lib/image-upload';
+import { toast } from '../stores/toast';
+import {
+  formatFileSize,
+  formatFileDate,
+  isTextPreviewable,
+  isImagePreviewable,
+  isPreviewable,
+} from '../lib/file-utils';
+import {
+  getImagesFromClipboardData,
+  getImagesFromFileList,
+  isImageFile,
+  prepareImageForUpload,
+} from '../lib/image-upload';
 import { scrollToFirstError } from '../lib/scroll-to-error';
 import { FilePreviewModal } from '../components/FilePreviewModal';
 import { FileSystemBrowserModal } from '../components/FileSystemBrowserModal';
-import { AgentAvatar, AgentAvatarPicker, randomPalette, randomIcon, type AvatarConfig } from '../components/AgentAvatar';
+import {
+  AgentAvatar,
+  AgentAvatarPicker,
+  randomPalette,
+  randomIcon,
+  type AvatarConfig,
+} from '../components/AgentAvatar';
 import { useWorkspace } from '../stores/WorkspaceContext';
 import styles from './AgentsPage.module.css';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
@@ -77,6 +118,10 @@ interface ApiKeysResponse {
   limit: number;
   offset: number;
   entries: ApiKey[];
+}
+
+interface AgentDefaultsResponse {
+  defaultAgentKeyId: string | null;
 }
 
 interface CronJob {
@@ -227,10 +272,6 @@ const MODELS = [
       'claude-sonnet-4-6',
       'claude-opus-4-6',
       'claude-haiku-4-5-20251001',
-      'claude-sonnet-4-5-20250929',
-      'claude-opus-4-5-20251101',
-      'claude-opus-4-1-20250805',
-      'claude-sonnet-4-20250514',
     ],
   },
   {
@@ -239,12 +280,17 @@ const MODELS = [
     vendor: 'OpenAI',
     description: 'Code-first agent model. Good for dev-oriented tasks.',
     modelIds: [
+      'gpt-5.4',
       'gpt-5.3-codex',
       'gpt-5.3-codex-spark',
       'gpt-5.2-codex',
+      'gpt-5.2',
+      'gpt-5.1-codex-max',
+      'gpt-5.1',
       'gpt-5.1-codex',
       'gpt-5-codex',
       'gpt-5-codex-mini',
+      'gpt-5',
     ],
   },
   {
@@ -252,11 +298,7 @@ const MODELS = [
     name: 'Qwen',
     vendor: 'Alibaba',
     description: 'Open-weight model. Good for self-hosted deployments.',
-    modelIds: [
-      'qwen3.5-plus',
-      'qwen3-coder-plus',
-      'qwen3-coder-next',
-    ],
+    modelIds: ['qwen3.5-plus', 'qwen3-coder-plus', 'qwen3-max-2026-01-23'],
   },
 ] as const;
 
@@ -322,8 +364,10 @@ function describeCron(expr: string): string {
   const parts = expr.trim().split(/\s+/);
   if (parts.length !== 5) return expr;
   const [min, hour, dom, mon, dow] = parts;
-  if (min === '*' && hour === '*' && dom === '*' && mon === '*' && dow === '*') return 'Every minute';
-  if (min !== '*' && hour === '*' && dom === '*' && mon === '*' && dow === '*') return `Every hour at minute ${min}`;
+  if (min === '*' && hour === '*' && dom === '*' && mon === '*' && dow === '*')
+    return 'Every minute';
+  if (min !== '*' && hour === '*' && dom === '*' && mon === '*' && dow === '*')
+    return `Every hour at minute ${min}`;
   if (min !== '*' && hour !== '*' && dom === '*' && mon === '*' && dow === '*') {
     const h = parseInt(hour, 10);
     const m = parseInt(min, 10);
@@ -381,7 +425,10 @@ function generateId(): string {
 
 /* ── Agent file entry type ── */
 
-type AgentFileEntry = import('../lib/file-utils').FileEntry & { isReference?: boolean; target?: string };
+type AgentFileEntry = import('../lib/file-utils').FileEntry & {
+  isReference?: boolean;
+  target?: string;
+};
 
 function getAgentFileIcon(entry: AgentFileEntry) {
   if (isImagePreviewable(entry.name)) return <Image size={18} className={styles.filesIconFile} />;
@@ -390,9 +437,12 @@ function getAgentFileIcon(entry: AgentFileEntry) {
 }
 
 function getAgentEntryIcon(entry: AgentFileEntry) {
-  const baseIcon = entry.type === 'folder'
-    ? <Folder size={18} className={styles.filesIconFolder} />
-    : getAgentFileIcon(entry);
+  const baseIcon =
+    entry.type === 'folder' ? (
+      <Folder size={18} className={styles.filesIconFolder} />
+    ) : (
+      getAgentFileIcon(entry)
+    );
 
   if (!entry.isReference) return baseIcon;
 
@@ -432,20 +482,23 @@ function AgentFiles({ agentId }: { agentId: string }) {
   const [dragOver, setDragOver] = useState(false);
   const dragCounter = useRef(0);
 
-  const fetchEntries = useCallback(async (dirPath: string) => {
-    setLoading(true);
-    setError('');
-    try {
-      const data = await api<{ entries: AgentFileEntry[] }>(
-        `/agents/${agentId}/files?path=${encodeURIComponent(dirPath)}`,
-      );
-      setEntries(data.entries);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to load files');
-    } finally {
-      setLoading(false);
-    }
-  }, [agentId]);
+  const fetchEntries = useCallback(
+    async (dirPath: string) => {
+      setLoading(true);
+      setError('');
+      try {
+        const data = await api<{ entries: AgentFileEntry[] }>(
+          `/agents/${agentId}/files?path=${encodeURIComponent(dirPath)}`,
+        );
+        setEntries(data.entries);
+      } catch (err) {
+        setError(err instanceof ApiError ? err.message : 'Failed to load files');
+      } finally {
+        setLoading(false);
+      }
+    },
+    [agentId],
+  );
 
   useEffect(() => {
     setCurrentPath('/');
@@ -554,7 +607,9 @@ function AgentFiles({ agentId }: { agentId: string }) {
     setDeleteLoading(true);
     setError('');
     try {
-      await api(`/agents/${agentId}/files?path=${encodeURIComponent(itemPath)}`, { method: 'DELETE' });
+      await api(`/agents/${agentId}/files?path=${encodeURIComponent(itemPath)}`, {
+        method: 'DELETE',
+      });
       setDeletingPath(null);
       setSuccess('Item deleted');
       await fetchEntries(currentPath);
@@ -610,9 +665,10 @@ function AgentFiles({ agentId }: { agentId: string }) {
     return a.name.localeCompare(b.name);
   });
 
-  const parentPath = currentPath === '/'
-    ? null
-    : '/' + currentPath.split('/').filter(Boolean).slice(0, -1).join('/');
+  const parentPath =
+    currentPath === '/'
+      ? null
+      : '/' + currentPath.split('/').filter(Boolean).slice(0, -1).join('/');
 
   return (
     <div className={styles.filesPanel}>
@@ -661,7 +717,12 @@ function AgentFiles({ agentId }: { agentId: string }) {
             <span className={styles.filesColSize}>Size</span>
             <span className={styles.filesColDate}>Modified</span>
             <span className={styles.filesColActions}>
-              <Button size="sm" variant="ghost" onClick={() => fileInputRef.current?.click()} disabled={uploading}>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading}
+              >
                 <Upload size={14} />
                 {uploading ? 'Uploading...' : 'Upload'}
               </Button>
@@ -676,11 +737,7 @@ function AgentFiles({ agentId }: { agentId: string }) {
                 <FolderPlus size={14} />
                 Folder
               </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => setShowFsBrowser(true)}
-              >
+              <Button size="sm" variant="ghost" onClick={() => setShowFsBrowser(true)}>
                 <Link2 size={14} />
                 Reference
               </Button>
@@ -702,7 +759,11 @@ function AgentFiles({ agentId }: { agentId: string }) {
                   if (e.key === 'Escape') setShowNewFolder(false);
                 }}
               />
-              <Button size="sm" onClick={handleCreateFolder} disabled={creatingFolder || !folderName.trim()}>
+              <Button
+                size="sm"
+                onClick={handleCreateFolder}
+                disabled={creatingFolder || !folderName.trim()}
+              >
                 {creatingFolder ? 'Creating...' : 'Create'}
               </Button>
               <Button size="sm" variant="ghost" onClick={() => setShowNewFolder(false)}>
@@ -713,7 +774,10 @@ function AgentFiles({ agentId }: { agentId: string }) {
 
           {parentPath !== null && (
             <div className={styles.filesRow}>
-              <button className={styles.filesColName} onClick={() => navigateTo(parentPath === '/' ? '/' : parentPath)}>
+              <button
+                className={styles.filesColName}
+                onClick={() => navigateTo(parentPath === '/' ? '/' : parentPath)}
+              >
                 <CornerLeftUp size={18} className={styles.filesIconFile} />
                 <span className={styles.filesFileName}>..</span>
               </button>
@@ -748,7 +812,9 @@ function AgentFiles({ agentId }: { agentId: string }) {
                     {getAgentEntryIcon(entry)}
                     <span className={styles.filesFileName}>{entry.name}</span>
                   </button>
-                  <span className={styles.filesColSize}>{entry.type === 'file' ? formatFileSize(entry.size) : '—'}</span>
+                  <span className={styles.filesColSize}>
+                    {entry.type === 'file' ? formatFileSize(entry.size) : '—'}
+                  </span>
                   <span className={styles.filesColDate}>{formatFileDate(entry.createdAt)}</span>
                   <span className={styles.filesColActions}>
                     {entry.type === 'file' && isPreviewable(entry.name) && (
@@ -784,10 +850,19 @@ function AgentFiles({ agentId }: { agentId: string }) {
                     </Tooltip>
                     {deletingPath === entry.path ? (
                       <>
-                        <Button size="sm" variant="secondary" onClick={() => setDeletingPath(null)} disabled={deleteLoading}>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => setDeletingPath(null)}
+                          disabled={deleteLoading}
+                        >
                           Cancel
                         </Button>
-                        <Button size="sm" onClick={() => handleDelete(entry.path)} disabled={deleteLoading}>
+                        <Button
+                          size="sm"
+                          onClick={() => handleDelete(entry.path)}
+                          disabled={deleteLoading}
+                        >
                           {deleteLoading ? 'Deleting...' : 'Confirm'}
                         </Button>
                       </>
@@ -837,9 +912,8 @@ export function AgentsPage() {
   useDocumentTitle('Agents');
   const { activeWorkspaceId } = useWorkspace();
   const [searchParams] = useSearchParams();
-  const requestedAgentId = searchParams.get('agentId')
-    ?? searchParams.get('id')
-    ?? searchParams.get('settingsAgentId');
+  const requestedAgentId =
+    searchParams.get('agentId') ?? searchParams.get('id') ?? searchParams.get('settingsAgentId');
   const requestedConversationId = searchParams.get('conversationId');
   // ── Agent list state ──
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -852,18 +926,22 @@ export function AgentsPage() {
   const [collapsedAgents, setCollapsedAgents] = useState<Set<string> | 'all'>(() => {
     try {
       const raw = localStorage.getItem('agents_page_settings');
-      const settings = raw ? JSON.parse(raw) as { collapsedAgentIds?: string[] | 'all' } : {};
+      const settings = raw ? (JSON.parse(raw) as { collapsedAgentIds?: string[] | 'all' }) : {};
       if (Array.isArray(settings.collapsedAgentIds)) {
         return new Set(settings.collapsedAgentIds);
       }
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     return 'all';
   });
   const [manageGroupsOpen, setManageGroupsOpen] = useState(false);
   const [newGroupName, setNewGroupName] = useState('');
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
   const [editingGroupName, setEditingGroupName] = useState('');
-  const [contextMenu, setContextMenu] = useState<{ agentId: string; x: number; y: number } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ agentId: string; x: number; y: number } | null>(
+    null,
+  );
 
   // ── Selection state ──
   const [activeAgentId, setActiveAgentId] = useState<string | null>(null);
@@ -876,11 +954,28 @@ export function AgentsPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [chatError, setChatError] = useState<string | null>(null);
+  const [chatLoading, setChatLoading] = useState(false);
+  const [showChatLoading, setShowChatLoading] = useState(false);
+  const chatLoadingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (chatLoading) {
+      chatLoadingTimerRef.current = setTimeout(() => setShowChatLoading(true), 1500);
+    } else {
+      if (chatLoadingTimerRef.current) clearTimeout(chatLoadingTimerRef.current);
+      chatLoadingTimerRef.current = null;
+      setShowChatLoading(false);
+    }
+    return () => {
+      if (chatLoadingTimerRef.current) clearTimeout(chatLoadingTimerRef.current);
+    };
+  }, [chatLoading]);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [stagedImage, setStagedImage] = useState<{ file: File; previewUrl: string } | null>(null);
+  const [stagedImages, setStagedImages] = useState<{ file: File; previewUrl: string }[]>([]);
   const [draggingOver, setDraggingOver] = useState(false);
   const [pendingConversationKeys, setPendingConversationKeys] = useState<Set<string>>(new Set());
+  const [stoppingRun, setStoppingRun] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isFirstMessageRef = useRef(false);
@@ -929,7 +1024,7 @@ export function AgentsPage() {
   const [autoCollapse, setAutoCollapse] = useState<boolean>(() => {
     try {
       const raw = localStorage.getItem('agents_page_settings');
-      return raw ? (JSON.parse(raw) as { autoCollapse?: boolean }).autoCollapse ?? false : false;
+      return raw ? ((JSON.parse(raw) as { autoCollapse?: boolean }).autoCollapse ?? false) : false;
     } catch {
       return false;
     }
@@ -940,9 +1035,14 @@ export function AgentsPage() {
       const next = !prev;
       try {
         const raw = localStorage.getItem('agents_page_settings');
-        const existing = raw ? JSON.parse(raw) as object : {};
-        localStorage.setItem('agents_page_settings', JSON.stringify({ ...existing, autoCollapse: next }));
-      } catch { /* ignore */ }
+        const existing = raw ? (JSON.parse(raw) as object) : {};
+        localStorage.setItem(
+          'agents_page_settings',
+          JSON.stringify({ ...existing, autoCollapse: next }),
+        );
+      } catch {
+        /* ignore */
+      }
       return next;
     });
   }
@@ -951,10 +1051,15 @@ export function AgentsPage() {
   useEffect(() => {
     try {
       const raw = localStorage.getItem('agents_page_settings');
-      const existing = raw ? JSON.parse(raw) as object : {};
+      const existing = raw ? (JSON.parse(raw) as object) : {};
       const collapsedAgentIds = collapsedAgents === 'all' ? 'all' : Array.from(collapsedAgents);
-      localStorage.setItem('agents_page_settings', JSON.stringify({ ...existing, collapsedAgentIds }));
-    } catch { /* ignore */ }
+      localStorage.setItem(
+        'agents_page_settings',
+        JSON.stringify({ ...existing, collapsedAgentIds }),
+      );
+    } catch {
+      /* ignore */
+    }
   }, [collapsedAgents]);
 
   // Cleanup legacy client-side chat queue artifacts (queue is backend-managed now).
@@ -992,72 +1097,81 @@ export function AgentsPage() {
   activeConvIdRef.current = activeConvId;
   pendingConversationKeysRef.current = pendingConversationKeys;
 
-  const setActiveConversation = useCallback((agentId: string | null, conversationId: string | null) => {
-    activeAgentIdRef.current = agentId;
-    activeConvIdRef.current = conversationId;
-    setActiveAgentId(agentId);
-    setActiveConvId(conversationId);
-    setQueueItems([]);
-    setQueuePanelOpen(false);
-    setEditingQueueItemId(null);
-    setEditingQueuePrompt('');
-    // Expand the active agent so the selected conversation is visible in the sidebar
-    if (agentId) {
-      setCollapsedAgents((prev) => {
-        if (prev === 'all') {
-          const next = new Set(agentsRef.current.map((a) => a.id));
+  const setActiveConversation = useCallback(
+    (agentId: string | null, conversationId: string | null) => {
+      activeAgentIdRef.current = agentId;
+      activeConvIdRef.current = conversationId;
+      setActiveAgentId(agentId);
+      setActiveConvId(conversationId);
+      setQueueItems([]);
+      setQueuePanelOpen(false);
+      setEditingQueueItemId(null);
+      setEditingQueuePrompt('');
+      // Expand the active agent so the selected conversation is visible in the sidebar
+      if (agentId) {
+        setCollapsedAgents((prev) => {
+          if (prev === 'all') {
+            const next = new Set(agentsRef.current.map((a) => a.id));
+            next.delete(agentId);
+            return next;
+          }
+          if (!prev.has(agentId)) return prev;
+          const next = new Set(prev);
           next.delete(agentId);
           return next;
-        }
-        if (!prev.has(agentId)) return prev;
+        });
+      }
+    },
+    [],
+  );
+
+  const setConversationPending = useCallback(
+    (agentId: string, conversationId: string, pending: boolean) => {
+      const key = agentConversationKey(agentId, conversationId);
+      const counts = pendingConversationCountRef.current;
+      const prevCount = counts.get(key) ?? 0;
+      const nextCount = pending ? prevCount + 1 : Math.max(0, prevCount - 1);
+      if (nextCount > 0) {
+        counts.set(key, nextCount);
+        pendingConversationKeysRef.current.add(key);
+      } else {
+        counts.delete(key);
+        pendingConversationKeysRef.current.delete(key);
+      }
+
+      const nextPending = nextCount > 0;
+      setPendingConversationKeys((prev) => {
+        const currentlyPending = prev.has(key);
+        if (currentlyPending === nextPending) return prev;
         const next = new Set(prev);
-        next.delete(agentId);
+        if (nextPending) {
+          next.add(key);
+        } else {
+          next.delete(key);
+        }
         return next;
       });
-    }
-  }, []);
-
-  const setConversationPending = useCallback((agentId: string, conversationId: string, pending: boolean) => {
-    const key = agentConversationKey(agentId, conversationId);
-    const counts = pendingConversationCountRef.current;
-    const prevCount = counts.get(key) ?? 0;
-    const nextCount = pending ? prevCount + 1 : Math.max(0, prevCount - 1);
-    if (nextCount > 0) {
-      counts.set(key, nextCount);
-      pendingConversationKeysRef.current.add(key);
-    } else {
-      counts.delete(key);
-      pendingConversationKeysRef.current.delete(key);
-    }
-
-    const nextPending = nextCount > 0;
-    setPendingConversationKeys((prev) => {
-      const currentlyPending = prev.has(key);
-      if (currentlyPending === nextPending) return prev;
-      const next = new Set(prev);
-      if (nextPending) {
-        next.add(key);
-      } else {
-        next.delete(key);
-      }
-      return next;
-    });
-  }, []);
+    },
+    [],
+  );
 
   const activeConversation = useMemo(() => {
     if (!activeAgentId || !activeConvId) return null;
     return (convsByAgent[activeAgentId] || []).find((conv) => conv.id === activeConvId) ?? null;
   }, [activeAgentId, activeConvId, convsByAgent]);
-  const activeConversationPending = activeAgentId && activeConvId
-    ? pendingConversationKeys.has(agentConversationKey(activeAgentId, activeConvId))
-    : false;
+  const activeConversationPending =
+    activeAgentId && activeConvId
+      ? pendingConversationKeys.has(agentConversationKey(activeAgentId, activeConvId))
+      : false;
   const activeConversationBusy = Boolean(activeConversation?.isBusy);
   const activeConversationQueueCount = toQueueCount(activeConversation?.queuedCount);
   const streaming = activeConversationPending || activeConversationBusy;
 
-  const isActiveConversation = useCallback((agentId: string, conversationId: string) => (
-    activeAgentIdRef.current === agentId && activeConvIdRef.current === conversationId
-  ), []);
+  const isActiveConversation = useCallback(
+    (agentId: string, conversationId: string) =>
+      activeAgentIdRef.current === agentId && activeConvIdRef.current === conversationId,
+    [],
+  );
 
   /* ── Close context menu on outside click ── */
   useEffect(() => {
@@ -1073,7 +1187,9 @@ export function AgentsPage() {
       const qs = activeWorkspaceId ? `?workspaceId=${activeWorkspaceId}` : '';
       const data = await api<{ entries: AgentGroup[] }>(`/agent-groups${qs}`);
       setGroups(data.entries);
-    } catch { /* silently fail */ }
+    } catch {
+      /* silently fail */
+    }
   }, [activeWorkspaceId]);
 
   /* ── Fetch agents ── */
@@ -1144,28 +1260,35 @@ export function AgentsPage() {
   const messagesRef2 = useRef<ChatMessage[]>([]);
   messagesRef2.current = messages;
 
-  const fetchMessages = useCallback(async (agentId: string, conversationId: string) => {
-    try {
-      const data = await api<{ entries: ChatMessage[] }>(
-        `/agents/${agentId}/chat/messages?conversationId=${conversationId}`,
-      );
-      if (!isActiveConversation(agentId, conversationId)) return;
-      // Skip update if message list hasn't changed (avoids dropping optimistic
-      // temp messages and prevents unnecessary re-renders during polling).
-      const prev = messagesRef2.current;
-      if (
-        prev.length === data.entries.length &&
-        prev.every((m, i) => m.id === data.entries[i].id && m.content === data.entries[i].content)
-      ) {
-        return;
+  const fetchMessages = useCallback(
+    async (agentId: string, conversationId: string, options?: { silent?: boolean }) => {
+      const silent = options?.silent === true;
+      if (!silent) setChatLoading(true);
+      try {
+        const data = await api<{ entries: ChatMessage[] }>(
+          `/agents/${agentId}/chat/messages?conversationId=${conversationId}`,
+        );
+        if (!isActiveConversation(agentId, conversationId)) return;
+        // Skip update if message list hasn't changed (avoids dropping optimistic
+        // temp messages and prevents unnecessary re-renders during polling).
+        const prev = messagesRef2.current;
+        if (
+          prev.length === data.entries.length &&
+          prev.every((m, i) => m.id === data.entries[i].id && m.content === data.entries[i].content)
+        ) {
+          return;
+        }
+        setMessages(data.entries);
+        isFirstMessageRef.current = data.entries.length === 0;
+      } catch {
+        if (!isActiveConversation(agentId, conversationId)) return;
+        setChatError('Failed to load messages');
+      } finally {
+        if (!silent) setChatLoading(false);
       }
-      setMessages(data.entries);
-      isFirstMessageRef.current = data.entries.length === 0;
-    } catch {
-      if (!isActiveConversation(agentId, conversationId)) return;
-      setChatError('Failed to load messages');
-    }
-  }, [isActiveConversation]);
+    },
+    [isActiveConversation],
+  );
 
   const markConversationRead = useCallback(async (agentId: string, conversationId: string) => {
     setConvsByAgent((prev) => {
@@ -1191,17 +1314,20 @@ export function AgentsPage() {
   }, []);
 
   /* ── Queue item handlers ── */
-  const fetchQueueItems = useCallback(async (agentId: string, conversationId: string) => {
-    try {
-      const data = await api<{ entries: QueueItem[] }>(
-        `/agents/${agentId}/chat/conversations/${conversationId}/queue`,
-      );
-      if (!isActiveConversation(agentId, conversationId)) return;
-      setQueueItems(data.entries.filter((item) => item.status === 'queued'));
-    } catch {
-      // silently fail
-    }
-  }, [isActiveConversation]);
+  const fetchQueueItems = useCallback(
+    async (agentId: string, conversationId: string) => {
+      try {
+        const data = await api<{ entries: QueueItem[] }>(
+          `/agents/${agentId}/chat/conversations/${conversationId}/queue`,
+        );
+        if (!isActiveConversation(agentId, conversationId)) return;
+        setQueueItems(data.entries.filter((item) => item.status === 'queued'));
+      } catch {
+        // silently fail
+      }
+    },
+    [isActiveConversation],
+  );
 
   async function handleSaveQueueItem(itemId: string) {
     if (!activeAgentId || !activeConvId || !editingQueuePrompt.trim()) return;
@@ -1278,7 +1404,9 @@ export function AgentsPage() {
           const requestedConvExists = requestedConversationId
             ? requestedConvs.some((conv) => conv.id === requestedConversationId)
             : false;
-          const targetConvId = requestedConvExists ? requestedConversationId : requestedConvs[0]?.id ?? null;
+          const targetConvId = requestedConvExists
+            ? requestedConversationId
+            : (requestedConvs[0]?.id ?? null);
 
           setActiveConversation(requestedAgentId, null);
           if (targetConvId) {
@@ -1320,8 +1448,17 @@ export function AgentsPage() {
       }
     }
     load();
-    return () => { cancelled = true; };
-  }, [fetchAgents, fetchGroups, fetchMessages, requestedAgentId, requestedConversationId, setActiveConversation]);
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    fetchAgents,
+    fetchGroups,
+    fetchMessages,
+    requestedAgentId,
+    requestedConversationId,
+    setActiveConversation,
+  ]);
 
   useEffect(() => {
     if (agents.length === 0) return;
@@ -1339,22 +1476,30 @@ export function AgentsPage() {
   // While a run is active (local pending request or backend busy flag),
   // periodically refresh messages so progress/final updates are visible.
   useEffect(() => {
-    if ((!activeConversationBusy && !activeConversationPending) || !activeAgentId || !activeConvId) return;
+    if ((!activeConversationBusy && !activeConversationPending) || !activeAgentId || !activeConvId)
+      return;
 
     const agentId = activeAgentId;
     const conversationId = activeConvId;
-    void fetchMessages(agentId, conversationId);
+    void fetchMessages(agentId, conversationId, { silent: true });
     void fetchQueueItems(agentId, conversationId);
 
     const intervalId = window.setInterval(() => {
-      void fetchMessages(agentId, conversationId);
+      void fetchMessages(agentId, conversationId, { silent: true });
       void fetchQueueItems(agentId, conversationId);
     }, 1500);
 
     return () => {
       window.clearInterval(intervalId);
     };
-  }, [activeConversationBusy, activeConversationPending, activeAgentId, activeConvId, fetchMessages, fetchQueueItems]);
+  }, [
+    activeConversationBusy,
+    activeConversationPending,
+    activeAgentId,
+    activeConvId,
+    fetchMessages,
+    fetchQueueItems,
+  ]);
 
   /* ── Scroll to bottom ── */
   const scrollToBottom = useCallback(() => {
@@ -1444,7 +1589,7 @@ export function AgentsPage() {
     setActiveConversation(agentId, convId);
     setMessages([]);
     setChatError(null);
-    clearStagedImage();
+    clearStagedImages();
     void markConversationRead(agentId, convId);
     await fetchMessages(agentId, convId);
     inputRef.current?.focus();
@@ -1453,10 +1598,10 @@ export function AgentsPage() {
   /* ── Create conversation ── */
   async function createConversation(agentId: string) {
     try {
-      const conv = await api<ChatConversation>(
-        `/agents/${agentId}/chat/conversations`,
-        { method: 'POST', body: JSON.stringify({}) },
-      );
+      const conv = await api<ChatConversation>(`/agents/${agentId}/chat/conversations`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+      });
       setConvsByAgent((prev) => ({
         ...prev,
         [agentId]: [conv, ...(prev[agentId] || [])],
@@ -1539,11 +1684,14 @@ export function AgentsPage() {
     const convs = convsByAgent[agentId] || [];
     const toDelete = convs.filter((c) => {
       const isActive = activeAgentId === agentId && activeConvId === c.id;
-      const isStreaming = Boolean(c.isBusy) || pendingConversationKeys.has(agentConversationKey(agentId, c.id));
+      const isStreaming =
+        Boolean(c.isBusy) || pendingConversationKeys.has(agentConversationKey(agentId, c.id));
       return !isActive && !c.isUnread && !isStreaming;
     });
     await Promise.allSettled(
-      toDelete.map((c) => api(`/agents/${agentId}/chat/conversations/${c.id}`, { method: 'DELETE' })),
+      toDelete.map((c) =>
+        api(`/agents/${agentId}/chat/conversations/${c.id}`, { method: 'DELETE' }),
+      ),
     );
     const deletedIds = new Set(toDelete.map((c) => c.id));
     const remainingConversations = convs.filter((c) => !deletedIds.has(c.id));
@@ -1570,13 +1718,41 @@ export function AgentsPage() {
   }
 
   /* ── Send message ── */
+  async function stopActiveRun() {
+    if (!activeAgentId || !activeConvId || stoppingRun) return;
+    setStoppingRun(true);
+    try {
+      const data = await api<{ entries: { id: string; agentId: string; conversationId: string | null }[] }>(
+        '/agent-runs/active',
+      );
+      const run = data.entries.find(
+        (r) => r.agentId === activeAgentId && r.conversationId === activeConvId,
+      );
+      if (!run) {
+        toast.error('No active run found');
+        return;
+      }
+      await api(`/agent-runs/${run.id}`, { method: 'DELETE' });
+      toast.success('Run stopped');
+      // Refresh state
+      await Promise.all([
+        fetchMessages(activeAgentId, activeConvId),
+        fetchConversations(activeAgentId),
+      ]);
+    } catch {
+      toast.error('Failed to stop run');
+    } finally {
+      setStoppingRun(false);
+    }
+  }
+
   async function sendMessage() {
     const prompt = input.trim();
-    const hasImage = !!stagedImage;
-    if ((!prompt && !hasImage) || !activeAgentId || !activeConvId) return;
+    const hasImages = stagedImages.length > 0;
+    if ((!prompt && !hasImages) || !activeAgentId || !activeConvId) return;
 
     // Keep image-upload flow single-flight; text prompts are queued by the backend.
-    if (hasImage && streaming) return;
+    if (hasImages && streaming) return;
 
     const sentAgentId = activeAgentId;
     const sentConvId = activeConvId;
@@ -1587,16 +1763,16 @@ export function AgentsPage() {
     const wasFirst = isFirstMessageRef.current;
     isFirstMessageRef.current = false;
 
-    // If there's a staged image, upload it then trigger the agent to respond
-    if (hasImage) {
+    // If there are staged images, upload them then trigger the agent to respond
+    if (hasImages) {
       setUploading(true);
       try {
-        const imgMsg = await uploadStagedImage(prompt);
+        const imgMsg = await uploadStagedImages(prompt);
         if (imgMsg && isActiveConversation(sentAgentId, sentConvId)) {
           setMessages((prev) => [...prev, imgMsg]);
         }
       } catch (err) {
-        setChatError(err instanceof Error ? err.message : 'Failed to upload image');
+        setChatError(err instanceof Error ? err.message : 'Failed to upload images');
         setUploading(false);
         return;
       }
@@ -1607,16 +1783,13 @@ export function AgentsPage() {
         void fetchConversations(sentAgentId);
       }
 
-      // Trigger the agent to respond to the uploaded image
+      // Trigger the agent to respond to the uploaded images
       setConversationPending(sentAgentId, sentConvId, true);
       try {
-        await api(
-          `/agents/${sentAgentId}/chat/respond`,
-          {
-            method: 'POST',
-            body: JSON.stringify({ conversationId: sentConvId }),
-          },
-        );
+        await api(`/agents/${sentAgentId}/chat/respond`, {
+          method: 'POST',
+          body: JSON.stringify({ conversationId: sentConvId }),
+        });
         await Promise.all([
           fetchMessages(sentAgentId, sentConvId),
           fetchConversations(sentAgentId),
@@ -1652,19 +1825,16 @@ export function AgentsPage() {
       setConversationPending(sentAgentId, sentConvId, true);
     }
     try {
-      const queueResponse = await api<QueuePromptResponse>(
-        `/agents/${sentAgentId}/chat/message`,
-        {
-          method: 'POST',
-          headers: {
-            'Idempotency-Key': `agent-chat-direct:${directMessageId}`,
-          },
-          body: JSON.stringify({
-            prompt,
-            conversationId: sentConvId,
-          }),
+      const queueResponse = await api<QueuePromptResponse>(`/agents/${sentAgentId}/chat/message`, {
+        method: 'POST',
+        headers: {
+          'Idempotency-Key': `agent-chat-direct:${directMessageId}`,
         },
-      );
+        body: JSON.stringify({
+          prompt,
+          conversationId: sentConvId,
+        }),
+      });
       const immediateQueuedCount = toQueueCount(queueResponse.queuedCount);
       if (immediateQueuedCount > 0) {
         setConvsByAgent((prev) => {
@@ -1711,45 +1881,61 @@ export function AgentsPage() {
 
   /* ── Image paste/upload ── */
 
-  function stageImage(file: File) {
-    if (!isImageFile(file)) return;
-    // Revoke previous preview URL if any
-    if (stagedImage) URL.revokeObjectURL(stagedImage.previewUrl);
-    const previewUrl = URL.createObjectURL(file);
-    setStagedImage({ file, previewUrl });
+  const MAX_STAGED_IMAGES = 10;
+
+  function stageImages(files: File[]) {
+    const images = files.filter(isImageFile);
+    if (images.length === 0) return;
+    setStagedImages((prev) => {
+      const remaining = MAX_STAGED_IMAGES - prev.length;
+      if (remaining <= 0) return prev;
+      const toAdd = images.slice(0, remaining).map((file) => ({
+        file,
+        previewUrl: URL.createObjectURL(file),
+      }));
+      return [...prev, ...toAdd];
+    });
   }
 
-  function clearStagedImage() {
-    if (stagedImage) {
-      URL.revokeObjectURL(stagedImage.previewUrl);
-      setStagedImage(null);
-    }
+  function removeStagedImage(index: number) {
+    setStagedImages((prev) => {
+      const next = [...prev];
+      const [removed] = next.splice(index, 1);
+      if (removed) URL.revokeObjectURL(removed.previewUrl);
+      return next;
+    });
   }
 
-  async function uploadStagedImage(caption: string): Promise<ChatMessage | null> {
-    if (!stagedImage || !activeAgentId || !activeConvId) return null;
+  function clearStagedImages() {
+    setStagedImages((prev) => {
+      for (const img of prev) URL.revokeObjectURL(img.previewUrl);
+      return [];
+    });
+  }
 
-    const uploadFile = await prepareImageForUpload(stagedImage.file);
+  async function uploadStagedImages(caption: string): Promise<ChatMessage | null> {
+    if (stagedImages.length === 0 || !activeAgentId || !activeConvId) return null;
+
     const fd = new FormData();
     fd.append('conversationId', activeConvId);
     if (caption) fd.append('caption', caption);
-    fd.append('file', uploadFile, uploadFile.name);
+    for (const staged of stagedImages) {
+      const prepared = await prepareImageForUpload(staged.file);
+      fd.append('files', prepared, prepared.name);
+    }
 
-    const msg = await apiUpload<ChatMessage>(
-      `/agents/${activeAgentId}/chat/upload`,
-      fd,
-    );
-    clearStagedImage();
+    const msg = await apiUpload<ChatMessage>(`/agents/${activeAgentId}/chat/upload`, fd);
+    clearStagedImages();
     return msg;
   }
 
   /* ── Queue management ── */
 
   function handlePaste(e: ReactClipboardEvent<HTMLTextAreaElement>) {
-    const file = getFirstImageFromClipboardData(e.clipboardData);
-    if (!file) return;
+    const files = getImagesFromClipboardData(e.clipboardData);
+    if (files.length === 0) return;
     e.preventDefault();
-    stageImage(file);
+    stageImages(files);
   }
 
   function handleDragOver(e: ReactDragEvent) {
@@ -1770,13 +1956,13 @@ export function AgentsPage() {
     e.preventDefault();
     e.stopPropagation();
     setDraggingOver(false);
-    const file = getFirstImageFromFileList(e.dataTransfer.files);
-    if (file) stageImage(file);
+    const files = getImagesFromFileList(e.dataTransfer.files);
+    if (files.length > 0) stageImages(files);
   }
 
   function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = getFirstImageFromFileList(e.target.files);
-    if (file) stageImage(file);
+    const files = getImagesFromFileList(e.target.files);
+    if (files.length > 0) stageImages(files);
     // Reset so the same file can be selected again
     e.target.value = '';
   }
@@ -1797,21 +1983,45 @@ export function AgentsPage() {
     (async () => {
       setApiKeysLoading(true);
       try {
-        const data = await api<ApiKeysResponse>('/api-keys?limit=100');
-        setApiKeys(data.entries.filter((k) => k.isActive));
-      } catch { /* empty */ } finally { setApiKeysLoading(false); }
+        const [apiKeysResult, agentDefaultsResult] = await Promise.allSettled([
+          api<ApiKeysResponse>('/api-keys?limit=100'),
+          api<AgentDefaultsResponse>('/settings/agent-defaults'),
+        ]);
+        if (apiKeysResult.status !== 'fulfilled') return;
+        const activeKeys = apiKeysResult.value.entries.filter((k) => k.isActive);
+        const defaultKeyId =
+          agentDefaultsResult.status === 'fulfilled'
+            ? agentDefaultsResult.value.defaultAgentKeyId
+            : null;
+        setApiKeys(activeKeys);
+        setForm((current) => {
+          if (current.newKey || current.apiKeyId) return current;
+          if (!defaultKeyId) return current;
+          const hasDefaultKey = activeKeys.some((key) => key.id === defaultKeyId);
+          if (!hasDefaultKey) return current;
+          return { ...current, apiKeyId: defaultKeyId };
+        });
+      } catch {
+        /* empty */
+      } finally {
+        setApiKeysLoading(false);
+      }
     })();
     (async () => {
       try {
         const data = await api<{ presets: Preset[] }>('/agents/presets');
         setPresets(data.presets);
-      } catch { /* empty */ }
+      } catch {
+        /* empty */
+      }
     })();
     (async () => {
       try {
         const data = await api<{ clis: CliInfo[] }>('/agents/cli-status');
         setCliStatus(data.clis);
-      } catch { /* empty */ }
+      } catch {
+        /* empty */
+      }
     })();
   }
 
@@ -1831,7 +2041,9 @@ export function AgentsPage() {
       });
       setGroups((prev) => [...prev, group]);
       setNewGroupName('');
-    } catch { /* silently fail */ }
+    } catch {
+      /* silently fail */
+    }
   }
 
   async function handleRenameGroup(id: string) {
@@ -1843,7 +2055,9 @@ export function AgentsPage() {
       });
       setGroups((prev) => prev.map((g) => (g.id === id ? updated : g)));
       setEditingGroupId(null);
-    } catch { /* silently fail */ }
+    } catch {
+      /* silently fail */
+    }
   }
 
   async function handleDeleteGroup(id: string) {
@@ -1852,7 +2066,9 @@ export function AgentsPage() {
       setGroups((prev) => prev.filter((g) => g.id !== id));
       // Move agents in this group to ungrouped
       setAgents((prev) => prev.map((a) => (a.groupId === id ? { ...a, groupId: null } : a)));
-    } catch { /* silently fail */ }
+    } catch {
+      /* silently fail */
+    }
   }
 
   async function handleRenameAgent(agentId: string, newName: string) {
@@ -1868,7 +2084,9 @@ export function AgentsPage() {
       });
       setAgents((prev) => prev.map((a) => (a.id === agentId ? updated : a)));
       if (settingsAgent?.id === agentId) setSettingsAgent(updated);
-    } catch { /* silently fail */ }
+    } catch {
+      /* silently fail */
+    }
     setEditingName(false);
   }
 
@@ -1876,14 +2094,24 @@ export function AgentsPage() {
     try {
       const updated = await api<Agent>(`/agents/${agentId}`, {
         method: 'PATCH',
-        body: JSON.stringify({ avatarIcon: avatar.icon, avatarBgColor: avatar.bgColor, avatarLogoColor: avatar.logoColor }),
+        body: JSON.stringify({
+          avatarIcon: avatar.icon,
+          avatarBgColor: avatar.bgColor,
+          avatarLogoColor: avatar.logoColor,
+        }),
       });
       setAgents((prev) => prev.map((a) => (a.id === agentId ? updated : a)));
       if (settingsAgent?.id === agentId) setSettingsAgent(updated);
-    } catch { /* silently fail */ }
+    } catch {
+      /* silently fail */
+    }
   }
 
-  async function handleChangeAgentModel(agentId: string, field: 'model' | 'modelId' | 'thinkingLevel', value: string) {
+  async function handleChangeAgentModel(
+    agentId: string,
+    field: 'model' | 'modelId' | 'thinkingLevel',
+    value: string,
+  ) {
     const body: Record<string, unknown> = { [field]: value || null };
     // Clear modelId when switching provider; clear thinkingLevel for qwen (no CLI flag)
     if (field === 'model') {
@@ -1899,7 +2127,9 @@ export function AgentsPage() {
       });
       setAgents((prev) => prev.map((a) => (a.id === agentId ? updated : a)));
       if (settingsAgent?.id === agentId) setSettingsAgent(updated);
-    } catch { /* silently fail */ }
+    } catch {
+      /* silently fail */
+    }
   }
 
   async function handleChangeAgentGroup(agentId: string, groupId: string | null) {
@@ -1910,7 +2140,9 @@ export function AgentsPage() {
       });
       setAgents((prev) => prev.map((a) => (a.id === agentId ? updated : a)));
       if (settingsAgent?.id === agentId) setSettingsAgent(updated);
-    } catch { /* silently fail */ }
+    } catch {
+      /* silently fail */
+    }
   }
 
   function toggleGroupCollapse(id: string) {
@@ -1955,7 +2187,8 @@ export function AgentsPage() {
     const errors: Record<string, string> = {};
     if (!form.name.trim()) errors.name = 'Name is required';
     if (form.newKey) {
-      if (form.newKeyPermissions.length === 0) errors.permissions = 'Select at least one permission';
+      if (form.newKeyPermissions.length === 0)
+        errors.permissions = 'Select at least one permission';
     } else {
       if (!form.apiKeyId) errors.apiKeyId = 'Select an API key';
     }
@@ -2003,6 +2236,7 @@ export function AgentsPage() {
           thinkingLevel: form.thinkingLevel || null,
           preset: form.preset,
           apiKeyId: keyId,
+          workspaceId: activeWorkspaceId || undefined,
           skipPermissions: form.skipPermissions,
           groupId: form.groupId || null,
           avatarIcon: form.avatar.icon,
@@ -2013,10 +2247,10 @@ export function AgentsPage() {
       setAgents((prev) => [...prev, newAgent]);
       // Auto-create first conversation for the new agent
       try {
-        const conv = await api<ChatConversation>(
-          `/agents/${newAgent.id}/chat/conversations`,
-          { method: 'POST', body: JSON.stringify({}) },
-        );
+        const conv = await api<ChatConversation>(`/agents/${newAgent.id}/chat/conversations`, {
+          method: 'POST',
+          body: JSON.stringify({}),
+        });
         setConvsByAgent((prev) => ({ ...prev, [newAgent.id]: [conv] }));
         setActiveConversation(newAgent.id, conv.id);
         setMessages([]);
@@ -2102,7 +2336,9 @@ export function AgentsPage() {
     const convs = convsByAgent[agent.id] || [];
     const collapsed = isAgentCollapsed(agent.id);
     const hasUnreadAny = convs.some((c) => c.isUnread);
-    const hasStreamingAny = convs.some((c) => Boolean(c.isBusy) || pendingConversationKeys.has(agentConversationKey(agent.id, c.id)));
+    const hasStreamingAny = convs.some(
+      (c) => Boolean(c.isBusy) || pendingConversationKeys.has(agentConversationKey(agent.id, c.id)),
+    );
     const queuedTotal = convs.reduce((sum, conv) => sum + toQueueCount(conv.queuedCount), 0);
     return (
       <div key={agent.id} className={styles.agentGroup}>
@@ -2125,7 +2361,10 @@ export function AgentsPage() {
           <ChevronRight
             size={14}
             className={`${styles.agentGroupChevron} ${!collapsed ? styles.agentGroupChevronOpen : ''}`}
-            onClick={(e) => { e.stopPropagation(); toggleAgentCollapse(agent.id); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleAgentCollapse(agent.id);
+            }}
           />
           <div className={styles.agentAvatarWrapper}>
             <AgentAvatar
@@ -2143,7 +2382,11 @@ export function AgentsPage() {
             ) : hasStreamingAny ? (
               <span
                 className={styles.agentStreamingDot}
-                title={queuedTotal > 0 ? `Queued in backend: ${queueItemsLabel(queuedTotal)}` : 'Agent is responding...'}
+                title={
+                  queuedTotal > 0
+                    ? `Queued in backend: ${queueItemsLabel(queuedTotal)}`
+                    : 'Agent is responding...'
+                }
               />
             ) : null}
           </div>
@@ -2154,7 +2397,10 @@ export function AgentsPage() {
             <Tooltip label="Settings">
               <button
                 className={styles.agentGroupIconBtn}
-                onClick={(e) => { e.stopPropagation(); setSettingsAgent(agent); }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSettingsAgent(agent);
+                }}
                 aria-label="Agent settings"
               >
                 <Settings size={14} />
@@ -2163,7 +2409,10 @@ export function AgentsPage() {
             <Tooltip label="Clean chats">
               <button
                 className={styles.agentGroupIconBtn}
-                onClick={(e) => { e.stopPropagation(); void cleanConversations(agent.id); }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void cleanConversations(agent.id);
+                }}
                 aria-label="Clean chats"
               >
                 <Eraser size={14} />
@@ -2172,7 +2421,10 @@ export function AgentsPage() {
             <Tooltip label="New chat">
               <button
                 className={styles.agentGroupIconBtn}
-                onClick={(e) => { e.stopPropagation(); createConversation(agent.id); }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  createConversation(agent.id);
+                }}
                 aria-label="New chat"
               >
                 <Plus size={14} />
@@ -2184,12 +2436,15 @@ export function AgentsPage() {
         {!collapsed && convs.length > 0 && (
           <div className={styles.convList}>
             {convs.map((conv) => {
-              const isStreaming = Boolean(conv.isBusy) || pendingConversationKeys.has(agentConversationKey(agent.id, conv.id));
+              const isStreaming =
+                Boolean(conv.isBusy) ||
+                pendingConversationKeys.has(agentConversationKey(agent.id, conv.id));
               const isUnread = conv.isUnread;
               const queuedCount = toQueueCount(conv.queuedCount);
-              const streamingTitle = queuedCount > 0
-                ? `Queued in backend: ${queueItemsLabel(queuedCount)}`
-                : 'Agent is responding...';
+              const streamingTitle =
+                queuedCount > 0
+                  ? `Queued in backend: ${queueItemsLabel(queuedCount)}`
+                  : 'Agent is responding...';
               return (
                 <div
                   key={conv.id}
@@ -2207,15 +2462,10 @@ export function AgentsPage() {
                     <span className={styles.convUnreadDot} title="New response" />
                   )}
                   <div className={styles.convItemInfo}>
-                    <div className={styles.convItemTitle}>
-                      {conv.subject || 'New conversation'}
-                    </div>
+                    <div className={styles.convItemTitle}>{conv.subject || 'New conversation'}</div>
                   </div>
                   {queuedCount > 0 && (
-                    <span
-                      className={styles.convQueueBadge}
-                      title={queueItemsLabel(queuedCount)}
-                    >
+                    <span className={styles.convQueueBadge} title={queueItemsLabel(queuedCount)}>
                       <Clock size={9} />
                       {queuedCount}
                     </span>
@@ -2236,10 +2486,7 @@ export function AgentsPage() {
                 </div>
               );
             })}
-            <button
-              className={styles.newConvBtn}
-              onClick={() => createConversation(agent.id)}
-            >
+            <button className={styles.newConvBtn} onClick={() => createConversation(agent.id)}>
               <Plus size={13} />
               New chat
             </button>
@@ -2262,22 +2509,56 @@ export function AgentsPage() {
             <span className={styles.sidebarTitle}>Agents</span>
             <div style={{ display: 'flex', gap: 4 }}>
               <Tooltip label="Page settings">
-                <button className={styles.addAgentBtn} onClick={() => setPageSettingsOpen(!pageSettingsOpen)} aria-label="Page settings">
+                <button
+                  className={styles.addAgentBtn}
+                  onClick={() => setPageSettingsOpen(!pageSettingsOpen)}
+                  aria-label="Page settings"
+                >
                   <SlidersHorizontal size={16} />
                 </button>
               </Tooltip>
               <Tooltip label="Manage groups">
-                <button className={styles.addAgentBtn} onClick={() => setManageGroupsOpen(!manageGroupsOpen)} aria-label="Manage groups">
+                <button
+                  className={styles.addAgentBtn}
+                  onClick={() => setManageGroupsOpen(!manageGroupsOpen)}
+                  aria-label="Manage groups"
+                >
                   <Layers size={16} />
                 </button>
               </Tooltip>
+              <Tooltip label="Collapse all chats">
+                <button
+                  className={styles.addAgentBtn}
+                  onClick={() => setCollapsedAgents('all')}
+                  aria-label="Collapse all chats"
+                >
+                  <ChevronsDownUp size={16} />
+                </button>
+              </Tooltip>
+              <Tooltip label="Expand all chats">
+                <button
+                  className={styles.addAgentBtn}
+                  onClick={() => setCollapsedAgents(new Set())}
+                  aria-label="Expand all chats"
+                >
+                  <ChevronsUpDown size={16} />
+                </button>
+              </Tooltip>
               <Tooltip label="Clean all agents' chats">
-                <button className={styles.addAgentBtn} onClick={() => void cleanAllConversations()} aria-label="Clean all chats">
+                <button
+                  className={styles.addAgentBtn}
+                  onClick={() => void cleanAllConversations()}
+                  aria-label="Clean all chats"
+                >
                   <Eraser size={16} />
                 </button>
               </Tooltip>
               <Tooltip label="Add agent">
-                <button className={styles.addAgentBtn} onClick={() => openCreate()} aria-label="Add agent">
+                <button
+                  className={styles.addAgentBtn}
+                  onClick={() => openCreate()}
+                  aria-label="Add agent"
+                >
                   <Plus size={16} />
                 </button>
               </Tooltip>
@@ -2289,13 +2570,19 @@ export function AgentsPage() {
             <div className={styles.manageGroupsPanel}>
               <div className={styles.manageGroupsHeader}>
                 <span className={styles.manageGroupsTitle}>Settings</span>
-                <button className={styles.modalCloseBtn} onClick={() => setPageSettingsOpen(false)} style={{ width: 24, height: 24 }}>
+                <button
+                  className={styles.modalCloseBtn}
+                  onClick={() => setPageSettingsOpen(false)}
+                  style={{ width: 24, height: 24 }}
+                >
                   <X size={14} />
                 </button>
               </div>
               <div className={styles.manageGroupsList}>
                 <div className={styles.manageGroupItem}>
-                  <span style={{ flex: 1, fontSize: 13, color: 'var(--color-text)' }}>Auto-collapse chats on open</span>
+                  <span style={{ flex: 1, fontSize: 13, color: 'var(--color-text)' }}>
+                    Auto-collapse chats on open
+                  </span>
                   <button
                     className={styles.agentGroupIconBtn}
                     onClick={toggleAutoCollapse}
@@ -2314,7 +2601,11 @@ export function AgentsPage() {
             <div className={styles.manageGroupsPanel}>
               <div className={styles.manageGroupsHeader}>
                 <span className={styles.manageGroupsTitle}>Groups</span>
-                <button className={styles.modalCloseBtn} onClick={() => setManageGroupsOpen(false)} style={{ width: 24, height: 24 }}>
+                <button
+                  className={styles.modalCloseBtn}
+                  onClick={() => setManageGroupsOpen(false)}
+                  style={{ width: 24, height: 24 }}
+                >
                   <X size={14} />
                 </button>
               </div>
@@ -2339,7 +2630,10 @@ export function AgentsPage() {
                     <div className={styles.manageGroupActions}>
                       <button
                         className={styles.agentGroupIconBtn}
-                        onClick={() => { setEditingGroupId(group.id); setEditingGroupName(group.name); }}
+                        onClick={() => {
+                          setEditingGroupId(group.id);
+                          setEditingGroupName(group.name);
+                        }}
                         title="Rename"
                       >
                         <Pencil size={12} />
@@ -2361,7 +2655,9 @@ export function AgentsPage() {
                   placeholder="New group name..."
                   value={newGroupName}
                   onChange={(e) => setNewGroupName(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') handleCreateGroup(); }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleCreateGroup();
+                  }}
                 />
                 <Button size="sm" onClick={handleCreateGroup} disabled={!newGroupName.trim()}>
                   Add
@@ -2410,7 +2706,10 @@ export function AgentsPage() {
                         <span className={styles.sidebarGroupCount}>{groupAgents.length}</span>
                         <button
                           className={styles.sidebarGroupAddBtn}
-                          onClick={(e) => { e.stopPropagation(); openCreate(group.id); }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openCreate(group.id);
+                          }}
                           title="Add agent to group"
                         >
                           <Plus size={13} />
@@ -2442,7 +2741,8 @@ export function AgentsPage() {
                           <span style={{ width: 20, flexShrink: 0 }} />
                         </div>
                       )}
-                      {(!showHeader || !isCollapsed) && ungrouped.map((agent) => renderAgentItem(agent))}
+                      {(!showHeader || !isCollapsed) &&
+                        ungrouped.map((agent) => renderAgentItem(agent))}
                     </div>
                   );
                 })()}
@@ -2514,266 +2814,299 @@ export function AgentsPage() {
               {chatTab === 'files' ? (
                 <AgentFiles agentId={activeAgent.id} />
               ) : (
-              <>
-              {/* Error banner */}
-              {chatError && <div className={styles.errorBanner}>{chatError}</div>}
+                <>
+                  {/* Error banner */}
+                  {chatError && <div className={styles.errorBanner}>{chatError}</div>}
 
-              {/* Messages */}
-              {messages.length === 0 && !streaming ? (
-                <div className={styles.emptyPanel}>
-                  <MessageSquare size={36} strokeWidth={1.5} className={styles.emptyIcon} />
-                  <div className={styles.emptyTitle}>Start a conversation</div>
-                  <div className={styles.emptyText}>
-                    Send a message to begin chatting with {activeAgent.name}
-                  </div>
-                </div>
-              ) : (
-                <div className={styles.messagesArea} ref={messagesRef}>
-                  {messages.map((msg) => (
-                    <div
-                      key={msg.id}
-                      className={`${styles.messageRow} ${
-                        msg.direction === 'outbound' ? styles.messageRowUser : styles.messageRowAgent
-                      }`}
-                    >
-                      <div className={styles.messageContent}>
+                  {/* Messages */}
+                  {showChatLoading && messages.length === 0 ? (
+                    <div className={styles.emptyPanel}>
+                      <Loader size={20} className={styles.chatSpinner} />
+                      <div className={styles.emptyText}>Loading messages…</div>
+                    </div>
+                  ) : messages.length === 0 && !streaming && !chatLoading ? (
+                    <div className={styles.emptyPanel}>
+                      <MessageSquare size={36} strokeWidth={1.5} className={styles.emptyIcon} />
+                      <div className={styles.emptyTitle}>Start a conversation</div>
+                      <div className={styles.emptyText}>
+                        Send a message to begin chatting with {activeAgent.name}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className={styles.messagesArea} ref={messagesRef}>
+                      {messages.map((msg) => (
                         <div
-                          className={`${styles.messageBubble} ${
+                          key={msg.id}
+                          className={`${styles.messageRow} ${
                             msg.direction === 'outbound'
-                              ? styles.messageBubbleUser
-                              : styles.messageBubbleAgent
-                          } ${msg.attachments?.some((a) => a.type === 'image') ? styles.messageBubbleImage : ''}`}
-                        >
-                          {msg.attachments?.map((att, i) =>
-                            att.type === 'image' ? (
-                              <ChatImage key={i} storagePath={att.storagePath} alt={att.fileName} />
-                            ) : null,
-                          )}
-                          {msg.content && (
-                            msg.direction === 'inbound' ? (
-                              <MarkdownContent>{msg.content}</MarkdownContent>
-                            ) : (
-                              msg.content
-                            )
-                          )}
-                        </div>
-                        <div
-                          className={`${styles.messageMeta} ${
-                            msg.direction === 'outbound' ? styles.messageMetaUser : ''
+                              ? styles.messageRowUser
+                              : styles.messageRowAgent
                           }`}
                         >
-                          {new Date(msg.createdAt).toLocaleTimeString([], {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
-                          {msg.direction === 'inbound' && (
-                            <button
-                              className={styles.copyBtn}
-                              onClick={() => {
-                                navigator.clipboard.writeText(msg.content);
-                                setCopiedId(msg.id);
-                                setTimeout(() => setCopiedId(null), 1500);
-                              }}
-                              aria-label="Copy message"
+                          <div className={styles.messageContent}>
+                            <div
+                              className={`${styles.messageBubble} ${
+                                msg.direction === 'outbound'
+                                  ? styles.messageBubbleUser
+                                  : styles.messageBubbleAgent
+                              } ${msg.attachments?.some((a) => a.type === 'image') ? styles.messageBubbleImage : ''}`}
                             >
-                              {copiedId === msg.id ? <Check size={12} /> : <Copy size={12} />}
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-
-                  {/* Pending response bubble */}
-                  {streaming && (
-                    <div className={`${styles.messageRow} ${styles.messageRowAgent}`}>
-                      <div className={styles.messageContent}>
-                        <div className={`${styles.messageBubble} ${styles.messageBubbleAgent} ${styles.streamingCursor}`}>
-                          <span className={styles.streamingQueueInfo}>
-                            <Loader size={13} className={styles.spinIcon} />
-                            Thinking…
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Queue panel */}
-              {queueItems.length > 0 && (
-                <div className={styles.queuePanel}>
-                  <div className={styles.queuePanelHeader}>
-                    <button
-                      className={styles.queuePanelToggle}
-                      onClick={() => setQueuePanelOpen((v) => !v)}
-                    >
-                      <Clock size={13} />
-                      <span>{queueItems.length} message{queueItems.length === 1 ? '' : 's'} in queue</span>
-                      <ChevronRight
-                        size={14}
-                        className={`${styles.queuePanelChevron} ${queuePanelOpen ? styles.queuePanelChevronOpen : ''}`}
-                      />
-                    </button>
-                    <button
-                      className={styles.queueClearAllBtn}
-                      onClick={() => void handleClearQueue()}
-                      title="Clear all queued messages"
-                    >
-                      <Trash2 size={12} />
-                      Clear all
-                    </button>
-                  </div>
-                  {queuePanelOpen && (
-                    <div className={styles.queuePanelItems}>
-                      {queueItems.map((item, idx) => (
-                        <div key={item.id} className={styles.queueItem}>
-                          <span className={styles.queueItemIndex}>{idx + 1}</span>
-                          {editingQueueItemId === item.id ? (
-                            <div className={styles.queueItemEditWrap}>
-                              <textarea
-                                className={styles.queueItemEditInput}
-                                value={editingQueuePrompt}
-                                onChange={(e) => setEditingQueuePrompt(e.target.value)}
-                                rows={2}
-                                autoFocus
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Escape') {
-                                    setEditingQueueItemId(null);
-                                    setEditingQueuePrompt('');
-                                  }
-                                  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-                                    void handleSaveQueueItem(item.id);
-                                  }
-                                }}
-                              />
-                              <div className={styles.queueItemEditActions}>
-                                <button
-                                  className={styles.queueItemSaveBtn}
-                                  onClick={() => void handleSaveQueueItem(item.id)}
-                                  title="Save"
-                                >
-                                  <Check size={13} />
-                                </button>
-                                <button
-                                  className={styles.queueItemCancelBtn}
-                                  onClick={() => {
-                                    setEditingQueueItemId(null);
-                                    setEditingQueuePrompt('');
-                                  }}
-                                  title="Cancel"
-                                >
-                                  <X size={13} />
-                                </button>
-                              </div>
+                              {msg.attachments?.map((att, i) =>
+                                att.type === 'image' ? (
+                                  <ChatImage
+                                    key={i}
+                                    storagePath={att.storagePath}
+                                    alt={att.fileName}
+                                  />
+                                ) : null,
+                              )}
+                              {msg.content &&
+                                (msg.direction === 'inbound' ? (
+                                  <MarkdownContent>{msg.content}</MarkdownContent>
+                                ) : (
+                                  msg.content
+                                ))}
                             </div>
-                          ) : (
-                            <>
-                              <span className={styles.queueItemPrompt} title={item.prompt}>
-                                {item.prompt}
-                              </span>
-                              <div className={styles.queueItemActions}>
+                            <div
+                              className={`${styles.messageMeta} ${
+                                msg.direction === 'outbound' ? styles.messageMetaUser : ''
+                              }`}
+                            >
+                              {new Date(msg.createdAt).toLocaleTimeString([], {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}
+                              {msg.direction === 'inbound' && (
                                 <button
-                                  className={styles.queueItemEditBtn}
+                                  className={styles.copyBtn}
                                   onClick={() => {
-                                    setEditingQueueItemId(item.id);
-                                    setEditingQueuePrompt(item.prompt);
+                                    navigator.clipboard.writeText(msg.content);
+                                    setCopiedId(msg.id);
+                                    setTimeout(() => setCopiedId(null), 1500);
                                   }}
-                                  title="Edit"
+                                  aria-label="Copy message"
                                 >
-                                  <Pencil size={12} />
+                                  {copiedId === msg.id ? <Check size={12} /> : <Copy size={12} />}
                                 </button>
-                                <button
-                                  className={styles.queueItemDeleteBtn}
-                                  onClick={() => void handleDeleteQueueItem(item.id)}
-                                  title="Remove from queue"
-                                >
-                                  <Trash2 size={12} />
-                                </button>
-                              </div>
-                            </>
-                          )}
+                              )}
+                            </div>
+                          </div>
                         </div>
                       ))}
+
+                      {/* Pending response bubble */}
+                      {streaming && (
+                        <div className={`${styles.messageRow} ${styles.messageRowAgent}`}>
+                          <div className={styles.messageContent}>
+                            <div
+                              className={`${styles.messageBubble} ${styles.messageBubbleAgent} ${styles.streamingCursor}`}
+                            >
+                              <span className={styles.streamingQueueInfo}>
+                                <Loader size={13} className={styles.spinIcon} />
+                                Thinking…
+                              </span>
+                            </div>
+                            <button
+                              className={styles.stopRunBtn}
+                              onClick={stopActiveRun}
+                              disabled={stoppingRun}
+                              title="Stop run"
+                            >
+                              <Square size={12} />
+                              Stop
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
-                </div>
-              )}
 
-              {/* Reply box */}
-              <div
-                className={`${styles.replyBox} ${draggingOver ? styles.replyBoxDragOver : ''}`}
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                onDrop={handleDrop}
-              >
-                {uploading && (
-                  <div className={styles.uploadingIndicator}>Uploading image…</div>
-                )}
-                {stagedImage && (
-                  <div className={styles.stagedImagePreview}>
-                    <img src={stagedImage.previewUrl} alt="Preview" className={styles.stagedImageThumb} />
-                    <span className={styles.stagedImageName}>{stagedImage.file.name}</span>
-                    <button
-                      className={styles.stagedImageRemove}
-                      onClick={clearStagedImage}
-                      aria-label="Remove image"
-                    >
-                      <X size={14} />
-                    </button>
+                  {/* Queue panel */}
+                  {queueItems.length > 0 && (
+                    <div className={styles.queuePanel}>
+                      <div className={styles.queuePanelHeader}>
+                        <button
+                          className={styles.queuePanelToggle}
+                          onClick={() => setQueuePanelOpen((v) => !v)}
+                        >
+                          <Clock size={13} />
+                          <span>
+                            {queueItems.length} message{queueItems.length === 1 ? '' : 's'} in queue
+                          </span>
+                          <ChevronRight
+                            size={14}
+                            className={`${styles.queuePanelChevron} ${queuePanelOpen ? styles.queuePanelChevronOpen : ''}`}
+                          />
+                        </button>
+                        <button
+                          className={styles.queueClearAllBtn}
+                          onClick={() => void handleClearQueue()}
+                          title="Clear all queued messages"
+                        >
+                          <Trash2 size={12} />
+                          Clear all
+                        </button>
+                      </div>
+                      {queuePanelOpen && (
+                        <div className={styles.queuePanelItems}>
+                          {queueItems.map((item, idx) => (
+                            <div key={item.id} className={styles.queueItem}>
+                              <span className={styles.queueItemIndex}>{idx + 1}</span>
+                              {editingQueueItemId === item.id ? (
+                                <div className={styles.queueItemEditWrap}>
+                                  <textarea
+                                    className={styles.queueItemEditInput}
+                                    value={editingQueuePrompt}
+                                    onChange={(e) => setEditingQueuePrompt(e.target.value)}
+                                    rows={2}
+                                    autoFocus
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Escape') {
+                                        setEditingQueueItemId(null);
+                                        setEditingQueuePrompt('');
+                                      }
+                                      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                                        void handleSaveQueueItem(item.id);
+                                      }
+                                    }}
+                                  />
+                                  <div className={styles.queueItemEditActions}>
+                                    <button
+                                      className={styles.queueItemSaveBtn}
+                                      onClick={() => void handleSaveQueueItem(item.id)}
+                                      title="Save"
+                                    >
+                                      <Check size={13} />
+                                    </button>
+                                    <button
+                                      className={styles.queueItemCancelBtn}
+                                      onClick={() => {
+                                        setEditingQueueItemId(null);
+                                        setEditingQueuePrompt('');
+                                      }}
+                                      title="Cancel"
+                                    >
+                                      <X size={13} />
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <>
+                                  <span className={styles.queueItemPrompt} title={item.prompt}>
+                                    {item.prompt}
+                                  </span>
+                                  <div className={styles.queueItemActions}>
+                                    <button
+                                      className={styles.queueItemEditBtn}
+                                      onClick={() => {
+                                        setEditingQueueItemId(item.id);
+                                        setEditingQueuePrompt(item.prompt);
+                                      }}
+                                      title="Edit"
+                                    >
+                                      <Pencil size={12} />
+                                    </button>
+                                    <button
+                                      className={styles.queueItemDeleteBtn}
+                                      onClick={() => void handleDeleteQueueItem(item.id)}
+                                      title="Remove from queue"
+                                    >
+                                      <Trash2 size={12} />
+                                    </button>
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Reply box */}
+                  <div
+                    className={`${styles.replyBox} ${draggingOver ? styles.replyBoxDragOver : ''}`}
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
+                  >
+                    {uploading && <div className={styles.uploadingIndicator}>Uploading images…</div>}
+                    {stagedImages.length > 0 && (
+                      <div className={styles.stagedImagesRow}>
+                        {stagedImages.map((img, i) => (
+                          <div key={img.previewUrl} className={styles.stagedImagePreview}>
+                            <img
+                              src={img.previewUrl}
+                              alt="Preview"
+                              className={styles.stagedImageThumb}
+                            />
+                            <button
+                              className={styles.stagedImageRemove}
+                              onClick={() => removeStagedImage(i)}
+                              aria-label="Remove image"
+                            >
+                              <X size={12} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <div className={styles.replyRow}>
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        className={styles.hiddenFileInput}
+                        onChange={handleFileSelect}
+                      />
+                      <button
+                        className={styles.attachBtn}
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={streaming || uploading || stagedImages.length >= MAX_STAGED_IMAGES}
+                        aria-label="Attach images"
+                        title={stagedImages.length >= MAX_STAGED_IMAGES ? `Max ${MAX_STAGED_IMAGES} images` : 'Attach images'}
+                      >
+                        <Image size={18} />
+                      </button>
+                      <textarea
+                        ref={inputRef}
+                        className={styles.replyInput}
+                        placeholder={
+                          stagedImages.length > 0
+                            ? 'Add a caption… (optional)'
+                            : streaming
+                              ? 'Type to queue a message…'
+                              : 'Type a message…'
+                        }
+                        value={input}
+                        onChange={(e) => {
+                          setInput(e.target.value);
+                        }}
+                        onKeyDown={handleKeyDown}
+                        onPaste={handlePaste}
+                        rows={1}
+                        disabled={uploading}
+                      />
+                      <button
+                        className={styles.sendBtn}
+                        onClick={sendMessage}
+                        disabled={uploading || (!input.trim() && stagedImages.length === 0)}
+                        aria-label="Send message"
+                        title="Send message"
+                      >
+                        <Send size={18} />
+                      </button>
+                    </div>
                   </div>
-                )}
-                <div className={styles.replyRow}>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    className={styles.hiddenFileInput}
-                    onChange={handleFileSelect}
-                  />
-                  <button
-                    className={styles.attachBtn}
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={streaming || uploading}
-                    aria-label="Attach image"
-                    title="Attach image"
-                  >
-                    <Image size={18} />
-                  </button>
-                  <textarea
-                    ref={inputRef}
-                    className={styles.replyInput}
-                    placeholder={stagedImage ? 'Add a caption… (optional)' : streaming ? 'Type to queue a message…' : 'Type a message…'}
-                    value={input}
-                    onChange={(e) => {
-                      setInput(e.target.value);
-                    }}
-                    onKeyDown={handleKeyDown}
-                    onPaste={handlePaste}
-                    rows={1}
-                    disabled={uploading}
-                  />
-                  <button
-                    className={styles.sendBtn}
-                    onClick={sendMessage}
-                    disabled={uploading || (!input.trim() && !stagedImage)}
-                    aria-label="Send message"
-                    title="Send message"
-                  >
-                    <Send size={18} />
-                  </button>
-                </div>
-              </div>
-              </>
+                </>
               )}
             </>
           ) : activeAgent && !activeConvId ? (
             <div className={styles.emptyPanel}>
               <MessageSquare size={36} strokeWidth={1.5} className={styles.emptyIcon} />
               <div className={styles.emptyTitle}>No conversations yet</div>
-              <div className={styles.emptyText}>
-                Start your first chat with {activeAgent.name}
-              </div>
+              <div className={styles.emptyText}>Start your first chat with {activeAgent.name}</div>
               <Button size="sm" onClick={() => createConversation(activeAgent.id)}>
                 <Plus size={14} />
                 New chat
@@ -2811,9 +3144,14 @@ export function AgentsPage() {
           <div className={styles.contextMenuLabel}>Move to group</div>
           <button
             className={`${styles.contextMenuItem} ${
-              !agents.find((a) => a.id === contextMenu.agentId)?.groupId ? styles.contextMenuItemActive : ''
+              !agents.find((a) => a.id === contextMenu.agentId)?.groupId
+                ? styles.contextMenuItemActive
+                : ''
             }`}
-            onClick={() => { handleChangeAgentGroup(contextMenu.agentId, null); setContextMenu(null); }}
+            onClick={() => {
+              handleChangeAgentGroup(contextMenu.agentId, null);
+              setContextMenu(null);
+            }}
           >
             No group
           </button>
@@ -2821,9 +3159,14 @@ export function AgentsPage() {
             <button
               key={g.id}
               className={`${styles.contextMenuItem} ${
-                agents.find((a) => a.id === contextMenu.agentId)?.groupId === g.id ? styles.contextMenuItemActive : ''
+                agents.find((a) => a.id === contextMenu.agentId)?.groupId === g.id
+                  ? styles.contextMenuItemActive
+                  : ''
               }`}
-              onClick={() => { handleChangeAgentGroup(contextMenu.agentId, g.id); setContextMenu(null); }}
+              onClick={() => {
+                handleChangeAgentGroup(contextMenu.agentId, g.id);
+                setContextMenu(null);
+              }}
             >
               {g.name}
             </button>
@@ -2876,7 +3219,9 @@ export function AgentsPage() {
                   >
                     <option value="">No group</option>
                     {groups.map((g) => (
-                      <option key={g.id} value={g.id}>{g.name}</option>
+                      <option key={g.id} value={g.id}>
+                        {g.name}
+                      </option>
                     ))}
                   </Select>
                 )}
@@ -2891,7 +3236,9 @@ export function AgentsPage() {
                           className={[
                             styles.presetCard,
                             form.preset === preset.id && styles.presetCardSelected,
-                          ].filter(Boolean).join(' ')}
+                          ]
+                            .filter(Boolean)
+                            .join(' ')}
                           onClick={() => setForm((f) => ({ ...f, preset: preset.id }))}
                         >
                           <div className={styles.presetName}>{preset.name}</div>
@@ -2911,8 +3258,17 @@ export function AgentsPage() {
                         className={[
                           styles.modelCard,
                           form.model === model.id && styles.modelCardSelected,
-                        ].filter(Boolean).join(' ')}
-                        onClick={() => setForm((f) => ({ ...f, model: model.id, modelId: '', thinkingLevel: model.id === 'qwen' ? '' : f.thinkingLevel }))}
+                        ]
+                          .filter(Boolean)
+                          .join(' ')}
+                        onClick={() =>
+                          setForm((f) => ({
+                            ...f,
+                            model: model.id,
+                            modelId: '',
+                            thinkingLevel: model.id === 'qwen' ? '' : f.thinkingLevel,
+                          }))
+                        }
                       >
                         <div className={styles.modelName}>{model.name}</div>
                         <div className={styles.modelVendor}>{model.vendor}</div>
@@ -2924,7 +3280,9 @@ export function AgentsPage() {
 
                 <div className={styles.modelOptionsRow}>
                   <div className={styles.modelOptionField}>
-                    <div className={styles.fieldLabel}>Model <span className={styles.fieldHint}>(optional)</span></div>
+                    <div className={styles.fieldLabel}>
+                      Model <span className={styles.fieldHint}>(optional)</span>
+                    </div>
                     <select
                       className={styles.textInput}
                       value={form.modelId}
@@ -2932,10 +3290,14 @@ export function AgentsPage() {
                     >
                       <option value="">Default</option>
                       {MODELS.find((m) => m.id === form.model)?.modelIds.map((mid) => (
-                        <option key={mid} value={mid}>{mid}</option>
+                        <option key={mid} value={mid}>
+                          {mid}
+                        </option>
                       ))}
                     </select>
-                    <div className={styles.fieldHint}>Override the default model used by the CLI</div>
+                    <div className={styles.fieldHint}>
+                      Override the default model used by the CLI
+                    </div>
                   </div>
                   {(form.model === 'claude' || form.model === 'codex') && (
                     <div className={styles.modelOptionField}>
@@ -2946,7 +3308,12 @@ export function AgentsPage() {
                       <select
                         className={styles.textInput}
                         value={form.thinkingLevel}
-                        onChange={(e) => setForm((f) => ({ ...f, thinkingLevel: e.target.value as ThinkingLevel | '' }))}
+                        onChange={(e) =>
+                          setForm((f) => ({
+                            ...f,
+                            thinkingLevel: e.target.value as ThinkingLevel | '',
+                          }))
+                        }
                       >
                         <option value="">Default</option>
                         <option value="low">Low</option>
@@ -2954,7 +3321,9 @@ export function AgentsPage() {
                         <option value="high">High</option>
                       </select>
                       <div className={styles.fieldHint}>
-                        {form.model === 'claude' ? 'Controls reasoning effort via --effort' : 'Controls reasoning effort via model_reasoning_effort'}
+                        {form.model === 'claude'
+                          ? 'Controls reasoning effort via --effort'
+                          : 'Controls reasoning effort via model_reasoning_effort'}
                       </div>
                     </div>
                   )}
@@ -2999,7 +3368,10 @@ export function AgentsPage() {
                     Enable skip permissions
                   </label>
                   <div className={styles.skipPermissionsHint}>
-                    Uses <code className={styles.settingsCode}>{getSkipPermissionsFlag(form.model)}</code>{' '}
+                    Uses{' '}
+                    <code className={styles.settingsCode}>
+                      {getSkipPermissionsFlag(form.model)}
+                    </code>{' '}
                     for {selectedModel?.name || 'this model'}.
                   </div>
                 </div>
@@ -3043,10 +3415,14 @@ export function AgentsPage() {
 
                       {selectedKey && (
                         <div className={styles.keyPermissions}>
-                          <div className={styles.keyPermissionsLabel}>Permissions from this key</div>
+                          <div className={styles.keyPermissionsLabel}>
+                            Permissions from this key
+                          </div>
                           <div className={styles.keyPermissionsList}>
                             {selectedKey.permissions.map((perm) => (
-                              <Badge key={perm} color="info">{perm}</Badge>
+                              <Badge key={perm} color="info">
+                                {perm}
+                              </Badge>
                             ))}
                             {selectedKey.permissions.length === 0 && (
                               <span style={{ fontSize: 13, color: 'var(--color-text-tertiary)' }}>
@@ -3066,10 +3442,22 @@ export function AgentsPage() {
                   ) : (
                     <ApiKeyFormFields
                       permissionsOnly
-                      form={{ name: '', description: '', permissions: form.newKeyPermissions, hasExpiration: false, expiresAt: '' }}
+                      form={{
+                        name: '',
+                        description: '',
+                        permissions: form.newKeyPermissions,
+                        hasExpiration: false,
+                        expiresAt: '',
+                      }}
                       onChange={(updater) => {
                         setForm((f) => {
-                          const next = updater({ name: '', description: '', permissions: f.newKeyPermissions, hasExpiration: false, expiresAt: '' });
+                          const next = updater({
+                            name: '',
+                            description: '',
+                            permissions: f.newKeyPermissions,
+                            hasExpiration: false,
+                            expiresAt: '',
+                          });
                           return { ...f, newKeyPermissions: next.permissions };
                         });
                       }}
@@ -3093,7 +3481,15 @@ export function AgentsPage() {
 
       {/* ── Agent Settings Modal ── */}
       {settingsAgent && (
-        <div className={styles.modalOverlay} onClick={() => { setSettingsAgent(null); setDeletingId(null); setEditingName(false); setEditingAvatar(false); }}>
+        <div
+          className={styles.modalOverlay}
+          onClick={() => {
+            setSettingsAgent(null);
+            setDeletingId(null);
+            setEditingName(false);
+            setEditingAvatar(false);
+          }}
+        >
           <div className={styles.settingsModalWide} onClick={(e) => e.stopPropagation()}>
             {/* Hero header with avatar, name, status */}
             <div className={styles.settingsHero}>
@@ -3110,12 +3506,18 @@ export function AgentsPage() {
                     logoColor={settingsAgent.avatarLogoColor || '#e94560'}
                     size={56}
                   />
-                  <span className={styles.settingsAvatarOverlay}><Pencil size={16} /></span>
+                  <span className={styles.settingsAvatarOverlay}>
+                    <Pencil size={16} />
+                  </span>
                 </button>
                 {editingAvatar && (
                   <div className={styles.settingsAvatarPickerDropdown}>
                     <AgentAvatarPicker
-                      value={{ icon: settingsAgent.avatarIcon || 'spark', bgColor: settingsAgent.avatarBgColor || '#1a1a2e', logoColor: settingsAgent.avatarLogoColor || '#e94560' }}
+                      value={{
+                        icon: settingsAgent.avatarIcon || 'spark',
+                        bgColor: settingsAgent.avatarBgColor || '#1a1a2e',
+                        logoColor: settingsAgent.avatarLogoColor || '#e94560',
+                      }}
                       onChange={(avatar) => handleChangeAvatar(settingsAgent.id, avatar)}
                     />
                   </div>
@@ -3130,7 +3532,10 @@ export function AgentsPage() {
                     onChange={(e) => setEditNameValue(e.target.value)}
                     onBlur={() => handleRenameAgent(settingsAgent.id, editNameValue)}
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter') { e.preventDefault(); handleRenameAgent(settingsAgent.id, editNameValue); }
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleRenameAgent(settingsAgent.id, editNameValue);
+                      }
                       if (e.key === 'Escape') setEditingName(false);
                     }}
                     maxLength={255}
@@ -3139,7 +3544,10 @@ export function AgentsPage() {
                 ) : (
                   <h3
                     className={styles.settingsHeroName}
-                    onClick={() => { setEditNameValue(settingsAgent.name); setEditingName(true); }}
+                    onClick={() => {
+                      setEditNameValue(settingsAgent.name);
+                      setEditingName(true);
+                    }}
                     title="Click to rename"
                   >
                     {settingsAgent.name}
@@ -3162,7 +3570,14 @@ export function AgentsPage() {
                   {STATUS_LABEL[settingsAgent.status]}
                 </Badge>
               </div>
-              <button className={styles.modalCloseBtn} onClick={() => { setSettingsAgent(null); setDeletingId(null); setEditingName(false); }}>
+              <button
+                className={styles.modalCloseBtn}
+                onClick={() => {
+                  setSettingsAgent(null);
+                  setDeletingId(null);
+                  setEditingName(false);
+                }}
+              >
                 <X size={18} />
               </button>
             </div>
@@ -3181,10 +3596,14 @@ export function AgentsPage() {
                       <select
                         className={styles.settingsGroupSelect}
                         value={settingsAgent.model}
-                        onChange={(e) => handleChangeAgentModel(settingsAgent.id, 'model', e.target.value)}
+                        onChange={(e) =>
+                          handleChangeAgentModel(settingsAgent.id, 'model', e.target.value)
+                        }
                       >
                         {MODELS.map((m) => (
-                          <option key={m.id} value={m.id}>{m.name}</option>
+                          <option key={m.id} value={m.id}>
+                            {m.name}
+                          </option>
                         ))}
                       </select>
                     </div>
@@ -3195,11 +3614,15 @@ export function AgentsPage() {
                       <select
                         className={styles.settingsGroupSelect}
                         value={settingsAgent.modelId || ''}
-                        onChange={(e) => handleChangeAgentModel(settingsAgent.id, 'modelId', e.target.value)}
+                        onChange={(e) =>
+                          handleChangeAgentModel(settingsAgent.id, 'modelId', e.target.value)
+                        }
                       >
                         <option value="">Default</option>
                         {MODELS.find((m) => m.id === settingsAgent.model)?.modelIds.map((mid) => (
-                          <option key={mid} value={mid}>{mid}</option>
+                          <option key={mid} value={mid}>
+                            {mid}
+                          </option>
                         ))}
                       </select>
                     </div>
@@ -3213,7 +3636,13 @@ export function AgentsPage() {
                         <select
                           className={styles.settingsGroupSelect}
                           value={settingsAgent.thinkingLevel || ''}
-                          onChange={(e) => handleChangeAgentModel(settingsAgent.id, 'thinkingLevel', e.target.value)}
+                          onChange={(e) =>
+                            handleChangeAgentModel(
+                              settingsAgent.id,
+                              'thinkingLevel',
+                              e.target.value,
+                            )
+                          }
                         >
                           <option value="">None</option>
                           <option value="low">Low</option>
@@ -3237,7 +3666,9 @@ export function AgentsPage() {
                     <div className={styles.settingsGridLabel}>Skip permissions</div>
                     <div className={styles.settingsGridValue}>
                       {settingsAgent.skipPermissions ? 'Enabled' : 'Disabled'}
-                      <code className={styles.settingsCode}>{getSkipPermissionsFlag(settingsAgent.model)}</code>
+                      <code className={styles.settingsCode}>
+                        {getSkipPermissionsFlag(settingsAgent.model)}
+                      </code>
                     </div>
                   </div>
                   <div className={styles.settingsGridItem}>
@@ -3249,11 +3680,15 @@ export function AgentsPage() {
                       <select
                         className={styles.settingsGroupSelect}
                         value={settingsAgent.groupId || ''}
-                        onChange={(e) => handleChangeAgentGroup(settingsAgent.id, e.target.value || null)}
+                        onChange={(e) =>
+                          handleChangeAgentGroup(settingsAgent.id, e.target.value || null)
+                        }
                       >
                         <option value="">No group</option>
                         {groups.map((g) => (
-                          <option key={g.id} value={g.id}>{g.name}</option>
+                          <option key={g.id} value={g.id}>
+                            {g.name}
+                          </option>
                         ))}
                       </select>
                     </div>
@@ -3266,7 +3701,9 @@ export function AgentsPage() {
                 <div className={styles.settingsSectionTitle}>Capabilities</div>
                 <div className={styles.capsList}>
                   {settingsAgent.capabilities.map((cap) => (
-                    <Badge key={cap} color="info">{cap}</Badge>
+                    <Badge key={cap} color="info">
+                      {cap}
+                    </Badge>
                   ))}
                   {settingsAgent.capabilities.length === 0 && (
                     <span className={styles.settingsEmpty}>No capabilities assigned</span>
@@ -3289,10 +3726,11 @@ export function AgentsPage() {
                           disabled={cronSaving}
                           title={job.enabled ? 'Disable' : 'Enable'}
                         >
-                          {job.enabled
-                            ? <ToggleRight size={20} className={styles.cronToggleOn} />
-                            : <ToggleLeft size={20} className={styles.cronToggleOff} />
-                          }
+                          {job.enabled ? (
+                            <ToggleRight size={20} className={styles.cronToggleOn} />
+                          ) : (
+                            <ToggleLeft size={20} className={styles.cronToggleOff} />
+                          )}
                         </button>
                         <div className={styles.cronJobInfo}>
                           <div className={styles.cronJobExpr}>
@@ -3338,7 +3776,11 @@ export function AgentsPage() {
                       <Button
                         size="sm"
                         variant="secondary"
-                        onClick={() => { setCronFormOpen(false); setCronFormCron(''); setCronFormPrompt(''); }}
+                        onClick={() => {
+                          setCronFormOpen(false);
+                          setCronFormCron('');
+                          setCronFormPrompt('');
+                        }}
                       >
                         Cancel
                       </Button>
@@ -3355,7 +3797,10 @@ export function AgentsPage() {
                   <Button
                     size="sm"
                     variant="secondary"
-                    onClick={() => { setCronFormOpen(true); setCronFormCron('* * * * *'); }}
+                    onClick={() => {
+                      setCronFormOpen(true);
+                      setCronFormCron('* * * * *');
+                    }}
                   >
                     <Plus size={13} />
                     Add cron job
@@ -3396,11 +3841,7 @@ export function AgentsPage() {
                     : 'Enable skip permissions'}
                 </Button>
 
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => handleToggle(settingsAgent)}
-                >
+                <Button size="sm" variant="secondary" onClick={() => handleToggle(settingsAgent)}>
                   {settingsAgent.status === 'active' ? <PowerOff size={13} /> : <Power size={13} />}
                   {settingsAgent.status === 'active' ? 'Disable agent' : 'Enable agent'}
                 </Button>
@@ -3412,12 +3853,20 @@ export function AgentsPage() {
                     <Button size="sm" variant="secondary" onClick={() => setDeletingId(null)}>
                       Cancel
                     </Button>
-                    <Button size="sm" variant="danger" onClick={() => handleDelete(settingsAgent.id)}>
+                    <Button
+                      size="sm"
+                      variant="danger"
+                      onClick={() => handleDelete(settingsAgent.id)}
+                    >
                       Confirm Delete
                     </Button>
                   </>
                 ) : (
-                  <Button size="sm" variant="secondary" onClick={() => setDeletingId(settingsAgent.id)}>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => setDeletingId(settingsAgent.id)}
+                  >
                     <Trash2 size={13} />
                     Delete
                   </Button>

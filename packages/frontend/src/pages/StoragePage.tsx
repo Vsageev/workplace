@@ -778,7 +778,7 @@ export function StoragePage() {
                     )}
                     <Tooltip label="Show in Finder">
                       <button
-                        className={styles.iconBtn}
+                        className={`${styles.iconBtn} ${styles.mobileHidden}`}
                         onClick={() => handleReveal(entry.path)}
                         aria-label="Show in Finder"
                       >
@@ -787,7 +787,7 @@ export function StoragePage() {
                     </Tooltip>
                     <Tooltip label="Rename">
                       <button
-                        className={styles.iconBtn}
+                        className={`${styles.iconBtn} ${styles.mobileHidden}`}
                         onClick={() => startRename(entry)}
                         aria-label="Rename"
                       >

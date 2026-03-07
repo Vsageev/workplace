@@ -264,7 +264,7 @@ export interface AgentRun {
   id: string;
   agentId: string;
   agentName: string;
-  triggerType: 'chat' | 'cron' | 'card';
+  triggerType: 'chat' | 'cron_job' | 'card_assignment';
   status: 'running' | 'completed' | 'error';
   conversationId: string | null;
   cardId: string | null;
@@ -273,6 +273,7 @@ export interface AgentRun {
   stdoutPath: string | null;
   stderrPath: string | null;
   errorMessage: string | null;
+  responseText: string | null;
   startedAt: string;
   finishedAt: string | null;
   durationMs: number | null;

@@ -313,6 +313,7 @@ button.colName:hover .fileName {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
   transition: color var(--transition-fast);
 }
 
@@ -532,13 +533,124 @@ button.colName:hover .fileName {
   line-height: 1;
 }
 
-@media (max-width: 640px) {
+/* Tablet breakpoint */
+@media (max-width: 768px) {
   .fileHeader,
   .fileRow {
-    grid-template-columns: 28px 1fr 80px auto;
+    grid-template-columns: 28px 1fr 80px 140px auto;
+    padding: var(--space-2) var(--space-3);
   }
 
+  .fileHeader .colActions {
+    flex-wrap: wrap;
+  }
+}
+
+/* Mobile breakpoint */
+@media (max-width: 640px) {
+  .breadcrumb {
+    flex-wrap: wrap;
+    margin-bottom: var(--space-2);
+    padding: var(--space-2) 0;
+  }
+
+  .searchRow {
+    margin-bottom: var(--space-2);
+  }
+
+  .searchInputWrapper {
+    max-width: none;
+  }
+
+  .fileHeader {
+    grid-template-columns: 28px 1fr auto;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .fileRow {
+    grid-template-columns: 28px 1fr auto;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .colSize,
   .colDate {
     display: none;
+  }
+
+  .fileHeader .colActions {
+    gap: 0;
+  }
+
+  /* Hide button text labels on mobile, keep icons */
+  .fileHeader .colActions button {
+    font-size: 0;
+    padding: var(--space-1);
+    gap: 0;
+    min-width: 28px;
+    min-height: 28px;
+  }
+
+  .fileHeader .colActions button svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  .colActions .iconBtn {
+    width: 28px;
+    height: 28px;
+  }
+
+  /* Hide less essential row actions on mobile */
+  .fileRow .colActions {
+    flex-wrap: nowrap;
+  }
+
+  .mobileHidden {
+    display: none !important;
+  }
+
+  .bulkBar {
+    flex-wrap: wrap;
+    padding: var(--space-2) var(--space-3);
+    gap: var(--space-1);
+  }
+
+  .newFolderRow {
+    flex-wrap: wrap;
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .newFolderRow > div:nth-child(2) {
+    max-width: none;
+    flex-basis: calc(100% - 30px);
+  }
+
+  .shortcutHints {
+    display: none;
+  }
+
+  .uploadProgress {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-2);
+  }
+}
+
+/* Small mobile */
+@media (max-width: 400px) {
+  .fileHeader,
+  .fileRow {
+    padding: var(--space-1) var(--space-2);
+  }
+
+  .breadcrumbItem {
+    padding: var(--space-1);
+    font-size: 13px;
+  }
+
+  .colCheck {
+    width: 24px;
   }
 }

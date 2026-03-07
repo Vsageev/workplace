@@ -12,6 +12,8 @@ import {
 const API_RESOURCES = [
   'contacts', 'cards', 'tasks', 'boards', 'folders',
   'messages', 'activities', 'templates', 'webhooks',
+  'settings', 'collections', 'users', 'backups', 'reports', 'audit-logs',
+  'storage', 'tags', 'conversations',
 ] as const;
 
 const permissionSchema = z.string().refine(

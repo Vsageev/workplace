@@ -28,6 +28,10 @@ interface CreateApiKeyResponse extends ApiKey {
   key: string;
 }
 
+interface AgentDefaultsResponse {
+  defaultAgentKeyId: string | null;
+}
+
 interface FormData extends ApiKeyFormData {
   isActive: boolean;
 }
@@ -45,8 +49,12 @@ export function ApiKeysTab() {
   const [keys, setKeys] = useState<ApiKey[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [defaultKeyLoading, setDefaultKeyLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [defaultAgentKeyId, setDefaultAgentKeyId] = useState('');
+  const [savedDefaultAgentKeyId, setSavedDefaultAgentKeyId] = useState('');
+  const [defaultKeySaving, setDefaultKeySaving] = useState(false);
 
   // Modal
   const [modalOpen, setModalOpen] = useState(false);
@@ -82,9 +90,29 @@ export function ApiKeysTab() {
     }
   }, []);
 
+  const fetchAgentDefaults = useCallback(async () => {
+    setDefaultKeyLoading(true);
+    setError('');
+    try {
+      const data = await api<AgentDefaultsResponse>('/settings/agent-defaults');
+      const selected = data.defaultAgentKeyId ?? '';
+      setDefaultAgentKeyId(selected);
+      setSavedDefaultAgentKeyId(selected);
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setError(err.message);
+      } else {
+        setError('Failed to load project agent defaults');
+      }
+    } finally {
+      setDefaultKeyLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     fetchKeys();
-  }, [fetchKeys]);
+    fetchAgentDefaults();
+  }, [fetchAgentDefaults, fetchKeys]);
 
   function openCreate() {
     setEditingId(null);
@@ -228,6 +256,37 @@ export function ApiKeysTab() {
     }
   }
 
+  async function handleSaveDefaultAgentKey() {
+    setDefaultKeySaving(true);
+    setError('');
+    setSuccess('');
+    try {
+      const updated = await api<AgentDefaultsResponse>('/settings/agent-defaults', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          defaultAgentKeyId: defaultAgentKeyId || null,
+        }),
+      });
+      const selected = updated.defaultAgentKeyId ?? '';
+      setDefaultAgentKeyId(selected);
+      setSavedDefaultAgentKeyId(selected);
+      setSuccess('Project default agent key updated');
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setError(err.message);
+      } else {
+        setError('Failed to save project default agent key');
+      }
+    } finally {
+      setDefaultKeySaving(false);
+    }
+  }
+
+  const activeKeys = keys.filter((key) => key.isActive);
+  const defaultAgentKeyChanged = defaultAgentKeyId !== savedDefaultAgentKeyId;
+  const defaultAgentKeyUnavailable =
+    Boolean(defaultAgentKeyId) && !activeKeys.some((key) => key.id === defaultAgentKeyId);
+
   return (
     <div>
       <div className={styles.section}>
@@ -246,6 +305,46 @@ export function ApiKeysTab() {
 
         {success && <div className={styles.success}>{success}</div>}
         {error && <div className={styles.alert}>{error}</div>}
+
+        <Card style={{ marginBottom: 'var(--space-4)' }}>
+          <div className={styles.templateRow}>
+            <div className={styles.templateInfo}>
+              <div className={styles.templateName}>Default Agent Key</div>
+              <div className={styles.templateContent}>
+                Default API key selected when creating new agents in this project.
+              </div>
+            </div>
+            <div
+              className={styles.templateActions}
+              style={{ gap: 'var(--space-2)', alignItems: 'center' }}
+            >
+              <select
+                className={styles.filterSelect}
+                value={defaultAgentKeyId}
+                onChange={(e) => setDefaultAgentKeyId(e.target.value)}
+                disabled={defaultKeyLoading || defaultKeySaving}
+                aria-label="Project default agent key"
+              >
+                <option value="">None</option>
+                {defaultAgentKeyUnavailable && (
+                  <option value={defaultAgentKeyId}>Current key (unavailable)</option>
+                )}
+                {activeKeys.map((key) => (
+                  <option key={key.id} value={key.id}>
+                    {key.name} ({key.keyPrefix}...)
+                  </option>
+                ))}
+              </select>
+              <Button
+                size="sm"
+                onClick={handleSaveDefaultAgentKey}
+                disabled={defaultKeyLoading || defaultKeySaving || !defaultAgentKeyChanged}
+              >
+                {defaultKeySaving ? 'Saving...' : 'Save default'}
+              </Button>
+            </div>
+          </div>
+        </Card>
 
         <Card>
           <div className={styles.toolbarRight} style={{ padding: 'var(--space-3) var(--space-4)' }}>

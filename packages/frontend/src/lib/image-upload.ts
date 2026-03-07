@@ -78,6 +78,17 @@ export function getFirstImageFromClipboardData(clipboardData: DataTransfer | nul
   return null;
 }
 
+export function getImagesFromClipboardData(clipboardData: DataTransfer | null): File[] {
+  if (!clipboardData?.items) return [];
+  const files: File[] = [];
+  for (const item of clipboardData.items) {
+    if (!item.type.startsWith('image/')) continue;
+    const file = item.getAsFile();
+    if (file) files.push(file);
+  }
+  return files;
+}
+
 export function getFirstImageFromFileList(files: FileList | null): File | null {
   if (!files) return null;
 
@@ -86,6 +97,15 @@ export function getFirstImageFromFileList(files: FileList | null): File | null {
   }
 
   return null;
+}
+
+export function getImagesFromFileList(files: FileList | null): File[] {
+  if (!files) return [];
+  const result: File[] = [];
+  for (const file of files) {
+    if (isImageFile(file)) result.push(file);
+  }
+  return result;
 }
 
 export async function compressImageForUpload(

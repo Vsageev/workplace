@@ -28,7 +28,6 @@ COPY --from=build /app/packages/shared/dist ./packages/shared/dist
 COPY --from=build /app/packages/backend/dist ./packages/backend/dist
 COPY packages/shared/package.json packages/shared/
 COPY packages/backend/package.json packages/backend/
-COPY packages/backend/drizzle.config.ts packages/backend/
 
-EXPOSE 3000
+EXPOSE 3847
 CMD ["node", "packages/backend/dist/index.js"]

@@ -64,3 +64,5 @@ export {
 } from './utils.js';
 
 export type { ListResponse } from './utils.js';
+export { extractFinalResponseText, formatAgentOutputForDisplay, parseAgentOutputBlocks } from './agent-output.js';
+export type { OutputBlock, OutputBlockType, SystemInitBlock, ThinkingBlock, AssistantTextBlock, ToolCallBlock, ToolResultBlock, ResultBlock, RateLimitBlock, MessageMetaBlock, PlainTextBlock } from './agent-output.js';

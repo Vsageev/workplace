@@ -117,10 +117,14 @@ export function CollectionsListPage() {
     }
   }, [searchParams, loading]);
 
-  useEffect(() => {
+  const willRedirect = useMemo(() => {
     const forceList = searchParams.get('list') === '1';
     const forceCreate = searchParams.get('action') === 'create';
-    if (activeWorkspaceId || forceList || forceCreate || search || loading || provisioningStarter || error || collections.length === 0) return;
+    return !forceList && !forceCreate && !search && !loading && !provisioningStarter && !error && collections.length > 0;
+  }, [searchParams, search, loading, provisioningStarter, error, collections.length]);
+
+  useEffect(() => {
+    if (!willRedirect) return;
 
     const preferredCollectionId = getPreferredCollectionId();
     const targetCollectionId =
@@ -129,7 +133,7 @@ export function CollectionsListPage() {
         : collections[0].id;
 
     navigate(`/collections/${targetCollectionId}`, { replace: true });
-  }, [activeWorkspaceId, searchParams, search, loading, provisioningStarter, error, collections, navigate]);
+  }, [willRedirect, collections, navigate]);
 
   async function handleCreate() {
     if (!createName.trim()) return;
@@ -252,7 +256,7 @@ export function CollectionsListPage() {
         </select>
       </div>
 
-      {loading || provisioningStarter ? (
+      {loading || provisioningStarter || willRedirect ? (
         <div className={styles.loadingState}>
           <div className={styles.skeletonGrid}>
             {[0, 1, 2].map((i) => (

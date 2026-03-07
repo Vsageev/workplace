@@ -59,6 +59,8 @@ export function ConnectorsPage() {
   const [createStep, setCreateStep] = useState<'type' | 'config'>('type');
   const [selectedType, setSelectedType] = useState<ConnectorTypeId | null>(null);
   const [token, setToken] = useState('');
+  const [ngrokUrl, setNgrokUrl] = useState('');
+  const [ngrokAuto, setNgrokAuto] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState('');
 
@@ -91,6 +93,8 @@ export function ConnectorsPage() {
     setCreateStep('type');
     setSelectedType(null);
     setToken('');
+    setNgrokUrl('');
+    setNgrokAuto(false);
     setCreateError('');
     setCreateOpen(true);
   }
@@ -99,6 +103,8 @@ export function ConnectorsPage() {
     setCreateOpen(false);
     setSelectedType(null);
     setToken('');
+    setNgrokUrl('');
+    setNgrokAuto(false);
     setCreateError('');
   }
 
@@ -106,6 +112,8 @@ export function ConnectorsPage() {
     setSelectedType(type);
     setCreateStep('config');
     setToken('');
+    setNgrokUrl('');
+    setNgrokAuto(false);
     setCreateError('');
   }
 
@@ -118,7 +126,11 @@ export function ConnectorsPage() {
     try {
       await api('/connectors', {
         method: 'POST',
-        body: JSON.stringify({ type: selectedType, token: token.trim() }),
+        body: JSON.stringify({
+          type: selectedType,
+          token: token.trim(),
+          ngrokUrl: ngrokAuto ? 'auto' : (ngrokUrl.trim() || undefined),
+        }),
       });
       closeCreate();
       toast.success('Connector created successfully');
@@ -193,8 +205,41 @@ export function ConnectorsPage() {
     if (settingsConnector.type === 'telegram') {
       const enabled = (editSettings.autoGreetingEnabled as boolean) ?? false;
       const text = (editSettings.autoGreetingText as string) ?? '';
+      const currentNgrokUrl = (editSettings.ngrokUrl as string) ?? '';
+      const isNgrokAuto = (editSettings.ngrokAuto as boolean) ?? false;
       return (
         <>
+          <label className={styles.toggleRow}>
+            <div>
+              <div className={styles.toggleLabel}>Auto-start ngrok</div>
+              <div className={styles.toggleHint}>Automatically start an ngrok tunnel for the webhook</div>
+            </div>
+            <span className={styles.toggle}>
+              <input
+                type="checkbox"
+                className={styles.toggleInput}
+                checked={isNgrokAuto}
+                onChange={(e) =>
+                  setEditSettings((s) => ({
+                    ...s,
+                    ngrokAuto: e.target.checked,
+                    ...(e.target.checked ? { ngrokUrl: null } : {}),
+                  }))
+                }
+              />
+              <span className={styles.toggleSlider} />
+            </span>
+          </label>
+          {!isNgrokAuto && (
+            <Input
+              label="Ngrok URL"
+              placeholder="https://xxxx-xx-xx.ngrok-free.app"
+              value={currentNgrokUrl}
+              onChange={(e) =>
+                setEditSettings((s) => ({ ...s, ngrokUrl: e.target.value || null }))
+              }
+            />
+          )}
           <label className={styles.toggleRow}>
             <div>
               <div className={styles.toggleLabel}>Auto-greeting</div>
@@ -382,6 +427,32 @@ export function ConnectorsPage() {
                     error={createError}
                     autoFocus
                   />
+                  <label className={styles.toggleRow}>
+                    <div>
+                      <div className={styles.toggleLabel}>Auto-start ngrok</div>
+                      <div className={styles.toggleHint}>Automatically start an ngrok tunnel for the webhook</div>
+                    </div>
+                    <span className={styles.toggle}>
+                      <input
+                        type="checkbox"
+                        className={styles.toggleInput}
+                        checked={ngrokAuto}
+                        onChange={(e) => {
+                          setNgrokAuto(e.target.checked);
+                          if (e.target.checked) setNgrokUrl('');
+                        }}
+                      />
+                      <span className={styles.toggleSlider} />
+                    </span>
+                  </label>
+                  {!ngrokAuto && (
+                    <Input
+                      label="Ngrok URL (optional)"
+                      placeholder="https://xxxx-xx-xx.ngrok-free.app"
+                      value={ngrokUrl}
+                      onChange={(e) => setNgrokUrl(e.target.value)}
+                    />
+                  )}
                 </div>
                 <div className={styles.modalFooter}>
                   <Button
@@ -392,6 +463,8 @@ export function ConnectorsPage() {
                       setCreateStep('type');
                       setSelectedType(null);
                       setToken('');
+                      setNgrokUrl('');
+                      setNgrokAuto(false);
                       setCreateError('');
                     }}
                   >

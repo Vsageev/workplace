@@ -284,7 +284,9 @@
   gap: 4px;
   font-size: 11px;
   font-weight: 500;
-  transition: color var(--transition-fast), opacity var(--transition-fast);
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  transition: all 0.2s ease;
   color: var(--color-text-tertiary);
   opacity: 0;
 }
@@ -292,17 +294,20 @@
 .saveStatus_saving {
   opacity: 1;
   color: var(--color-text-tertiary);
+  background: var(--color-surface);
 }
 
 .saveStatus_saved {
   opacity: 1;
   color: var(--color-success, #10B981);
-  animation: fadeOutSaved 2s ease forwards;
+  background: rgba(16, 185, 129, 0.08);
+  animation: fadeOutSaved 2.5s ease forwards;
 }
 
 .saveStatus_error {
   opacity: 1;
   color: var(--color-error, #EF4444);
+  background: rgba(239, 68, 68, 0.08);
 }
 
 @keyframes fadeOutSaved {
@@ -318,12 +323,12 @@
 
 .descriptionDisplay {
   cursor: text;
+  position: relative;
   min-height: 40px;
-  padding: 6px 8px;
-  margin: -6px -8px;
+  padding: 10px 12px;
   border-radius: var(--radius-md);
   border: 1px solid transparent;
-  transition: all var(--transition-fast);
+  transition: all 0.2s ease;
 }
 
 .descriptionDisplay:hover {
@@ -337,29 +342,35 @@
 
 .descriptionPlaceholder {
   cursor: text;
-  min-height: 40px;
+  min-height: 60px;
   color: var(--color-text-tertiary);
   font-size: 14px;
-  padding: 6px 8px;
-  margin: -6px -8px;
+  padding: 14px 16px;
   border-radius: var(--radius-md);
-  border: 1px dashed var(--color-border);
-  transition: all var(--transition-fast);
+  border: 2px dashed var(--color-border);
+  transition: all 0.2s ease;
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  background: var(--color-surface);
 }
 
 .descriptionPlaceholder:hover {
-  background: var(--color-surface);
-  border-color: var(--color-text-tertiary);
+  background: var(--color-bg-hover, rgba(0, 0, 0, 0.04));
+  border-color: var(--color-link);
+  color: var(--color-text-secondary);
 }
 
 /* Description edit tabs (Write / Preview) */
 .descriptionTabs {
   display: flex;
+  align-items: center;
   border-bottom: 1px solid var(--color-border-subtle);
   margin-bottom: 6px;
+}
+
+.descriptionTabs .saveStatus {
+  margin-left: auto;
 }
 
 .descriptionTab {
@@ -386,7 +397,7 @@
 }
 
 .descriptionPreview {
-  min-height: 160px;
+  min-height: 220px;
   padding: var(--space-3);
   border: 2px solid var(--color-link);
   border-radius: var(--radius-md);
@@ -405,9 +416,9 @@
 .mdToolbar {
   display: flex;
   align-items: center;
-  gap: 1px;
-  padding: 4px 6px;
-  background: var(--color-card);
+  gap: 2px;
+  padding: 6px 8px;
+  background: var(--color-surface);
   border: 2px solid var(--color-link);
   border-bottom: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-md) var(--radius-md) 0 0;
@@ -418,34 +429,34 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   border: none;
   background: none;
   color: var(--color-text-secondary);
   border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: background var(--transition-fast), color var(--transition-fast);
+  transition: background 0.15s ease, color 0.15s ease;
   flex-shrink: 0;
 }
 
 .mdToolbarBtn:hover {
-  background: var(--color-bg-hover, rgba(0,0,0,0.06));
-  color: var(--color-text);
+  background: var(--color-bg-hover, rgba(0, 0, 0, 0.06));
+  color: var(--color-link);
 }
 
 .mdToolbarSep {
   width: 1px;
-  height: 16px;
-  background: var(--color-border-subtle);
-  margin: 0 4px;
+  height: 18px;
+  background: var(--color-border);
+  margin: 0 6px;
   flex-shrink: 0;
 }
 
 /* Description edit mode */
 .descriptionTextarea {
   width: 100%;
-  min-height: 160px;
+  min-height: 220px;
   padding: var(--space-3);
   border: 2px solid var(--color-link);
   border-top: none;
@@ -459,16 +470,37 @@
   line-height: 1.6;
   outline: none;
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  transition: border-color 0.2s ease;
 }
 
 .descriptionTextarea::placeholder {
   color: var(--color-text-tertiary);
+  font-family: inherit;
+  font-style: italic;
 }
 
 .descriptionActions {
   display: flex;
+  align-items: center;
   gap: var(--space-2);
   justify-content: flex-end;
+}
+
+/* ── Editor wrapper animation ──────────────────────────── */
+
+.descriptionEditorWrapper {
+  animation: editorSlideIn 0.2s ease;
+}
+
+@keyframes editorSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* ── Right sidebar ────────────────────────────────────── */
@@ -476,37 +508,82 @@
 .sidebar {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
   position: sticky;
   top: var(--space-6);
 }
 
-/* ── Sidebar panel ────────────────────────────────────── */
+/* ── Unified sidebar card ────────────────────────────── */
 
-.sidePanel {
+.sidebarCard {
   background: var(--color-card);
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-lg);
-  overflow: hidden;
+  padding: var(--space-2) 0;
 }
 
-.sidePanelHeader {
+.sidebarDivider {
+  height: 1px;
+  background: var(--color-border-subtle);
+  margin: var(--space-1) var(--space-4);
+}
+
+.sidebarSection {
+  padding: var(--space-2) var(--space-4);
+}
+
+.sidebarDates {
+  padding: var(--space-2) var(--space-4);
+}
+
+/* ── Section row (key-value label + control) ─────────── */
+
+.sectionRow {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--color-border-subtle);
+  min-height: 28px;
 }
 
-.sidePanelTitle {
+.sectionLabel {
   font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-tertiary);
+}
+
+/* ── Section header (icon + title + action) ──────────── */
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.sectionIcon {
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+  opacity: 0.6;
+}
+
+.sectionIconDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--color-text-tertiary);
+  opacity: 0.3;
+  flex-shrink: 0;
+}
+
+.sectionTitle {
+  font-size: 11px;
   font-weight: 600;
   color: var(--color-text-tertiary);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.05em;
+  flex: 1;
 }
 
-.sidePanelAction {
+.sectionAction {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -521,37 +598,42 @@
   transition: all var(--transition-fast);
 }
 
-.sidePanelAction:hover {
+.sectionAction:hover {
   color: var(--color-link);
   background: rgba(59, 130, 246, 0.06);
 }
 
-.sidePanelAction:disabled {
+.sectionAction:disabled {
   opacity: 0.4;
   cursor: default;
 }
 
-.sidePanelBody {
-  padding: var(--space-3) var(--space-4);
+.sectionItems {
+  display: flex;
+  flex-direction: column;
 }
 
-/* ── Details fields (assignee, dates) ─────────────────── */
+/* ── Date rows ───────────────────────────────────────── */
 
-.detailRow {
+.dateRow {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-2) 0;
+  min-height: 22px;
 }
 
-.detailRow + .detailRow {
-  border-top: 1px solid var(--color-border-subtle);
-}
-
-.detailLabel {
-  font-size: 13px;
+.dateLabel {
+  font-size: 11px;
+  font-weight: 500;
   color: var(--color-text-tertiary);
 }
+
+.dateValue {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}
+
+/* ── Details fields (assignee, dates) ─────────────────── */
 
 .detailValue {
   font-size: 13px;
@@ -609,18 +691,6 @@
   color: var(--color-link);
 }
 
-.collectionRow {
-  padding: var(--space-2) 0;
-  position: relative;
-}
-
-.collectionRow + .detailRow {
-  border-top: 1px solid var(--color-border-subtle);
-}
-
-.detailRow + .collectionRow {
-  border-top: 1px solid var(--color-border-subtle);
-}
 
 .collectionDropdown {
   display: flex;
@@ -786,10 +856,6 @@
   color: var(--color-link);
 }
 
-.noTags {
-  font-size: 13px;
-  color: var(--color-text-tertiary);
-}
 
 /* ── Tag manager popover ──────────────────────────────── */
 
@@ -1981,12 +2047,334 @@
 /* ── Responsive ───────────────────────────────────────── */
 
 @media (max-width: 768px) {
+  .page {
+    gap: var(--space-3);
+  }
+
   .grid {
     grid-template-columns: 1fr;
+    gap: var(--space-4);
   }
 
   .sidebar {
     order: -1;
     position: static;
   }
+
+  .card {
+    padding: var(--space-4);
+  }
+
+  /* Top bar */
+  .topBar {
+    gap: var(--space-1);
+  }
+
+  .siblingNav {
+    margin-left: auto;
+  }
+
+  /* Title */
+  .titleDisplay {
+    font-size: 20px;
+  }
+
+  .titleInput {
+    font-size: 20px;
+  }
+
+  /* Description */
+  .descriptionTextarea {
+    min-height: 160px;
+    font-size: 13px;
+  }
+
+  .descriptionPreview {
+    min-height: 160px;
+  }
+
+  .mdToolbar {
+    flex-wrap: wrap;
+    gap: 0;
+    padding: 3px 4px;
+  }
+
+  .mdToolbarBtn {
+    width: 32px;
+    height: 32px;
+  }
+
+  /* Sidebar */
+  .sidebarSection {
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .sidebarDates {
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .sidebarDivider {
+    margin: var(--space-1) var(--space-3);
+  }
+
+  .sectionRow {
+    flex-wrap: wrap;
+    gap: var(--space-1);
+  }
+
+  /* Assignee overlay - position for mobile */
+  .assigneeOverlay {
+    transform: none;
+    left: var(--space-3) !important;
+    right: var(--space-3) !important;
+    min-width: unset;
+    width: auto;
+  }
+
+  /* Tags */
+  .tagX {
+    opacity: 1;
+  }
+
+  /* Linked cards & boards - show remove buttons on mobile (no hover) */
+  .linkRemove {
+    opacity: 1;
+  }
+
+  /* Checklist */
+  .checklistDragHandle {
+    opacity: 0.5;
+  }
+
+  .checklistEditBtn {
+    opacity: 1;
+  }
+
+  .checklistRemove {
+    opacity: 1;
+  }
+
+  .checklistItem {
+    padding: 6px 4px;
+  }
+
+  /* Custom fields - show delete on mobile */
+  .cfDeleteBtn {
+    opacity: 1;
+  }
+
+  /* Comments */
+  .comment {
+    gap: var(--space-2);
+  }
+
+  .commentActions {
+    opacity: 1;
+  }
+
+  .commentForm {
+    gap: var(--space-2);
+  }
+
+  .commentTextarea {
+    min-height: 36px;
+    font-size: 14px;
+  }
+
+  .commentEditTextarea {
+    font-size: 14px;
+  }
+
+  /* Activity tabs */
+  .activityTabs {
+    width: 100%;
+  }
+
+  .activityTab {
+    flex: 1;
+    justify-content: center;
+  }
+
+  /* History */
+  .historyEntry {
+    gap: var(--space-2);
+  }
+
+  /* Empty state */
+  .emptyState {
+    padding: 40px var(--space-4);
+    font-size: 14px;
+  }
+}
+
+/* Small phones */
+@media (max-width: 480px) {
+  .card {
+    padding: var(--space-3);
+  }
+
+  .titleDisplay {
+    font-size: 18px;
+  }
+
+  .titleInput {
+    font-size: 18px;
+  }
+
+  .sidebarSection {
+    padding: var(--space-1) var(--space-3);
+  }
+
+  .sidebarDates {
+    padding: var(--space-1) var(--space-3);
+  }
+
+  .fieldRow {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-1);
+  }
+
+  .fieldVal {
+    text-align: left;
+  }
+
+  .cfValueInput {
+    text-align: left;
+  }
+
+  .boardRow {
+    flex-wrap: wrap;
+    gap: var(--space-1);
+  }
+
+  .commentMeta {
+    flex-wrap: wrap;
+  }
+
+  .descriptionActions {
+    flex-wrap: wrap;
+  }
+
+  .checklistAddActions {
+    flex-wrap: wrap;
+  }
+}
+
+/* ── Keyboard shortcuts overlay ──────────────────────── */
+
+.shortcutsBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: shortcutsFadeIn 0.15s ease;
+}
+
+@keyframes shortcutsFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.shortcutsModal {
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg, 0 8px 30px rgba(0, 0, 0, 0.12));
+  width: 340px;
+  max-width: 92vw;
+  overflow: hidden;
+  animation: shortcutsSlideIn 0.15s ease;
+}
+
+@keyframes shortcutsSlideIn {
+  from { opacity: 0; transform: scale(0.96) translateY(8px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.shortcutsHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--color-border-subtle);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.shortcutsClose {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.shortcutsClose:hover {
+  background: var(--color-bg-hover);
+  color: var(--color-text);
+}
+
+.shortcutsList {
+  padding: 8px 16px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.shortcutRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 0;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.shortcutRow span {
+  flex: 1;
+}
+
+.kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 22px;
+  padding: 0 6px;
+  background: var(--color-bg-secondary, var(--color-page));
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-text);
+  box-shadow: 0 1px 0 var(--color-border);
+  margin-right: 12px;
+  white-space: nowrap;
+}
+
+.shortcutsSep {
+  height: 1px;
+  background: var(--color-border-subtle);
+  margin: 6px 0;
+}
+
+.shortcutsGroup {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-tertiary);
+  padding: 4px 0 2px;
 }
