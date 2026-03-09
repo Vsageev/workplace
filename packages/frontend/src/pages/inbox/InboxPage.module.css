@@ -799,6 +799,24 @@
   padding: var(--space-2) var(--space-4);
 }
 
+.fallbackNotice {
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-warning, #b8860b);
+  background: color-mix(in srgb, var(--color-warning, #b8860b) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-warning, #b8860b) 20%, transparent);
+  border-radius: 999px;
+  padding: 4px 12px;
+}
+
+.fallbackNotice svg {
+  flex-shrink: 0;
+}
+
 /* ── Reply box ── */
 .replyBox {
   border-top: 1px solid var(--color-border);

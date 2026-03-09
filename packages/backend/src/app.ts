@@ -40,13 +40,18 @@ import { storageRoutes } from './routes/storage.js';
 import { userRoutes } from './routes/users.js';
 import { workspaceRoutes } from './routes/workspaces.js';
 import { agentRoutes } from './routes/agents.js';
+import { skillRoutes } from './routes/skills.js';
 import { agentChatRoutes } from './routes/agent-chat.js';
 import { agentRunRoutes } from './routes/agent-runs.js';
 import { settingsRoutes, initRateLimiterFromSettings } from './routes/settings.js';
 import { initAllCronJobs, shutdownAgentCronJobs } from './services/agent-cron.js';
 import { initAllBoardCronJobs } from './services/board-cron.js';
 import { reconcileRunsOnStartup, cleanupOldRunLogs } from './services/agent-runs.js';
-import { initializeAgentChatQueue, reattachRunningProcess, RUNS_DIR } from './services/agent-chat.js';
+import {
+  initializeAgentChatQueue,
+  reattachRunningProcess,
+  RUNS_DIR,
+} from './services/agent-chat.js';
 import { initializeAgentBatchQueue } from './services/agent-batch-queue.js';
 import { restoreManagedTelegramWebhooks } from './services/telegram.js';
 
@@ -124,6 +129,7 @@ export async function buildApp() {
   await app.register(userRoutes);
   await app.register(workspaceRoutes);
   await app.register(agentRoutes);
+  await app.register(skillRoutes);
   await app.register(agentChatRoutes);
   await app.register(agentRunRoutes);
   await app.register(settingsRoutes);

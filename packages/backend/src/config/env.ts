@@ -1,4 +1,6 @@
 import 'dotenv/config';
+import os from 'node:os';
+import path from 'node:path';
 import { z } from 'zod/v4';
 
 const envSchema = z.object({
@@ -12,6 +14,11 @@ const envSchema = z.object({
   BODY_LIMIT_BYTES: z.coerce.number().int().positive().default(1_048_576),
 
   DATA_DIR: z.string().default('./data'),
+
+  // Directory where agents create new projects (outside the workplace repo)
+  PROJECTS_DIR: z
+    .string()
+    .default(path.join(os.homedir(), 'Projects', 'agent-builds')),
 
   // JWT
   JWT_SECRET: z.string().min(32).default('change-me-to-a-real-secret-in-production!!'),
@@ -55,6 +62,9 @@ const envSchema = z.object({
   RATE_LIMIT_API_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
   RATE_LIMIT_AGENT_PROMPT_MAX: z.coerce.number().int().positive().default(10),
   RATE_LIMIT_AGENT_PROMPT_WINDOW_S: z.coerce.number().int().positive().default(60),
+
+  // Global agent concurrency — max simultaneous agent processes across all conversations
+  MAX_CONCURRENT_AGENTS: z.coerce.number().int().positive().default(10),
 
   // Email sync
   EMAIL_SYNC_CRON: z.string().default('*/2 * * * *'),

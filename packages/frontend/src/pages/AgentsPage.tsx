@@ -27,15 +27,9 @@ import {
   Settings,
   FolderOpen,
   Folder,
-  File,
-  FileText,
   Image,
-  Upload,
-  FolderPlus,
   ChevronRight,
-  CornerLeftUp,
   HardDrive,
-  Eye,
   Copy,
   Check,
   ToggleLeft,
@@ -48,11 +42,14 @@ import {
   Clock,
   Loader,
   ListOrdered,
+  Blocks,
+  RefreshCw,
   GripVertical,
   Save,
   Square,
   ChevronsDownUp,
   ChevronsUpDown,
+  MoreHorizontal,
 } from 'lucide-react';
 import {
   Button,
@@ -68,20 +65,13 @@ import {
 import { api, apiUpload, ApiError } from '../lib/api';
 import { toast } from '../stores/toast';
 import {
-  formatFileSize,
-  formatFileDate,
-  isTextPreviewable,
-  isImagePreviewable,
-  isPreviewable,
-} from '../lib/file-utils';
-import {
   getImagesFromClipboardData,
   getImagesFromFileList,
   isImageFile,
   prepareImageForUpload,
 } from '../lib/image-upload';
 import { scrollToFirstError } from '../lib/scroll-to-error';
-import { FilePreviewModal } from '../components/FilePreviewModal';
+import { FileBrowser } from '../components/FileBrowser';
 import { FileSystemBrowserModal } from '../components/FileSystemBrowserModal';
 import {
   AgentAvatar,
@@ -430,478 +420,152 @@ function generateId(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
 
-/* ── Agent file entry type ── */
-
-type AgentFileEntry = import('../lib/file-utils').FileEntry & {
-  isReference?: boolean;
-  target?: string;
-};
-
-function getAgentFileIcon(entry: AgentFileEntry) {
-  if (isImagePreviewable(entry.name)) return <Image size={18} className={styles.filesIconFile} />;
-  if (isTextPreviewable(entry.name)) return <FileText size={18} className={styles.filesIconFile} />;
-  return <File size={18} className={styles.filesIconFile} />;
-}
-
-function getAgentEntryIcon(entry: AgentFileEntry) {
-  const baseIcon =
-    entry.type === 'folder' ? (
-      <Folder size={18} className={styles.filesIconFolder} />
-    ) : (
-      getAgentFileIcon(entry)
-    );
-
-  if (!entry.isReference) return baseIcon;
-
-  return (
-    <Tooltip label={`Reference → ${entry.target}`}>
-      <span className={styles.filesIconWithBadge}>
-        {baseIcon}
-        <Link2 size={10} className={styles.filesIconBadge} />
-      </span>
-    </Tooltip>
-  );
-}
-
 /* ── Agent Files sub-component ── */
 
+function agentFileEndpoints(agentId: string) {
+  const enc = encodeURIComponent;
+  return {
+    list: (dirPath: string) => `/agents/${agentId}/files?path=${enc(dirPath)}`,
+    createFolder: `/agents/${agentId}/files/folders`,
+    upload: `/agents/${agentId}/files/upload`,
+    download: (filePath: string) => `/agents/${agentId}/files/download?path=${enc(filePath)}`,
+    delete: (entryPath: string) => `/agents/${agentId}/files?path=${enc(entryPath)}`,
+    reveal: `/agents/${agentId}/files/reveal`,
+    rename: `/agents/${agentId}/files/rename`,
+  };
+}
+
 function AgentFiles({ agentId }: { agentId: string }) {
-  const [currentPath, setCurrentPath] = useState('/');
-  const [entries, setEntries] = useState<AgentFileEntry[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
-
-  const [showNewFolder, setShowNewFolder] = useState(false);
-  const [folderName, setFolderName] = useState('');
-  const [creatingFolder, setCreatingFolder] = useState(false);
-
   const [showFsBrowser, setShowFsBrowser] = useState(false);
+  const [refKey, setRefKey] = useState(0);
 
-  const [deletingPath, setDeletingPath] = useState<string | null>(null);
-  const [deleteLoading, setDeleteLoading] = useState(false);
+  // Skills attach/detach
+  const [skillsPickerOpen, setSkillsPickerOpen] = useState(false);
+  const [allSkills, setAllSkills] = useState<{ id: string; name: string; description: string }[]>([]);
+  const [agentSkillIds, setAgentSkillIds] = useState<string[]>([]);
+  const [skillsLoaded, setSkillsLoaded] = useState(false);
 
-  // Preview
-  const [previewEntry, setPreviewEntry] = useState<AgentFileEntry | null>(null);
+  const endpoints = useMemo(() => agentFileEndpoints(agentId), [agentId]);
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [uploading, setUploading] = useState(false);
-  const [dragOver, setDragOver] = useState(false);
-  const dragCounter = useRef(0);
-
-  const fetchEntries = useCallback(
-    async (dirPath: string) => {
-      setLoading(true);
-      setError('');
+  // Load skills eagerly on mount
+  useEffect(() => {
+    if (skillsLoaded) return;
+    (async () => {
       try {
-        const data = await api<{ entries: AgentFileEntry[] }>(
-          `/agents/${agentId}/files?path=${encodeURIComponent(dirPath)}`,
-        );
-        setEntries(data.entries);
-      } catch (err) {
-        setError(err instanceof ApiError ? err.message : 'Failed to load files');
-      } finally {
-        setLoading(false);
-      }
-    },
-    [agentId],
-  );
+        const [allData, agentData] = await Promise.all([
+          api<{ entries: { id: string; name: string; description: string }[] }>('/skills'),
+          api<{ entries: { id: string }[] }>(`/agents/${agentId}/skills`),
+        ]);
+        setAllSkills(allData.entries);
+        setAgentSkillIds(agentData.entries.map((s) => s.id));
+        setSkillsLoaded(true);
+      } catch { /* ignore */ }
+    })();
+  }, [agentId, skillsLoaded]);
 
   useEffect(() => {
-    setCurrentPath('/');
+    setSkillsLoaded(false);
   }, [agentId]);
 
-  useEffect(() => {
-    fetchEntries(currentPath);
-  }, [currentPath, fetchEntries]);
+  const attachedSkills = allSkills.filter((s) => agentSkillIds.includes(s.id));
+  const unattachedSkills = allSkills.filter((s) => !agentSkillIds.includes(s.id));
 
-  function navigateTo(dirPath: string) {
-    setCurrentPath(dirPath);
-    setShowNewFolder(false);
-    setDeletingPath(null);
+  async function openSkillsPicker() {
+    setSkillsPickerOpen(true);
+    try {
+      const [allData, agentData] = await Promise.all([
+        api<{ entries: { id: string; name: string; description: string }[] }>('/skills'),
+        api<{ entries: { id: string }[] }>(`/agents/${agentId}/skills`),
+      ]);
+      setAllSkills(allData.entries);
+      setAgentSkillIds(agentData.entries.map((s) => s.id));
+    } catch { /* ignore */ }
   }
 
-  const pathSegments = currentPath === '/' ? [] : currentPath.split('/').filter(Boolean);
-
-  async function handleCreateFolder() {
-    if (!folderName.trim()) return;
-    setCreatingFolder(true);
-    setError('');
+  async function handleAttachSkill(skillId: string) {
     try {
-      await api(`/agents/${agentId}/files/folders`, {
-        method: 'POST',
-        body: JSON.stringify({ path: currentPath, name: folderName.trim() }),
+      const data = await api<{ entries: { id: string }[] }>(`/agents/${agentId}/skills`, {
+        method: 'POST', body: JSON.stringify({ skillId }),
       });
-      setShowNewFolder(false);
-      setFolderName('');
-      setSuccess('Folder created');
-      await fetchEntries(currentPath);
-      setTimeout(() => setSuccess(''), 3000);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to create folder');
-    } finally {
-      setCreatingFolder(false);
-    }
+      setAgentSkillIds(data.entries.map((s) => s.id));
+      setSkillsPickerOpen(false);
+      toast.success('Skill attached');
+      setRefKey((k) => k + 1);
+    } catch (err) { toast.error(err instanceof ApiError ? err.message : 'Failed to attach skill'); }
+  }
+
+  async function handleDetachSkill(skillId: string) {
+    try {
+      await api(`/agents/${agentId}/skills/${skillId}`, { method: 'DELETE' });
+      setAgentSkillIds((prev) => prev.filter((id) => id !== skillId));
+      toast.success('Skill detached');
+      setRefKey((k) => k + 1);
+    } catch (err) { toast.error(err instanceof ApiError ? err.message : 'Failed to detach skill'); }
   }
 
   async function handleCreateReference(targetPath: string) {
     const name = targetPath.split('/').filter(Boolean).pop();
     if (!name) return;
     setShowFsBrowser(false);
-    setError('');
     try {
       await api(`/agents/${agentId}/files/references`, {
         method: 'POST',
-        body: JSON.stringify({ path: currentPath, name, target: targetPath }),
+        body: JSON.stringify({ path: '/', name, target: targetPath }),
       });
-      setSuccess('Reference created');
-      await fetchEntries(currentPath);
-      setTimeout(() => setSuccess(''), 3000);
+      toast.success('Reference created');
+      setRefKey((k) => k + 1);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to create reference');
+      toast.error(err instanceof ApiError ? err.message : 'Failed to create reference');
     }
   }
-
-  async function uploadFile(file: globalThis.File) {
-    setUploading(true);
-    setError('');
-    try {
-      const formData = new FormData();
-      formData.append('path', currentPath);
-      formData.append('file', file);
-      await apiUpload(`/agents/${agentId}/files/upload`, formData);
-      setSuccess('File uploaded');
-      await fetchEntries(currentPath);
-      setTimeout(() => setSuccess(''), 3000);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to upload file');
-    } finally {
-      setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
-  }
-
-  function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (file) uploadFile(file);
-  }
-
-  function handleDrop(e: React.DragEvent) {
-    e.preventDefault();
-    dragCounter.current = 0;
-    setDragOver(false);
-    const file = e.dataTransfer.files?.[0];
-    if (file) uploadFile(file);
-  }
-
-  function handleDragEnter(e: React.DragEvent) {
-    e.preventDefault();
-    dragCounter.current++;
-    setDragOver(true);
-  }
-
-  function handleDragOver(e: React.DragEvent) {
-    e.preventDefault();
-  }
-
-  function handleDragLeave(e: React.DragEvent) {
-    e.preventDefault();
-    dragCounter.current--;
-    if (dragCounter.current === 0) setDragOver(false);
-  }
-
-  async function handleDelete(itemPath: string) {
-    setDeleteLoading(true);
-    setError('');
-    try {
-      await api(`/agents/${agentId}/files?path=${encodeURIComponent(itemPath)}`, {
-        method: 'DELETE',
-      });
-      setDeletingPath(null);
-      setSuccess('Item deleted');
-      await fetchEntries(currentPath);
-      setTimeout(() => setSuccess(''), 3000);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to delete item');
-    } finally {
-      setDeleteLoading(false);
-    }
-  }
-
-  function handleDownload(filePath: string) {
-    const token = localStorage.getItem('ws_access_token');
-    const url = `/api/agents/${agentId}/files/download?path=${encodeURIComponent(filePath)}`;
-    fetch(url, { headers: { Authorization: `Bearer ${token}` } })
-      .then((res) => res.blob())
-      .then((blob) => {
-        const objUrl = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = objUrl;
-        a.download = filePath.split('/').pop() || 'file';
-        document.body.appendChild(a);
-        a.click();
-        URL.revokeObjectURL(objUrl);
-        a.remove();
-      })
-      .catch(() => setError('Failed to download file'));
-  }
-
-  async function handleReveal(filePath: string) {
-    try {
-      await api(`/agents/${agentId}/files/reveal`, {
-        method: 'POST',
-        body: JSON.stringify({ path: filePath }),
-      });
-    } catch {
-      setError('Failed to reveal in file manager');
-    }
-  }
-
-  function handleEntryClick(entry: AgentFileEntry) {
-    if (entry.type === 'folder') {
-      navigateTo(entry.path);
-    } else if (isPreviewable(entry.name)) {
-      setPreviewEntry(entry);
-    } else {
-      handleDownload(entry.path);
-    }
-  }
-
-  const sorted = [...entries].sort((a, b) => {
-    if (a.type !== b.type) return a.type === 'folder' ? -1 : 1;
-    return a.name.localeCompare(b.name);
-  });
-
-  const parentPath =
-    currentPath === '/'
-      ? null
-      : '/' + currentPath.split('/').filter(Boolean).slice(0, -1).join('/');
 
   return (
     <div className={styles.filesPanel}>
-      <input
-        ref={fileInputRef}
-        type="file"
-        className={styles.filesHiddenInput}
-        onChange={handleUpload}
-      />
-
-      {/* Breadcrumb */}
-      <nav className={styles.filesBreadcrumb}>
-        <button
-          className={`${styles.filesBreadcrumbItem} ${currentPath === '/' ? styles.filesBreadcrumbActive : ''}`}
-          onClick={() => navigateTo('/')}
-        >
-          <HardDrive size={14} />
-          Files
-        </button>
-        {pathSegments.map((segment, i) => {
-          const segPath = '/' + pathSegments.slice(0, i + 1).join('/');
-          const isLast = i === pathSegments.length - 1;
-          return (
-            <span key={segPath} className={styles.filesBreadcrumbSep}>
-              <ChevronRight size={14} />
-              <button
-                className={`${styles.filesBreadcrumbItem} ${isLast ? styles.filesBreadcrumbActive : ''}`}
-                onClick={() => navigateTo(segPath)}
-              >
-                {segment}
-              </button>
-            </span>
-          );
-        })}
-      </nav>
-
-      {success && <div className={styles.filesToast}>{success}</div>}
-      {error && <div className={styles.filesError}>{error}</div>}
+      {/* Enabled skills */}
+      {skillsLoaded && (
+        <div className={styles.filesSkillsBar}>
+          <div className={styles.filesSkillsLabel}>
+            <Blocks size={13} />
+            Skills
+          </div>
+          <div className={styles.filesSkillsChips}>
+            {attachedSkills.map((skill) => (
+              <div key={skill.id} className={styles.filesSkillChip}>
+                <span className={styles.filesSkillChipName}>{skill.name}</span>
+                <button
+                  className={styles.filesSkillChipRemove}
+                  onClick={() => void handleDetachSkill(skill.id)}
+                  aria-label={`Remove ${skill.name}`}
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            ))}
+            <button
+              className={styles.filesSkillAddBtn}
+              onClick={() => void openSkillsPicker()}
+            >
+              <Plus size={13} />
+              Add
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className={styles.filesPanelScroll}>
-        {loading ? (
-          <div className={styles.loadingState}>Loading...</div>
-        ) : (
-          <div className={styles.filesTable}>
-            <div className={styles.filesTableHeader}>
-              <span className={styles.filesColName}>Name</span>
-              <span className={styles.filesColSize}>Size</span>
-              <span className={styles.filesColDate}>Modified</span>
-              <span className={styles.filesColActions}>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={uploading}
-                >
-                  <Upload size={14} />
-                  {uploading ? 'Uploading...' : 'Upload'}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => {
-                    setShowNewFolder(!showNewFolder);
-                    setFolderName('');
-                  }}
-                >
-                  <FolderPlus size={14} />
-                  Folder
-                </Button>
-                <Button size="sm" variant="ghost" onClick={() => setShowFsBrowser(true)}>
-                  <Link2 size={14} />
-                  Reference
-                </Button>
-              </span>
-            </div>
-
-            {showNewFolder && (
-              <div className={styles.filesNewFolderRow}>
-                <div className={styles.filesNewFolderIcon}>
-                  <Folder size={18} className={styles.filesIconFolder} />
-                </div>
-                <Input
-                  label=""
-                  placeholder="Folder name"
-                  value={folderName}
-                  onChange={(e) => setFolderName(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleCreateFolder();
-                    if (e.key === 'Escape') setShowNewFolder(false);
-                  }}
-                />
-                <Button
-                  size="sm"
-                  onClick={handleCreateFolder}
-                  disabled={creatingFolder || !folderName.trim()}
-                >
-                  {creatingFolder ? 'Creating...' : 'Create'}
-                </Button>
-                <Button size="sm" variant="ghost" onClick={() => setShowNewFolder(false)}>
-                  Cancel
-                </Button>
-              </div>
-            )}
-
-            {parentPath !== null && (
-              <div className={styles.filesRow}>
-                <button
-                  className={styles.filesColName}
-                  onClick={() => navigateTo(parentPath === '/' ? '/' : parentPath)}
-                >
-                  <CornerLeftUp size={18} className={styles.filesIconFile} />
-                  <span className={styles.filesFileName}>..</span>
-                </button>
-                <span className={styles.filesColSize}>—</span>
-                <span className={styles.filesColDate}>—</span>
-                <span className={styles.filesColActions} />
-              </div>
-            )}
-
-            {sorted.length === 0 ? (
-              <div
-                className={`${styles.filesEmpty} ${dragOver ? styles.filesEmptyDragOver : ''}`}
-                onDrop={handleDrop}
-                onDragEnter={handleDragEnter}
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-              >
-                <Upload size={32} strokeWidth={1.5} />
-                <p>Drop files here or use the upload button</p>
-              </div>
-            ) : (
-              <div
-                className={`${styles.filesDropTarget} ${dragOver ? styles.filesDropTargetActive : ''}`}
-                onDrop={handleDrop}
-                onDragEnter={handleDragEnter}
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-              >
-                {sorted.map((entry) => (
-                  <div key={entry.path} className={styles.filesRow}>
-                    <button className={styles.filesColName} onClick={() => handleEntryClick(entry)}>
-                      {getAgentEntryIcon(entry)}
-                      <span className={styles.filesFileName}>{entry.name}</span>
-                    </button>
-                    <span className={styles.filesColSize}>
-                      {entry.type === 'file' ? formatFileSize(entry.size) : '—'}
-                    </span>
-                    <span className={styles.filesColDate}>{formatFileDate(entry.createdAt)}</span>
-                    <span className={styles.filesColActions}>
-                      {entry.type === 'file' && isPreviewable(entry.name) && (
-                        <Tooltip label="Preview">
-                          <button
-                            className={styles.filesIconBtn}
-                            onClick={() => setPreviewEntry(entry)}
-                            aria-label="Preview"
-                          >
-                            <Eye size={16} />
-                          </button>
-                        </Tooltip>
-                      )}
-                      {entry.type === 'file' && (
-                        <Tooltip label="Download">
-                          <button
-                            className={styles.filesIconBtn}
-                            onClick={() => handleDownload(entry.path)}
-                            aria-label="Download"
-                          >
-                            <Download size={16} />
-                          </button>
-                        </Tooltip>
-                      )}
-                    <Tooltip label="Show in Finder">
-                      <button
-                        className={styles.filesIconBtn}
-                        onClick={() => handleReveal(entry.path)}
-                        aria-label="Show in Finder"
-                      >
-                        <FolderOpen size={16} />
-                      </button>
-                    </Tooltip>
-                    {deletingPath === entry.path ? (
-                      <>
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => setDeletingPath(null)}
-                          disabled={deleteLoading}
-                        >
-                          Cancel
-                        </Button>
-                        <Button
-                          size="sm"
-                          onClick={() => handleDelete(entry.path)}
-                          disabled={deleteLoading}
-                        >
-                          {deleteLoading ? 'Deleting...' : 'Confirm'}
-                        </Button>
-                      </>
-                    ) : (
-                      <Tooltip label="Delete">
-                        <button
-                          className={`${styles.filesIconBtn} ${styles.filesIconBtnDanger}`}
-                          onClick={() => setDeletingPath(entry.path)}
-                          aria-label="Delete"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </Tooltip>
-                    )}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-        )}
-      </div>
-
-      {previewEntry && (
-        <FilePreviewModal
-          fileName={previewEntry.name}
-          downloadUrl={`/api/agents/${agentId}/files/download?path=${encodeURIComponent(previewEntry.path)}`}
-          onClose={() => setPreviewEntry(null)}
-          onDownload={() => handleDownload(previewEntry.path)}
+        <FileBrowser
+          key={refKey}
+          endpoints={endpoints}
+          rootLabel="Files"
+          rootIcon={HardDrive}
+          extraToolbarButtons={
+            <Button size="sm" variant="ghost" onClick={() => setShowFsBrowser(true)}>
+              <Link2 size={14} />
+              Reference
+            </Button>
+          }
         />
-      )}
+      </div>
 
       {showFsBrowser && (
         <FileSystemBrowserModal
@@ -909,8 +573,72 @@ function AgentFiles({ agentId }: { agentId: string }) {
           onClose={() => setShowFsBrowser(false)}
         />
       )}
+
+      {skillsPickerOpen && (
+        <div className={styles.skillsPickerOverlay} onClick={() => setSkillsPickerOpen(false)}>
+          <div className={styles.skillsPickerModal} onClick={(e) => e.stopPropagation()}>
+            <div className={styles.skillsPickerHeader}>
+              <span className={styles.skillsPickerTitle}>Add Skill</span>
+              <button className={styles.skillsPickerClose} onClick={() => setSkillsPickerOpen(false)}>
+                <X size={16} />
+              </button>
+            </div>
+            <div className={styles.skillsPickerBody}>
+              {unattachedSkills.length === 0 ? (
+                <div className={styles.skillsPickerEmpty}>
+                  <Blocks size={28} className={styles.skillsPickerEmptyIcon} />
+                  <p className={styles.skillsPickerEmptyText}>
+                    {allSkills.length === 0
+                      ? 'No skills exist yet. Create skills from the Skills manager in the sidebar.'
+                      : 'All available skills are already added to this agent.'}
+                  </p>
+                </div>
+              ) : (
+                unattachedSkills.map((skill) => (
+                  <div
+                    key={skill.id}
+                    className={styles.skillsPickerItem}
+                    onClick={() => void handleAttachSkill(skill.id)}
+                  >
+                    <div className={styles.skillsPickerIcon}>
+                      <Blocks size={16} />
+                    </div>
+                    <div className={styles.skillsPickerInfo}>
+                      <div className={styles.skillsPickerName}>{skill.name}</div>
+                      {skill.description && (
+                        <div className={styles.skillsPickerDesc}>{skill.description}</div>
+                      )}
+                    </div>
+                    <div className={styles.skillsPickerAdd}>
+                      <Plus size={14} />
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
+}
+
+/* ── Skill types ── */
+
+interface SkillFull {
+  id: string;
+  name: string;
+  description: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface SkillFileEntry {
+  name: string;
+  path: string;
+  type: 'file' | 'folder';
+  size: number;
+  createdAt: string;
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -1032,6 +760,52 @@ export function AgentsPage() {
   const [queueItems, setQueueItems] = useState<QueueItem[]>([]);
   const [editingQueueItemId, setEditingQueueItemId] = useState<string | null>(null);
   const [editingQueuePrompt, setEditingQueuePrompt] = useState('');
+
+  // ── Skills manager (page-level) ──
+  const [skillsManagerOpen, setSkillsManagerOpen] = useState(false);
+  const [mgrSkills, setMgrSkills] = useState<SkillFull[]>([]);
+  const [mgrLoading, setMgrLoading] = useState(false);
+  const [mgrCreating, setMgrCreating] = useState(false);
+  const [mgrEditingId, setMgrEditingId] = useState<string | null>(null);
+  const [mgrFormName, setMgrFormName] = useState('');
+  const [mgrFormDesc, setMgrFormDesc] = useState('');
+  const [mgrSaving, setMgrSaving] = useState(false);
+  // File browsing inside manager
+  const [mgrActiveSkillId, setMgrActiveSkillId] = useState<string | null>(null);
+  const [mgrFiles, setMgrFiles] = useState<SkillFileEntry[]>([]);
+  const [mgrFilePath, setMgrFilePath] = useState('/');
+  const [mgrFilesLoading, setMgrFilesLoading] = useState(false);
+  // File editing inside manager
+  const [mgrEditingFile, setMgrEditingFile] = useState<{ path: string; content: string } | null>(null);
+  const [mgrEditContent, setMgrEditContent] = useState('');
+  const [mgrFileSaving, setMgrFileSaving] = useState(false);
+  // New file inside manager
+  const [mgrCreatingFile, setMgrCreatingFile] = useState(false);
+  const [mgrNewFileName, setMgrNewFileName] = useState('');
+  const [mgrNewFileContent, setMgrNewFileContent] = useState('');
+  const mgrNameRef = useRef<HTMLInputElement>(null);
+  // Upload & folder inside manager
+  const mgrFileInputRef = useRef<HTMLInputElement>(null);
+  const [mgrUploading, setMgrUploading] = useState(false);
+  const [mgrDragOver, setMgrDragOver] = useState(false);
+  const mgrDragCounter = useRef(0);
+  const [mgrShowNewFolder, setMgrShowNewFolder] = useState(false);
+  const [mgrNewFolderName, setMgrNewFolderName] = useState('');
+
+  // ── Header menu ──
+  const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
+  const headerMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!headerMenuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (headerMenuRef.current && !headerMenuRef.current.contains(e.target as Node)) {
+        setHeaderMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [headerMenuOpen]);
 
   // ── Page settings ──
   const [pageSettingsOpen, setPageSettingsOpen] = useState(false);
@@ -1685,6 +1459,7 @@ export function AgentsPage() {
       setCronFormPrompt('');
     }
   }, [settingsAgent?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
 
   /* ── Cron job handlers ── */
 
@@ -2440,7 +2215,7 @@ export function AgentsPage() {
       if (form.newKeyPermissions.length === 0)
         errors.permissions = 'Select at least one permission';
     } else {
-      if (!form.apiKeyId) errors.apiKeyId = 'Select an API key';
+      if (!form.apiKeyId) errors.apiKeyId = 'Select a workspace API key';
     }
     setFormErrors(errors);
     if (Object.keys(errors).length > 0) {
@@ -2749,6 +2524,199 @@ export function AgentsPage() {
     );
   }
 
+  /* ── Skills manager helpers ── */
+
+  async function mgrFetchSkills() {
+    setMgrLoading(true);
+    try {
+      const data = await api<{ entries: SkillFull[] }>('/skills');
+      setMgrSkills(data.entries);
+    } catch { /* ignore */ }
+    finally { setMgrLoading(false); }
+  }
+
+  function openSkillsManager() {
+    setSkillsManagerOpen(true);
+    setMgrActiveSkillId(null);
+    setMgrEditingFile(null);
+    setMgrCreatingFile(false);
+    setMgrCreating(false);
+    setMgrEditingId(null);
+    void mgrFetchSkills();
+  }
+
+  async function mgrFetchFiles(skillId: string, dirPath: string) {
+    setMgrFilesLoading(true);
+    try {
+      const data = await api<{ entries: SkillFileEntry[] }>(
+        `/skills/${skillId}/files?path=${encodeURIComponent(dirPath)}`,
+      );
+      setMgrFiles(data.entries);
+    } catch { /* ignore */ }
+    finally { setMgrFilesLoading(false); }
+  }
+
+  async function mgrCreateSkill() {
+    const trimmed = mgrFormName.trim();
+    if (!trimmed) return;
+    setMgrSaving(true);
+    try {
+      const s = await api<SkillFull>('/skills', {
+        method: 'POST', body: JSON.stringify({ name: trimmed, description: mgrFormDesc.trim() }),
+      });
+      setMgrSkills((prev) => [...prev, s].sort((a, b) => a.name.localeCompare(b.name)));
+      setMgrCreating(false);
+      setMgrFormName(''); setMgrFormDesc('');
+      toast.success(`Skill "${trimmed}" created`);
+    } catch (err) { toast.error(err instanceof ApiError ? err.message : 'Failed to create skill'); }
+    finally { setMgrSaving(false); }
+  }
+
+  async function mgrUpdateSkill(id: string) {
+    const trimmed = mgrFormName.trim();
+    if (!trimmed) return;
+    setMgrSaving(true);
+    try {
+      const updated = await api<SkillFull>(`/skills/${id}`, {
+        method: 'PATCH', body: JSON.stringify({ name: trimmed, description: mgrFormDesc.trim() }),
+      });
+      setMgrSkills((prev) => prev.map((s) => (s.id === id ? updated : s)));
+      setMgrEditingId(null);
+      setMgrFormName(''); setMgrFormDesc('');
+      toast.success('Skill updated');
+    } catch (err) { toast.error(err instanceof ApiError ? err.message : 'Failed to update skill'); }
+    finally { setMgrSaving(false); }
+  }
+
+  async function mgrDeleteSkill(id: string) {
+    if (!window.confirm('Delete this skill? Removes from all agents and deletes all files.')) return;
+    try {
+      await api(`/skills/${id}`, { method: 'DELETE' });
+      setMgrSkills((prev) => prev.filter((s) => s.id !== id));
+      if (mgrActiveSkillId === id) { setMgrActiveSkillId(null); setMgrFiles([]); setMgrEditingFile(null); }
+      toast.success('Skill deleted');
+    } catch (err) { toast.error(err instanceof ApiError ? err.message : 'Failed to delete skill'); }
+  }
+
+  async function mgrResyncSkill(id: string) {
+    try {
+      await api(`/skills/${id}/resync`, { method: 'POST' });
+      toast.success('Pushed latest files to all agents');
+    } catch (err) { toast.error(err instanceof ApiError ? err.message : 'Failed to resync'); }
+  }
+
+  async function mgrOpenFile(entry: SkillFileEntry) {
+    if (entry.type === 'folder') { setMgrFilePath(entry.path); return; }
+    try {
+      const data = await api<{ content: string }>(
+        `/skills/${mgrActiveSkillId}/files/content?path=${encodeURIComponent(entry.path)}`,
+      );
+      setMgrEditingFile({ path: entry.path, content: data.content });
+      setMgrEditContent(data.content);
+    } catch (err) { toast.error(err instanceof ApiError ? err.message : 'Failed to read file'); }
+  }
+
+  async function mgrSaveFile() {
+    if (!mgrActiveSkillId || !mgrEditingFile) return;
+    setMgrFileSaving(true);
+    try {
+      await api(`/skills/${mgrActiveSkillId}/files/content`, {
+        method: 'PUT', body: JSON.stringify({ path: mgrEditingFile.path, content: mgrEditContent }),
+      });
+      setMgrEditingFile({ ...mgrEditingFile, content: mgrEditContent });
+      toast.success('File saved');
+    } catch (err) { toast.error(err instanceof ApiError ? err.message : 'Failed to save file'); }
+    finally { setMgrFileSaving(false); }
+  }
+
+  async function mgrCreateFile() {
+    if (!mgrActiveSkillId || !mgrNewFileName.trim()) return;
+    setMgrFileSaving(true);
+    try {
+      const fp = mgrFilePath === '/' ? `/${mgrNewFileName.trim()}` : `${mgrFilePath}/${mgrNewFileName.trim()}`;
+      await api(`/skills/${mgrActiveSkillId}/files/content`, {
+        method: 'PUT', body: JSON.stringify({ path: fp, content: mgrNewFileContent }),
+      });
+      setMgrCreatingFile(false); setMgrNewFileName(''); setMgrNewFileContent('');
+      toast.success('File created');
+      await mgrFetchFiles(mgrActiveSkillId, mgrFilePath);
+    } catch (err) { toast.error(err instanceof ApiError ? err.message : 'Failed to create file'); }
+    finally { setMgrFileSaving(false); }
+  }
+
+  async function mgrDeleteFile(path: string) {
+    if (!mgrActiveSkillId || !window.confirm(`Delete ${path}?`)) return;
+    try {
+      await api(`/skills/${mgrActiveSkillId}/files?path=${encodeURIComponent(path)}`, { method: 'DELETE' });
+      if (mgrEditingFile?.path === path) setMgrEditingFile(null);
+      await mgrFetchFiles(mgrActiveSkillId, mgrFilePath);
+      toast.success('Deleted');
+    } catch (err) { toast.error(err instanceof ApiError ? err.message : 'Failed to delete'); }
+  }
+
+  async function mgrUploadFile(file: globalThis.File) {
+    if (!mgrActiveSkillId) return;
+    setMgrUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('path', mgrFilePath);
+      formData.append('file', file);
+      await apiUpload(`/skills/${mgrActiveSkillId}/files/upload`, formData);
+      toast.success('File uploaded');
+      await mgrFetchFiles(mgrActiveSkillId, mgrFilePath);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Failed to upload file');
+    } finally {
+      setMgrUploading(false);
+      if (mgrFileInputRef.current) mgrFileInputRef.current.value = '';
+    }
+  }
+
+  function mgrHandleUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (file) void mgrUploadFile(file);
+  }
+
+  function mgrHandleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    mgrDragCounter.current = 0;
+    setMgrDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) void mgrUploadFile(file);
+  }
+
+  function mgrHandleDragEnter(e: React.DragEvent) {
+    e.preventDefault();
+    mgrDragCounter.current++;
+    setMgrDragOver(true);
+  }
+
+  function mgrHandleDragOver(e: React.DragEvent) {
+    e.preventDefault();
+  }
+
+  function mgrHandleDragLeave(e: React.DragEvent) {
+    e.preventDefault();
+    mgrDragCounter.current--;
+    if (mgrDragCounter.current === 0) setMgrDragOver(false);
+  }
+
+  async function mgrCreateFolder() {
+    if (!mgrActiveSkillId || !mgrNewFolderName.trim()) return;
+    try {
+      await api(`/skills/${mgrActiveSkillId}/files/folders`, {
+        method: 'POST',
+        body: JSON.stringify({ path: mgrFilePath, name: mgrNewFolderName.trim() }),
+      });
+      setMgrShowNewFolder(false);
+      setMgrNewFolderName('');
+      toast.success('Folder created');
+      await mgrFetchFiles(mgrActiveSkillId, mgrFilePath);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Failed to create folder');
+    }
+  }
+
   /* ══════════════════════════════════════════════════════════
      Render
      ══════════════════════════════════════════════════════════ */
@@ -2761,51 +2729,65 @@ export function AgentsPage() {
           <div className={styles.sidebarHeader}>
             <span className={styles.sidebarTitle}>Agents</span>
             <div style={{ display: 'flex', gap: 4 }}>
-              <Tooltip label="Page settings">
-                <button
-                  className={styles.addAgentBtn}
-                  onClick={() => setPageSettingsOpen(!pageSettingsOpen)}
-                  aria-label="Page settings"
-                >
-                  <SlidersHorizontal size={16} />
-                </button>
-              </Tooltip>
-              <Tooltip label="Manage groups">
-                <button
-                  className={styles.addAgentBtn}
-                  onClick={() => setManageGroupsOpen(!manageGroupsOpen)}
-                  aria-label="Manage groups"
-                >
-                  <Layers size={16} />
-                </button>
-              </Tooltip>
-              <Tooltip label="Collapse all chats">
-                <button
-                  className={styles.addAgentBtn}
-                  onClick={() => setCollapsedAgents('all')}
-                  aria-label="Collapse all chats"
-                >
-                  <ChevronsDownUp size={16} />
-                </button>
-              </Tooltip>
-              <Tooltip label="Expand all chats">
-                <button
-                  className={styles.addAgentBtn}
-                  onClick={() => setCollapsedAgents(new Set())}
-                  aria-label="Expand all chats"
-                >
-                  <ChevronsUpDown size={16} />
-                </button>
-              </Tooltip>
-              <Tooltip label="Clean all agents' chats">
-                <button
-                  className={styles.addAgentBtn}
-                  onClick={() => void cleanAllConversations()}
-                  aria-label="Clean all chats"
-                >
-                  <Eraser size={16} />
-                </button>
-              </Tooltip>
+              <div className={styles.headerMenuWrap} ref={headerMenuRef}>
+                <Tooltip label="More actions">
+                  <button
+                    className={styles.addAgentBtn}
+                    onClick={() => setHeaderMenuOpen(!headerMenuOpen)}
+                    aria-label="More actions"
+                  >
+                    <MoreHorizontal size={16} />
+                  </button>
+                </Tooltip>
+                {headerMenuOpen && (
+                  <div className={styles.headerMenu}>
+                    <button
+                      className={styles.headerMenuItem}
+                      onClick={() => { openSkillsManager(); setHeaderMenuOpen(false); }}
+                    >
+                      <Blocks size={14} />
+                      Skills manager
+                    </button>
+                    <button
+                      className={styles.headerMenuItem}
+                      onClick={() => { setPageSettingsOpen(!pageSettingsOpen); setHeaderMenuOpen(false); }}
+                    >
+                      <SlidersHorizontal size={14} />
+                      Page settings
+                    </button>
+                    <button
+                      className={styles.headerMenuItem}
+                      onClick={() => { setManageGroupsOpen(!manageGroupsOpen); setHeaderMenuOpen(false); }}
+                    >
+                      <Layers size={14} />
+                      Manage groups
+                    </button>
+                    <div className={styles.headerMenuDivider} />
+                    <button
+                      className={styles.headerMenuItem}
+                      onClick={() => { setCollapsedAgents('all'); setHeaderMenuOpen(false); }}
+                    >
+                      <ChevronsDownUp size={14} />
+                      Collapse all
+                    </button>
+                    <button
+                      className={styles.headerMenuItem}
+                      onClick={() => { setCollapsedAgents(new Set()); setHeaderMenuOpen(false); }}
+                    >
+                      <ChevronsUpDown size={14} />
+                      Expand all
+                    </button>
+                    <div className={styles.headerMenuDivider} />
+                    <button
+                      className={styles.headerMenuItem}
+                      onClick={() => { void cleanAllConversations(); setHeaderMenuOpen(false); }}
+                    >
+                      <Eraser size={14} />
+                      Clean all chats
+                    </button>
+                  </div>
+                )}
+              </div>
               <Tooltip label="Add agent">
                 <button
                   className={styles.addAgentBtn}
@@ -3631,7 +3613,10 @@ export function AgentsPage() {
                 </div>
 
                 <div>
-                  <div className={styles.fieldLabel}>API Key</div>
+                  <div className={styles.fieldLabel}>Workspace API Key</div>
+                  <div className={styles.fieldHint}>
+                    The agent uses this key to authenticate with your workspace — not a model provider key.
+                  </div>
                   <div className={styles.keyModeTabs}>
                     <button
                       type="button"
@@ -3658,7 +3643,7 @@ export function AgentsPage() {
                         error={formErrors.apiKeyId}
                       >
                         <option value="">
-                          {apiKeysLoading ? 'Loading keys...' : 'Select an API key'}
+                          {apiKeysLoading ? 'Loading keys...' : 'Select a workspace API key'}
                         </option>
                         {apiKeys.map((k) => (
                           <option key={k.id} value={k.id}>
@@ -3689,7 +3674,7 @@ export function AgentsPage() {
 
                       {apiKeys.length === 0 && !apiKeysLoading && (
                         <div className={styles.noKeysHint}>
-                          No active API keys. Switch to "Create new" to make one now.
+                          No active workspace API keys. Switch to "Create new" to make one now.
                         </div>
                       )}
                     </>
@@ -4137,6 +4122,275 @@ export function AgentsPage() {
           </div>
         </div>
       )}
+
+      {/* ── Skills Manager Modal (page-level) ── */}
+      {skillsManagerOpen && (() => {
+        const mgrActiveSkill = mgrSkills.find((s) => s.id === mgrActiveSkillId);
+        const mgrPathSegments = mgrFilePath === '/' ? [] : mgrFilePath.split('/').filter(Boolean);
+        const mgrSorted = [...mgrFiles].sort((a, b) => {
+          if (a.type !== b.type) return a.type === 'folder' ? -1 : 1;
+          return a.name.localeCompare(b.name);
+        });
+
+        return (
+          <div className={styles.skillsMgrOverlay} onClick={() => setSkillsManagerOpen(false)}>
+            <div className={styles.skillsMgrModal} onClick={(e) => e.stopPropagation()}>
+              {/* Left sidebar: skill list */}
+              <div className={styles.skillsMgrSidebar}>
+                <div className={styles.skillsMgrSidebarHeader}>
+                  <span className={styles.skillsMgrSidebarTitle}>Skills</span>
+                  <Tooltip label="New skill">
+                    <button
+                      className={styles.skillsMgrNewBtn}
+                      onClick={() => {
+                        setMgrCreating(true);
+                        setMgrEditingId(null);
+                        setMgrFormName(''); setMgrFormDesc('');
+                        setTimeout(() => mgrNameRef.current?.focus(), 50);
+                      }}
+                    >
+                      <Plus size={14} />
+                    </button>
+                  </Tooltip>
+                </div>
+
+                <div className={styles.skillsMgrList}>
+                  {mgrCreating && (
+                    <div className={styles.skillsMgrInlineForm}>
+                      <div>
+                        <div className={styles.skillsMgrInlineLabel}>Name</div>
+                        <input
+                          ref={mgrNameRef}
+                          className={styles.skillsMgrInlineInput}
+                          type="text"
+                          placeholder="e.g. API Guidelines"
+                          value={mgrFormName}
+                          onChange={(e) => setMgrFormName(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === 'Enter') void mgrCreateSkill(); if (e.key === 'Escape') setMgrCreating(false); }}
+                          maxLength={100}
+                        />
+                      </div>
+                      <div>
+                        <div className={styles.skillsMgrInlineLabel}>Description</div>
+                        <input
+                          className={styles.skillsMgrInlineInput}
+                          type="text"
+                          placeholder="One-line summary"
+                          value={mgrFormDesc}
+                          onChange={(e) => setMgrFormDesc(e.target.value)}
+                          maxLength={500}
+                        />
+                      </div>
+                      <div className={styles.skillsMgrInlineActions}>
+                        <button className={styles.skillsMgrCancelBtn} onClick={() => setMgrCreating(false)}>Cancel</button>
+                        <button className={styles.skillsMgrSaveBtn} onClick={() => void mgrCreateSkill()} disabled={!mgrFormName.trim() || mgrSaving}>
+                          {mgrSaving ? 'Saving...' : 'Create'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {mgrLoading ? (
+                    <div className={styles.loadingState} style={{ padding: 'var(--space-4)' }}>Loading...</div>
+                  ) : mgrSkills.length === 0 && !mgrCreating ? (
+                    <div className={styles.skillsMgrEmpty}>
+                      <Blocks size={24} className={styles.skillsMgrEmptyIcon} />
+                      <p className={styles.skillsMgrEmptyTitle}>No skills yet</p>
+                      <p className={styles.skillsMgrEmptyDesc}>Create reusable instruction packages to attach to agents.</p>
+                    </div>
+                  ) : (
+                    mgrSkills.map((skill) => {
+                      if (mgrEditingId === skill.id) {
+                        return (
+                          <div key={skill.id} className={styles.skillsMgrInlineForm}>
+                            <div>
+                              <div className={styles.skillsMgrInlineLabel}>Name</div>
+                              <input className={styles.skillsMgrInlineInput} type="text" value={mgrFormName} onChange={(e) => setMgrFormName(e.target.value)} maxLength={100} autoFocus />
+                            </div>
+                            <div>
+                              <div className={styles.skillsMgrInlineLabel}>Description</div>
+                              <input className={styles.skillsMgrInlineInput} type="text" value={mgrFormDesc} onChange={(e) => setMgrFormDesc(e.target.value)} maxLength={500} />
+                            </div>
+                            <div className={styles.skillsMgrInlineActions}>
+                              <button className={styles.skillsMgrCancelBtn} onClick={() => setMgrEditingId(null)}>Cancel</button>
+                              <button className={styles.skillsMgrSaveBtn} onClick={() => void mgrUpdateSkill(skill.id)} disabled={!mgrFormName.trim() || mgrSaving}>
+                                {mgrSaving ? 'Saving...' : 'Save'}
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      }
+                      return (
+                        <div
+                          key={skill.id}
+                          className={`${styles.skillsMgrItem} ${mgrActiveSkillId === skill.id ? styles.skillsMgrItemActive : ''}`}
+                          onClick={() => {
+                            setMgrActiveSkillId(skill.id);
+                            setMgrFilePath('/');
+                            setMgrEditingFile(null);
+                            setMgrCreatingFile(false);
+                            void mgrFetchFiles(skill.id, '/');
+                          }}
+                        >
+                          <div className={styles.skillsMgrItemIcon}>
+                            <Blocks size={14} />
+                          </div>
+                          <div className={styles.skillsMgrItemInfo}>
+                            <div className={styles.skillsMgrItemName}>{skill.name}</div>
+                            {skill.description && <div className={styles.skillsMgrItemDesc}>{skill.description}</div>}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+
+              {/* Right panel: detail + files */}
+              <div className={styles.skillsMgrMain}>
+                {mgrActiveSkillId && mgrActiveSkill ? (
+                  <>
+                    {/* File editor view */}
+                    {mgrEditingFile ? (
+                      <>
+                        <div className={styles.skillsMgrEditorHeader}>
+                          <button className={styles.skillsMgrBackBtn} onClick={() => setMgrEditingFile(null)}>
+                            <ChevronRight size={14} style={{ transform: 'rotate(180deg)' }} />
+                            Back
+                          </button>
+                          <span className={styles.skillsMgrEditorPath}>{mgrEditingFile.path}</span>
+                          <button
+                            className={styles.skillsMgrEditorSaveBtn}
+                            onClick={() => void mgrSaveFile()}
+                            disabled={mgrFileSaving || mgrEditContent === mgrEditingFile.content}
+                          >
+                            <Save size={13} />
+                            {mgrFileSaving ? 'Saving...' : 'Save'}
+                          </button>
+                          <button className={styles.skillsMgrClose} onClick={() => setSkillsManagerOpen(false)}>
+                            <X size={16} />
+                          </button>
+                        </div>
+                        <textarea
+                          className={styles.skillsMgrEditor}
+                          value={mgrEditContent}
+                          onChange={(e) => setMgrEditContent(e.target.value)}
+                          spellCheck={false}
+                        />
+                      </>
+                    ) : mgrCreatingFile ? (
+                      <>
+                        <div className={styles.skillsMgrEditorHeader}>
+                          <button className={styles.skillsMgrBackBtn} onClick={() => { setMgrCreatingFile(false); setMgrNewFileName(''); setMgrNewFileContent(''); }}>
+                            <ChevronRight size={14} style={{ transform: 'rotate(180deg)' }} />
+                            Back
+                          </button>
+                          <span className={styles.skillsMgrEditorPath}>New file in {mgrActiveSkill.name}</span>
+                          <button className={styles.skillsMgrClose} onClick={() => setSkillsManagerOpen(false)}>
+                            <X size={16} />
+                          </button>
+                        </div>
+                        <div className={styles.skillsMgrNewFileForm}>
+                          <input
+                            className={styles.skillsMgrNewFileInput}
+                            type="text"
+                            placeholder="filename.md"
+                            value={mgrNewFileName}
+                            onChange={(e) => setMgrNewFileName(e.target.value)}
+                            autoFocus
+                          />
+                          <textarea
+                            className={styles.skillsMgrEditor}
+                            value={mgrNewFileContent}
+                            onChange={(e) => setMgrNewFileContent(e.target.value)}
+                            placeholder="File content..."
+                            spellCheck={false}
+                          />
+                          <div className={styles.skillsMgrNewFileActions}>
+                            <button className={styles.skillsMgrCancelBtn} onClick={() => { setMgrCreatingFile(false); setMgrNewFileName(''); setMgrNewFileContent(''); }}>
+                              Cancel
+                            </button>
+                            <button
+                              className={styles.skillsMgrSaveBtn}
+                              onClick={() => void mgrCreateFile()}
+                              disabled={mgrFileSaving || !mgrNewFileName.trim()}
+                            >
+                              {mgrFileSaving ? 'Creating...' : 'Create file'}
+                            </button>
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        {/* Skill detail header */}
+                        <div className={styles.skillsMgrMainHeader}>
+                          <span className={styles.skillsMgrMainTitle}>{mgrActiveSkill.name}</span>
+                          <div className={styles.skillsMgrActions}>
+                            <Tooltip label="Rename skill">
+                              <button className={styles.skillsMgrActionBtnIcon} onClick={() => { setMgrEditingId(mgrActiveSkillId); setMgrCreating(false); setMgrFormName(mgrActiveSkill.name); setMgrFormDesc(mgrActiveSkill.description); }}>
+                                <Pencil size={14} />
+                              </button>
+                            </Tooltip>
+                            <Tooltip label="Push latest files to all agents">
+                              <button className={styles.skillsMgrActionBtn} onClick={() => void mgrResyncSkill(mgrActiveSkillId)}>
+                                <RefreshCw size={12} />
+                                Resync
+                              </button>
+                            </Tooltip>
+                            <Tooltip label="Delete skill">
+                              <button className={`${styles.skillsMgrActionBtnIcon} ${styles.skillsMgrActionBtnDanger}`} onClick={() => void mgrDeleteSkill(mgrActiveSkillId)}>
+                                <Trash2 size={14} />
+                              </button>
+                            </Tooltip>
+                          </div>
+                          <button className={styles.skillsMgrClose} onClick={() => setSkillsManagerOpen(false)}>
+                            <X size={16} />
+                          </button>
+                        </div>
+                        {mgrActiveSkill.description && (
+                          <div className={styles.skillsMgrMainDesc}>{mgrActiveSkill.description}</div>
+                        )}
+
+                        <div className={styles.skillsMgrFileList}>
+                          <FileBrowser
+                            endpoints={{
+                              list: (dirPath: string) => `/skills/${mgrActiveSkillId}/files?path=${encodeURIComponent(dirPath)}`,
+                              createFolder: `/skills/${mgrActiveSkillId}/files/folders`,
+                              upload: `/skills/${mgrActiveSkillId}/files/upload`,
+                              download: (filePath: string) => `/skills/${mgrActiveSkillId}/files/download?path=${encodeURIComponent(filePath)}`,
+                              delete: (entryPath: string) => `/skills/${mgrActiveSkillId}/files?path=${encodeURIComponent(entryPath)}`,
+                              reveal: `/skills/${mgrActiveSkillId}/files/reveal`,
+                            }}
+                            rootLabel="Files"
+                            rootIcon={Folder}
+                          />
+                        </div>
+                      </>
+                    )}
+                  </>
+                ) : (
+                  /* No skill selected placeholder */
+                  <>
+                    <div className={styles.skillsMgrMainHeader}>
+                      <span className={styles.skillsMgrMainTitle}>Skills Manager</span>
+                      <button className={styles.skillsMgrClose} onClick={() => setSkillsManagerOpen(false)}>
+                        <X size={16} />
+                      </button>
+                    </div>
+                    <div className={styles.skillsMgrPlaceholder}>
+                      <Blocks size={40} strokeWidth={1} className={styles.skillsMgrPlaceholderIcon} />
+                      <p className={styles.skillsMgrPlaceholderText}>Select a skill to manage its files</p>
+                      <p className={styles.skillsMgrPlaceholderHint}>
+                        Skills are reusable instruction packages. When attached to an agent, the skill folder is copied into the agent's workspace.
+                      </p>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

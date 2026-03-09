@@ -8,7 +8,7 @@
   align-items: center;
   gap: var(--space-1);
   padding: var(--space-3) 0;
-  margin-bottom: var(--space-4);
+  margin-bottom: var(--space-1);
   font-size: 14px;
 }
 
@@ -496,41 +496,20 @@ button.colName:hover .fileName {
   background: rgba(59, 130, 246, 0.05);
 }
 
-/* Keyboard shortcut hints */
-.shortcutHints {
+/* ─── File name wrapper (stacks name + meta on mobile) ─── */
+.fileNameWrap {
   display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: 6px var(--space-4);
-  border-top: 1px solid var(--color-border-subtle);
-  background: var(--color-surface);
-  flex-shrink: 0;
+  flex-direction: column;
+  min-width: 0;
 }
 
-.shortcutHint {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  font-size: 11px;
+.fileMeta {
+  font-size: 12px;
   color: var(--color-text-tertiary);
   white-space: nowrap;
-}
-
-.shortcutHint kbd {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 4px;
-  border: 1px solid var(--color-border);
-  border-radius: 3px;
-  background: var(--color-card);
-  font-family: inherit;
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--color-text-secondary);
-  line-height: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.4;
 }
 
 /* Tablet breakpoint */
@@ -546,111 +525,167 @@ button.colName:hover .fileName {
   }
 }
 
-/* Mobile breakpoint */
-@media (max-width: 640px) {
-  .breadcrumb {
-    flex-wrap: wrap;
-    margin-bottom: var(--space-2);
-    padding: var(--space-2) 0;
-  }
+/* ═══════════════════════════════════════════════════════
+   Compact mode — condensed layout for narrow containers.
+   Triggered by container width via ResizeObserver, not
+   viewport media queries.
+   ═══════════════════════════════════════════════════════ */
 
-  .searchRow {
-    margin-bottom: var(--space-2);
-  }
-
-  .searchInputWrapper {
-    max-width: none;
-  }
-
-  .fileHeader {
-    grid-template-columns: 28px 1fr auto;
-    gap: var(--space-2);
-    padding: var(--space-2) var(--space-3);
-  }
-
-  .fileRow {
-    grid-template-columns: 28px 1fr auto;
-    gap: var(--space-2);
-    padding: var(--space-2) var(--space-3);
-  }
-
-  .colSize,
-  .colDate {
-    display: none;
-  }
-
-  .fileHeader .colActions {
-    gap: 0;
-  }
-
-  /* Hide button text labels on mobile, keep icons */
-  .fileHeader .colActions button {
-    font-size: 0;
-    padding: var(--space-1);
-    gap: 0;
-    min-width: 28px;
-    min-height: 28px;
-  }
-
-  .fileHeader .colActions button svg {
-    width: 14px;
-    height: 14px;
-  }
-
-  .colActions .iconBtn {
-    width: 28px;
-    height: 28px;
-  }
-
-  /* Hide less essential row actions on mobile */
-  .fileRow .colActions {
-    flex-wrap: nowrap;
-  }
-
-  .mobileHidden {
-    display: none !important;
-  }
-
-  .bulkBar {
-    flex-wrap: wrap;
-    padding: var(--space-2) var(--space-3);
-    gap: var(--space-1);
-  }
-
-  .newFolderRow {
-    flex-wrap: wrap;
-    padding: var(--space-2) var(--space-3);
-  }
-
-  .newFolderRow > div:nth-child(2) {
-    max-width: none;
-    flex-basis: calc(100% - 30px);
-  }
-
-  .shortcutHints {
-    display: none;
-  }
-
-  .uploadProgress {
-    flex-direction: column;
-    align-items: stretch;
-    gap: var(--space-2);
-  }
+.container {
+  position: relative;
 }
 
-/* Small mobile */
-@media (max-width: 400px) {
-  .fileHeader,
-  .fileRow {
-    padding: var(--space-1) var(--space-2);
-  }
+.compact .breadcrumb {
+  margin-bottom: 0;
+  padding: var(--space-2) 0;
+  gap: 2px;
+  font-size: 13px;
+  overflow-x: auto;
+  flex-wrap: nowrap;
+}
 
-  .breadcrumbItem {
-    padding: var(--space-1);
-    font-size: 13px;
-  }
+.compact .breadcrumbItem {
+  padding: var(--space-1) 6px;
+  font-size: 13px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
 
-  .colCheck {
-    width: 24px;
-  }
+.compact .searchRow {
+  margin-bottom: var(--space-2);
+}
+
+.compact .searchInputWrapper {
+  max-width: none;
+}
+
+/* Compact header */
+.compact .fileHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+}
+
+.compact .fileHeader .colCheck {
+  width: 24px;
+}
+
+.compact .fileHeader .colName {
+  flex: 1;
+}
+
+.compact .fileHeader .colActions {
+  gap: 0;
+}
+
+/* Compact list — flex rows instead of grid */
+.compact .fileRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+}
+
+.compact .fileRow:hover {
+  background: var(--color-surface);
+}
+
+.compact .colCheck {
+  width: 24px;
+  flex-shrink: 0;
+}
+
+.compact .colName {
+  flex: 1;
+  min-width: 0;
+  gap: var(--space-3);
+}
+
+.compact button.colName {
+  padding: 0;
+}
+
+.compact .fileName {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+
+.compact .colActions {
+  flex-shrink: 0;
+}
+
+.compact .bulkBar {
+  flex-wrap: wrap;
+  padding: var(--space-2) var(--space-3);
+  gap: var(--space-1);
+}
+
+.compact .newFolderRow {
+  padding: var(--space-2) var(--space-3);
+}
+
+.compact .newFolderRow > div:nth-child(2) {
+  max-width: none;
+}
+
+.compact .uploadProgress {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-2);
+  border-radius: var(--radius-md);
+}
+
+.compact .emptyState {
+  padding: var(--space-6) var(--space-3);
+}
+
+/* ─── Compact row dropdown menu ─── */
+
+.rowMenuAnchor {
+  position: relative;
+}
+
+.rowMenu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 50;
+  min-width: 160px;
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-1);
+  display: flex;
+  flex-direction: column;
+}
+
+.rowMenuItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  background: none;
+  color: var(--color-text);
+  font-size: 13px;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: background var(--transition-fast);
+  width: 100%;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.rowMenuItem:hover {
+  background: var(--color-surface);
+}
+
+.rowMenuItemDanger {
+  color: var(--color-error);
+}
+
+.rowMenuItemDanger:hover {
+  background: rgba(239, 68, 68, 0.08);
 }

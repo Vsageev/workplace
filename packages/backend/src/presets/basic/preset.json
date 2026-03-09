@@ -4,6 +4,12 @@
   "description": "A simple agent with instructions",
   "files": [
     { "type": "file", "name": "CLAUDE.MD", "template": "CLAUDE.MD.hbs", "models": ["Claude"] },
-    { "type": "file", "name": "AGENTS.md", "template": "CLAUDE.MD.hbs", "models": ["Codex", "Qwen"] }
-  ]
+    {
+      "type": "file",
+      "name": "AGENTS.md",
+      "template": "CLAUDE.MD.hbs",
+      "models": ["Codex", "Qwen"]
+    }
+  ],
+  "defaultSkills": ["verification", "workspace"]
 }

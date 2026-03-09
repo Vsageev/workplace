@@ -379,61 +379,6 @@ export function MyCardsPage() {
   }, []);
 
   useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
-      const target = e.target as HTMLElement;
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
-      if (quickViewCardId) return;
-
-      if (e.key === 'a' && (e.metaKey || e.ctrlKey) && allVisibleCards.length > 0) {
-        e.preventDefault();
-        if (selectionMode && selectedCardIds.size === allVisibleCards.length) {
-          setSelectedCardIds(new Set());
-          setSelectionMode(false);
-        } else {
-          setSelectionMode(true);
-          setSelectedCardIds(new Set(allVisibleCards.map((c) => c.id)));
-        }
-        return;
-      }
-
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        if (contextMenu) {
-          setContextMenu(null);
-        } else if (selectionMode) {
-          setSelectedCardIds(new Set());
-          setSelectionMode(false);
-          setBulkActionsOpen(null);
-        } else if (focusedIndex >= 0) {
-          setFocusedIndex(-1);
-        }
-        return;
-      }
-
-      if (e.key === 'j' || e.key === 'k') {
-        e.preventDefault();
-        setFocusedIndex((prev) => {
-          const max = allVisibleCards.length - 1;
-          if (max < 0) return -1;
-          if (e.key === 'j') return prev < max ? prev + 1 : max;
-          return prev > 0 ? prev - 1 : 0;
-        });
-      } else if (e.key === ' ' && focusedIndex >= 0 && focusedIndex < allVisibleCards.length) {
-        e.preventDefault();
-        toggleSelectCard(allVisibleCards[focusedIndex].id);
-      } else if (e.key === 'Enter' && focusedIndex >= 0 && focusedIndex < allVisibleCards.length) {
-        e.preventDefault();
-        setQuickViewCardId(allVisibleCards[focusedIndex].id);
-      } else if (e.key === 'o' && focusedIndex >= 0 && focusedIndex < allVisibleCards.length) {
-        e.preventDefault();
-        navigate(`/cards/${allVisibleCards[focusedIndex].id}`);
-      }
-    }
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [allVisibleCards, focusedIndex, quickViewCardId, navigate, selectedCardIds, selectionMode, toggleSelectCard, contextMenu]);
-
-  useEffect(() => {
     if (focusedIndex >= 0 && focusedIndex < allVisibleCards.length) {
       const el = cardRowRefs.current.get(allVisibleCards[focusedIndex].id);
       el?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });

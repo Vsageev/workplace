@@ -420,19 +420,6 @@ function IconDrawingModal({ initialGrid, bgColor, logoColor, onSave, onClose }: 
     setGrid(ICONS[key].pattern.map((r) => [...r]));
   }, [grid, pushUndo]);
 
-  // Keyboard shortcuts
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'z') {
-        e.preventDefault();
-        if (e.shiftKey) handleRedo();
-        else handleUndo();
-      }
-    }
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [handleUndo, handleRedo]);
-
   const hasPixels = grid.some((row) => row.some((v) => v === 1));
 
   const handleSave = useCallback(async () => {

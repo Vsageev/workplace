@@ -107,6 +107,58 @@ export async function settingsRoutes(app: FastifyInstance) {
     },
   );
 
+  // GET /api/settings/fallback-model
+  typedApp.get(
+    '/api/settings/fallback-model',
+    {
+      onRequest: [app.authenticate, requirePermission('settings:read')],
+      schema: {
+        tags: ['Settings'],
+        summary: 'Get global fallback model settings',
+      },
+    },
+    async () => {
+      const settings = getProjectSettings();
+      return {
+        fallbackModel: settings.fallbackModel,
+        fallbackModelId: settings.fallbackModelId,
+      };
+    },
+  );
+
+  // PATCH /api/settings/fallback-model
+  typedApp.patch(
+    '/api/settings/fallback-model',
+    {
+      onRequest: [app.authenticate, requirePermission('settings:update')],
+      schema: {
+        tags: ['Settings'],
+        summary: 'Update global fallback model settings',
+        body: z
+          .object({
+            fallbackModel: z.string().nullable().optional(),
+            fallbackModelId: z.string().nullable().optional(),
+          })
+          .strict(),
+      },
+    },
+    async (request) => {
+      const updated = updateProjectSettings({
+        ...(request.body.fallbackModel !== undefined
+          ? { fallbackModel: request.body.fallbackModel }
+          : {}),
+        ...(request.body.fallbackModelId !== undefined
+          ? { fallbackModelId: request.body.fallbackModelId }
+          : {}),
+      });
+
+      return {
+        fallbackModel: updated.fallbackModel,
+        fallbackModelId: updated.fallbackModelId,
+      };
+    },
+  );
+
   // PATCH /api/settings/rate-limits
   typedApp.patch(
     '/api/settings/rate-limits',

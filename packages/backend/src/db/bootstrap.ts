@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { env } from '../config/env.js';
 import { JsonStore } from './json-store.js';
-import { hashPassword } from '../services/auth.js';
+import { hashPassword, verifyPassword } from '../services/auth.js';
 
 function findByField(
   store: JsonStore,
@@ -41,12 +41,31 @@ async function ensureUsers(store: JsonStore) {
 
   for (const spec of specs) {
     const existing = findByField(store, 'users', 'email', spec.email);
+    const passwordHash = await hashPassword(spec.password);
+
     if (existing) {
-      users.push(existing);
+      const needsPasswordReset = !(await verifyPassword(
+        spec.password,
+        String(existing.passwordHash ?? ''),
+      ));
+
+      const updated = store.update('users', existing.id as string, {
+        email: spec.email,
+        passwordHash: needsPasswordReset ? passwordHash : (existing.passwordHash as string),
+        firstName: spec.firstName,
+        lastName: spec.lastName,
+        type: spec.type,
+        role: undefined,
+        isActive: true,
+        totpSecret: null,
+        totpEnabled: false,
+        recoveryCodes: null,
+      }) as Record<string, unknown>;
+
+      users.push(updated);
       continue;
     }
 
-    const passwordHash = await hashPassword(spec.password);
     const created = store.insert('users', {
       email: spec.email,
       passwordHash,

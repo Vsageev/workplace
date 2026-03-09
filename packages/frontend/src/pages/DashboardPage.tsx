@@ -482,15 +482,6 @@ export function DashboardPage() {
         </div>
       ) : (
         <>
-          <button
-            className={styles.searchBar}
-            onClick={() => window.dispatchEvent(new CustomEvent('open-command-palette'))}
-          >
-            <Search size={16} />
-            <span className={styles.searchBarText}>Search cards, collections, boards...</span>
-            <kbd className={styles.searchBarKbd}>{navigator.platform?.includes('Mac') ? '\u2318' : 'Ctrl'} K</kbd>
-          </button>
-
           <div className={styles.statsGrid}>
             {STAT_CARDS.map((sc) => (
               <Link

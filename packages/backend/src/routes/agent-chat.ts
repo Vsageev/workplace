@@ -27,6 +27,8 @@ import {
   deleteQueueItem,
   clearAgentConversationQueue,
   reorderQueueItems,
+  getGlobalRunningAgentCount,
+  getMaxConcurrentAgentLimit,
 } from '../services/agent-chat.js';
 
 // Rate limiter for agent prompt execution — shared across all requests in this process
@@ -295,6 +297,10 @@ export async function agentChatRoutes(app: FastifyInstance) {
           status: 'queued',
           queueItem: queued.queueItem,
           queuedCount: queued.queuedCount,
+          concurrency: {
+            running: getGlobalRunningAgentCount(),
+            limit: getMaxConcurrentAgentLimit(),
+          },
         });
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to queue prompt';

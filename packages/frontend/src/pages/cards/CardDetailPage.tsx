@@ -4,7 +4,7 @@ import { useParams, Link, useNavigate, useLocation } from 'react-router-dom';
 import {
   Trash2, Plus, X, Link2, Columns3, FolderOpen,
   FileText, User, Send, Check, Pencil, Loader2, ChevronDown, Copy, CloudOff, Star, History,
-  Bold, Italic, Code, List, Heading2, ChevronLeft, ChevronRight, Keyboard, Image,
+  Bold, Italic, Code, List, Heading2, ChevronLeft, ChevronRight, Image,
 } from 'lucide-react';
 import { Breadcrumb, Button, MarkdownContent, PageLoader, Tooltip } from '../../ui';
 import type { BreadcrumbItem } from '../../ui';
@@ -340,7 +340,6 @@ export function CardDetailPage() {
 
   // Collection picker
   const [showCollectionPicker, setShowCollectionPicker] = useState(false);
-  const [showShortcuts, setShowShortcuts] = useState(false);
   const [allCollections, setAllCollections] = useState<{ id: string; name: string }[]>([]);
   const [loadingCollections, setLoadingCollections] = useState(false);
   const [movingCollection, setMovingCollection] = useState(false);
@@ -682,26 +681,6 @@ export function CardDetailPage() {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [editingDesc, draftDesc, card]);
 
-  // Keyboard shortcut: Alt+Left / Alt+Right for prev/next card navigation
-  useEffect(() => {
-    function handleSiblingNav(e: KeyboardEvent) {
-      if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
-        const target = e.target as HTMLElement;
-        const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
-        if (isInput) return;
-        if (e.key === 'ArrowLeft' && prevCardId) {
-          e.preventDefault();
-          navigate(`/cards/${prevCardId}`, { state: locState });
-        } else if (e.key === 'ArrowRight' && nextCardId) {
-          e.preventDefault();
-          navigate(`/cards/${nextCardId}`, { state: locState });
-        }
-      }
-    }
-    window.addEventListener('keydown', handleSiblingNav);
-    return () => window.removeEventListener('keydown', handleSiblingNav);
-  }, [prevCardId, nextCardId, navigate, locState]);
-
   // Cleanup autosave timer on unmount
   useEffect(() => {
     return () => {
@@ -873,51 +852,6 @@ export function CardDetailPage() {
       navigate(`/cards/${newCard.id}`);
     } catch (e) { if (e instanceof ApiError) toast.error(e.message); }
   }
-
-  /* ── Keyboard shortcuts ────────────────────────────── */
-
-  const editingDescRef = useRef(editingDesc);
-  editingDescRef.current = editingDesc;
-
-  const startEditDescRef = useRef(startEditDesc);
-  startEditDescRef.current = startEditDesc;
-
-  const showShortcutsRef = useRef(showShortcuts);
-  showShortcutsRef.current = showShortcuts;
-
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape' && showShortcutsRef.current) {
-        e.preventDefault();
-        setShowShortcuts(false);
-        return;
-      }
-      const tag = (e.target as HTMLElement).tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-      if ((e.target as HTMLElement).isContentEditable) return;
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
-      const key = e.key.toLowerCase();
-      if (key === 'm') {
-        // Focus comment input
-        e.preventDefault();
-        setActivityView('comments');
-        setTimeout(() => {
-          commentTextareaRef.current?.focus();
-        }, 0);
-      } else if (key === 'e') {
-        // Open description editor
-        e.preventDefault();
-        if (!editingDescRef.current) {
-          startEditDescRef.current();
-        }
-      } else if (e.key === '?') {
-        e.preventDefault();
-        setShowShortcuts(prev => !prev);
-      }
-    }
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
-  }, []);
 
   /* ── Tag actions ────────────────────────────────────── */
 
@@ -1307,44 +1241,11 @@ export function CardDetailPage() {
           <Copy size={14} />
           Duplicate
         </Button>
-        <Tooltip label="Keyboard shortcuts (?)">
-          <Button variant="ghost" size="sm" onClick={() => setShowShortcuts(s => !s)}>
-            <Keyboard size={14} />
-          </Button>
-        </Tooltip>
         <Button variant="ghost" size="sm" onClick={handleDelete}>
           <Trash2 size={14} />
           Delete
         </Button>
       </div>
-
-      {showShortcuts && (
-        <div className={styles.shortcutsBackdrop} onClick={() => setShowShortcuts(false)}>
-          <div className={styles.shortcutsModal} onClick={(e) => e.stopPropagation()}>
-            <div className={styles.shortcutsHeader}>
-              <span>Keyboard shortcuts</span>
-              <button className={styles.shortcutsClose} onClick={() => setShowShortcuts(false)}>
-                <X size={16} />
-              </button>
-            </div>
-            <div className={styles.shortcutsList}>
-              <div className={styles.shortcutRow}><kbd className={styles.kbd}>E</kbd><span>Edit description</span></div>
-              <div className={styles.shortcutRow}><kbd className={styles.kbd}>M</kbd><span>Focus comment input</span></div>
-              <div className={styles.shortcutRow}><kbd className={styles.kbd}>?</kbd><span>Toggle this overlay</span></div>
-              <div className={styles.shortcutsSep} />
-              <div className={styles.shortcutsGroup}>While editing description</div>
-              <div className={styles.shortcutRow}><kbd className={styles.kbd}>{navigator.platform?.includes('Mac') ? '\u2318' : 'Ctrl+'}Enter</kbd><span>Save description</span></div>
-              <div className={styles.shortcutRow}><kbd className={styles.kbd}>Esc</kbd><span>Close editor</span></div>
-              <div className={styles.shortcutRow}><kbd className={styles.kbd}>{navigator.platform?.includes('Mac') ? '\u2318' : 'Ctrl+'}B</kbd><span>Bold</span></div>
-              <div className={styles.shortcutRow}><kbd className={styles.kbd}>{navigator.platform?.includes('Mac') ? '\u2318' : 'Ctrl+'}I</kbd><span>Italic</span></div>
-              <div className={styles.shortcutsSep} />
-              <div className={styles.shortcutsGroup}>Navigation</div>
-              <div className={styles.shortcutRow}><kbd className={styles.kbd}>Alt+\u2190</kbd><span>Previous card</span></div>
-              <div className={styles.shortcutRow}><kbd className={styles.kbd}>Alt+\u2192</kbd><span>Next card</span></div>
-            </div>
-          </div>
-        </div>
-      )}
 
       <div className={styles.grid}>
         {/* ── Left: name, description, activity ───────── */}
@@ -1411,8 +1312,8 @@ export function CardDetailPage() {
                         className={styles.commentHiddenFileInput}
                         onChange={handleDescriptionFileSelect}
                       />
-                      <button type="button" className={styles.mdToolbarBtn} title="Bold (Ctrl+B)" onClick={() => insertFormat('bold')}><Bold size={13} /></button>
-                      <button type="button" className={styles.mdToolbarBtn} title="Italic (Ctrl+I)" onClick={() => insertFormat('italic')}><Italic size={13} /></button>
+                      <button type="button" className={styles.mdToolbarBtn} title="Bold" onClick={() => insertFormat('bold')}><Bold size={13} /></button>
+                      <button type="button" className={styles.mdToolbarBtn} title="Italic" onClick={() => insertFormat('italic')}><Italic size={13} /></button>
                       <button type="button" className={styles.mdToolbarBtn} title="Inline code" onClick={() => insertFormat('code')}><Code size={13} /></button>
                       <button type="button" className={styles.mdToolbarBtn} title="Link" onClick={() => insertFormat('link')}><Link2 size={13} /></button>
                       <button
@@ -1474,20 +1375,12 @@ export function CardDetailPage() {
                           }
                           void saveDescNow(draftDesc);
                         }
-                        if ((e.metaKey || e.ctrlKey) && e.key === 'b') {
-                          e.preventDefault();
-                          insertFormat('bold');
-                        }
-                        if ((e.metaKey || e.ctrlKey) && e.key === 'i') {
-                          e.preventDefault();
-                          insertFormat('italic');
-                        }
                       }}
                     />
                   )}
                   <div className={styles.descriptionActions}>
                     <span className={styles.descriptionHint}>
-                      {uploadingDescImages ? 'Uploading images...' : 'Markdown supported · paste or attach images · Esc to close'}
+                      {uploadingDescImages ? 'Uploading images...' : 'Markdown supported · paste or attach images'}
                     </span>
                     <Button variant="ghost" size="sm" onClick={() => closeDescEditor()}>
                       Done

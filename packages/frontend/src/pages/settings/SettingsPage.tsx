@@ -1,5 +1,5 @@
 import { useSearchParams } from 'react-router-dom';
-import { Key, HardDrive, Palette, Activity, Tag, UserCircle, Bell, Gauge } from 'lucide-react';
+import { Key, HardDrive, Palette, Activity, Tag, UserCircle, Bell, Gauge, ShieldAlert } from 'lucide-react';
 import { PageHeader } from '../../layout';
 import { ProfileTab } from './ProfileTab';
 import { ApiKeysTab } from './ApiKeysTab';
@@ -9,12 +9,13 @@ import { ActivityLogTab } from './ActivityLogTab';
 import { TagsTab } from './TagsTab';
 import { NotificationsTab } from './NotificationsTab';
 import { RateLimitsTab } from './RateLimitsTab';
+import { FallbackModelTab } from './FallbackModelTab';
 import styles from './SettingsPage.module.css';
 import { useDocumentTitle } from '../../hooks/useDocumentTitle';
 
-type SettingsTab = 'profile' | 'appearance' | 'notifications' | 'tags' | 'api-keys' | 'rate-limits' | 'backups' | 'activity';
+type SettingsTab = 'profile' | 'appearance' | 'notifications' | 'tags' | 'api-keys' | 'rate-limits' | 'fallback-model' | 'backups' | 'activity';
 
-const VALID_TABS = new Set<SettingsTab>(['profile', 'appearance', 'notifications', 'tags', 'api-keys', 'rate-limits', 'backups', 'activity']);
+const VALID_TABS = new Set<SettingsTab>(['profile', 'appearance', 'notifications', 'tags', 'api-keys', 'rate-limits', 'fallback-model', 'backups', 'activity']);
 
 const TABS: { key: SettingsTab; label: string; icon: typeof Key }[] = [
   { key: 'profile', label: 'Profile', icon: UserCircle },
@@ -23,6 +24,7 @@ const TABS: { key: SettingsTab; label: string; icon: typeof Key }[] = [
   { key: 'tags', label: 'Tags', icon: Tag },
   { key: 'api-keys', label: 'API Keys', icon: Key },
   { key: 'rate-limits', label: 'Rate Limits', icon: Gauge },
+  { key: 'fallback-model', label: 'Fallback Model', icon: ShieldAlert },
   { key: 'backups', label: 'Backups', icon: HardDrive },
   { key: 'activity', label: 'Activity Log', icon: Activity },
 ];
@@ -63,6 +65,7 @@ export function SettingsPage() {
       {activeTab === 'tags' && <TagsTab />}
       {activeTab === 'api-keys' && <ApiKeysTab />}
       {activeTab === 'rate-limits' && <RateLimitsTab />}
+      {activeTab === 'fallback-model' && <FallbackModelTab />}
       {activeTab === 'backups' && <BackupsTab />}
       {activeTab === 'activity' && <ActivityLogTab />}
     </div>

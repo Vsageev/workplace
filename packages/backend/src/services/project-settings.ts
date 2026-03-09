@@ -6,6 +6,8 @@ const PROJECT_SETTINGS_ID = 'project';
 export interface ProjectSettings {
   id: string;
   defaultAgentKeyId: string | null;
+  fallbackModel: string | null;
+  fallbackModelId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -15,10 +17,20 @@ function asProjectSettings(rec: Record<string, unknown>): ProjectSettings {
     typeof rec.defaultAgentKeyId === 'string' && rec.defaultAgentKeyId.length > 0
       ? rec.defaultAgentKeyId
       : null;
+  const fallbackModel =
+    typeof rec.fallbackModel === 'string' && rec.fallbackModel.length > 0
+      ? rec.fallbackModel
+      : null;
+  const fallbackModelId =
+    typeof rec.fallbackModelId === 'string' && rec.fallbackModelId.length > 0
+      ? rec.fallbackModelId
+      : null;
 
   return {
     id: typeof rec.id === 'string' ? rec.id : PROJECT_SETTINGS_ID,
     defaultAgentKeyId,
+    fallbackModel,
+    fallbackModelId,
     createdAt:
       typeof rec.createdAt === 'string' ? rec.createdAt : new Date().toISOString(),
     updatedAt:
@@ -32,6 +44,8 @@ export function getProjectSettings(): ProjectSettings {
   return {
     id: PROJECT_SETTINGS_ID,
     defaultAgentKeyId: null,
+    fallbackModel: null,
+    fallbackModelId: null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
@@ -41,17 +55,31 @@ export function getProjectDefaultAgentKeyId(): string | null {
   return getProjectSettings().defaultAgentKeyId;
 }
 
+export function getFallbackModelConfig(): { model: string; modelId: string | null } | null {
+  const settings = getProjectSettings();
+  if (!settings.fallbackModel) return null;
+  return { model: settings.fallbackModel, modelId: settings.fallbackModelId };
+}
+
 export function updateProjectSettings(
-  data: { defaultAgentKeyId?: string | null },
+  data: {
+    defaultAgentKeyId?: string | null;
+    fallbackModel?: string | null;
+    fallbackModelId?: string | null;
+  },
 ): ProjectSettings {
   const existing = store.getById(SETTINGS_COLLECTION, PROJECT_SETTINGS_ID);
   const current = getProjectSettings();
   const updated = {
     ...current,
     ...(data.defaultAgentKeyId !== undefined
-      ? {
-          defaultAgentKeyId: data.defaultAgentKeyId,
-        }
+      ? { defaultAgentKeyId: data.defaultAgentKeyId }
+      : {}),
+    ...(data.fallbackModel !== undefined
+      ? { fallbackModel: data.fallbackModel }
+      : {}),
+    ...(data.fallbackModelId !== undefined
+      ? { fallbackModelId: data.fallbackModelId }
       : {}),
   };
 

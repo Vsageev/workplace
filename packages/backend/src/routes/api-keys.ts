@@ -8,6 +8,7 @@ import {
   updateApiKey,
   deleteApiKey,
 } from '../services/api-keys.js';
+import { syncAgentsForApiKey } from '../services/agents.js';
 
 const API_RESOURCES = [
   'contacts', 'cards', 'tasks', 'boards', 'folders',
@@ -164,6 +165,7 @@ export async function apiKeyRoutes(app: FastifyInstance) {
 
       const updated = await updateApiKey(request.params.id, data, auditMeta(request));
       if (!updated) return reply.notFound('API key not found');
+      await syncAgentsForApiKey(request.params.id);
 
       return reply.send(updated);
     },
@@ -190,6 +192,7 @@ export async function apiKeyRoutes(app: FastifyInstance) {
       }
 
       await deleteApiKey(request.params.id, auditMeta(request));
+      await syncAgentsForApiKey(request.params.id);
       return reply.status(204).send();
     },
   );

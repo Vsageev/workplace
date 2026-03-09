@@ -246,39 +246,17 @@ export function CardQuickView({ cardId, boardId, boardName, onClose, onCardUpdat
     }
   }
 
-  // Keyboard shortcuts: Escape to close, X to toggle complete, M/C to focus comment, J/K to navigate
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
       if (e.key === 'Escape') {
         // If an editing mode is active, let its local handler cancel the edit — don't close the panel
         if (editingTitle || editingDesc || editingCommentId !== null || showAssignee) return;
         onClose();
-        return;
-      }
-      const active = document.activeElement;
-      const inInput = active instanceof HTMLInputElement
-        || active instanceof HTMLTextAreaElement
-        || active instanceof HTMLSelectElement;
-      if (inInput) return;
-      // J/K or arrow keys to navigate between cards
-      if (e.key === 'j' || e.key === 'J' || e.key === 'ArrowDown') {
-        if (editingTitle || editingDesc || editingCommentId !== null) return;
-        if (hasNext) { e.preventDefault(); navigateNext(); }
-      }
-      if (e.key === 'k' || e.key === 'K' || e.key === 'ArrowUp') {
-        if (editingTitle || editingDesc || editingCommentId !== null) return;
-        if (hasPrev) { e.preventDefault(); navigatePrev(); }
-      }
-      // Press M or C to jump to the comment box (M matches Card Detail shortcut)
-      if (e.key === 'm' || e.key === 'M' || e.key === 'c' || e.key === 'C') {
-        if (editingTitle || editingDesc || editingCommentId !== null) return;
-        e.preventDefault();
-        commentInputRef.current?.focus();
       }
     }
     document.addEventListener('keydown', handleKey);
     return () => document.removeEventListener('keydown', handleKey);
-  }, [onClose, editingTitle, editingDesc, editingCommentId, showAssignee, hasNext, hasPrev, navigateNext, navigatePrev]);
+  }, [onClose, editingTitle, editingDesc, editingCommentId, showAssignee]);
 
   function startEditTitle() {
     if (!card) return;

@@ -58,6 +58,51 @@
   color: var(--color-text);
 }
 
+/* ── Header dropdown menu ── */
+.headerMenuWrap {
+  position: relative;
+}
+
+.headerMenu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 50;
+  min-width: 180px;
+  padding: 4px;
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+}
+
+.headerMenuItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  text-align: left;
+}
+
+.headerMenuItem:hover {
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.headerMenuDivider {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--color-border-subtle);
+}
+
 .searchRow {
   padding: var(--space-3) var(--space-4);
   border-bottom: 1px solid var(--color-border-subtle);
@@ -1973,6 +2018,696 @@
   flex-wrap: wrap;
 }
 
+/* ── Skills ── */
+
+/* ── Skills Picker (per-agent attach/detach) ── */
+
+.skillsPickerOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: skFadeIn 0.12s ease-out;
+}
+
+@keyframes skFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes skSlideUp {
+  from { transform: translateY(12px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.skillsPickerModal {
+  width: 440px;
+  max-width: 90vw;
+  max-height: 70vh;
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: skSlideUp 0.15s ease-out;
+}
+
+.skillsPickerHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.skillsPickerTitle {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text);
+  flex: 1;
+}
+
+.skillsPickerClose {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.skillsPickerClose:hover {
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.skillsPickerBody {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-2) var(--space-3);
+}
+
+.skillsPickerItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.skillsPickerItem:hover {
+  background: var(--color-surface);
+}
+
+.skillsPickerIcon {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+  transition: all var(--transition-fast);
+}
+
+.skillsPickerItem:hover .skillsPickerIcon {
+  border-color: var(--color-text-tertiary);
+}
+
+.skillsPickerInfo {
+  flex: 1;
+  min-width: 0;
+}
+
+.skillsPickerName {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text);
+}
+
+.skillsPickerDesc {
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 1px;
+}
+
+.skillsPickerAdd {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-tertiary);
+  transition: all var(--transition-fast);
+}
+
+.skillsPickerItem:hover .skillsPickerAdd {
+  color: var(--color-text);
+  background: var(--color-surface);
+}
+
+.skillsPickerEmpty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-8) var(--space-4);
+  text-align: center;
+}
+
+.skillsPickerEmptyIcon {
+  color: var(--color-text-tertiary);
+}
+
+.skillsPickerEmptyText {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  max-width: 260px;
+  line-height: 1.5;
+}
+
+/* ── Skills Manager Modal ── */
+
+.skillsMgrOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: skFadeIn 0.12s ease-out;
+}
+
+.skillsMgrModal {
+  width: 780px;
+  max-width: 92vw;
+  height: 600px;
+  max-height: 85vh;
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  display: flex;
+  overflow: hidden;
+  animation: skSlideUp 0.15s ease-out;
+}
+
+/* Left panel: skill list sidebar */
+.skillsMgrSidebar {
+  width: 240px;
+  min-width: 240px;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.skillsMgrSidebarHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.skillsMgrSidebarTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text);
+  flex: 1;
+}
+
+.skillsMgrNewBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-card);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.skillsMgrNewBtn:hover {
+  background: var(--color-card);
+  border-color: var(--color-text-tertiary);
+  color: var(--color-text);
+}
+
+.skillsMgrList {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-1);
+}
+
+.skillsMgrItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-2);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.skillsMgrItem:hover {
+  background: var(--color-card);
+}
+
+.skillsMgrItemActive {
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+}
+
+.skillsMgrItemIcon {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+}
+
+.skillsMgrItemActive .skillsMgrItemIcon {
+  color: var(--color-text-secondary);
+}
+
+.skillsMgrItemInfo {
+  flex: 1;
+  min-width: 0;
+}
+
+.skillsMgrItemName {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.skillsMgrItemDesc {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.skillsMgrEmpty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-6) var(--space-3);
+  text-align: center;
+}
+
+.skillsMgrEmptyIcon {
+  color: var(--color-text-tertiary);
+}
+
+.skillsMgrEmptyTitle {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+
+.skillsMgrEmptyDesc {
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  max-width: 180px;
+  line-height: 1.4;
+}
+
+/* Right panel: detail/files */
+.skillsMgrMain {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.skillsMgrMainHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.skillsMgrMainTitle {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text);
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.skillsMgrMainDesc {
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  padding: 0 var(--space-4);
+  padding-top: var(--space-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.skillsMgrActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-shrink: 0;
+}
+
+.skillsMgrActionBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-card);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.skillsMgrActionBtn:hover {
+  background: var(--color-surface);
+  border-color: var(--color-text-tertiary);
+  color: var(--color-text);
+}
+
+.skillsMgrActionBtnIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.skillsMgrActionBtnIcon:hover {
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.skillsMgrActionBtnDanger:hover {
+  background: rgba(239, 68, 68, 0.08);
+  color: var(--color-error);
+}
+
+.skillsMgrClose {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.skillsMgrClose:hover {
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+/* File list in main panel */
+.skillsMgrFileToolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.skillsMgrFileList {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.skillsMgrFilesEmpty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-8) var(--space-4);
+  text-align: center;
+}
+
+.skillsMgrFilesEmptyText {
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+}
+
+/* No skill selected placeholder */
+.skillsMgrPlaceholder {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-6);
+  text-align: center;
+}
+
+.skillsMgrPlaceholderIcon {
+  color: var(--color-text-tertiary);
+  opacity: 0.5;
+}
+
+.skillsMgrPlaceholderText {
+  font-size: 14px;
+  color: var(--color-text-tertiary);
+}
+
+.skillsMgrPlaceholderHint {
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  opacity: 0.7;
+  max-width: 260px;
+  line-height: 1.5;
+}
+
+/* File editor view */
+.skillsMgrEditorHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.skillsMgrEditorPath {
+  font-size: 12px;
+  font-family: var(--font-mono);
+  color: var(--color-text-secondary);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skillsMgrEditor {
+  flex: 1;
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  font-size: 13px;
+  font-family: var(--font-mono);
+  line-height: 1.6;
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: none;
+  outline: none;
+  resize: none;
+  box-sizing: border-box;
+  min-height: 0;
+}
+
+.skillsMgrEditorSaveBtn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 5px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  border: none;
+  border-radius: var(--radius-md);
+  background: var(--color-primary-brand);
+  color: var(--color-text-inverse);
+  cursor: pointer;
+  transition: opacity var(--transition-fast);
+}
+
+.skillsMgrEditorSaveBtn:hover:not(:disabled) {
+  opacity: 0.85;
+}
+
+.skillsMgrEditorSaveBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.skillsMgrBackBtn {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 8px;
+  font-size: 12px;
+  font-weight: 500;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.skillsMgrBackBtn:hover {
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+/* New file form */
+.skillsMgrNewFileForm {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.skillsMgrNewFileInput {
+  padding: var(--space-2) var(--space-4);
+  font-size: 13px;
+  font-family: var(--font-mono);
+  border: none;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-card);
+  color: var(--color-text);
+  outline: none;
+  box-sizing: border-box;
+}
+
+.skillsMgrNewFileInput:focus {
+  border-bottom-color: var(--color-primary-brand);
+}
+
+.skillsMgrNewFileActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border-top: 1px solid var(--color-border);
+}
+
+.skillsMgrCancelBtn {
+  padding: 5px 12px;
+  font-size: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.skillsMgrCancelBtn:hover {
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.skillsMgrSaveBtn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 5px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  border: none;
+  border-radius: var(--radius-md);
+  background: var(--color-primary-brand);
+  color: var(--color-text-inverse);
+  cursor: pointer;
+  transition: opacity var(--transition-fast);
+}
+
+.skillsMgrSaveBtn:hover:not(:disabled) {
+  opacity: 0.85;
+}
+
+.skillsMgrSaveBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Inline skill create/edit form in sidebar */
+.skillsMgrInlineForm {
+  margin: var(--space-1);
+  padding: var(--space-2) var(--space-2);
+  border: 1px solid var(--color-primary-brand);
+  border-radius: var(--radius-md);
+  background: var(--color-card);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.skillsMgrInlineLabel {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+
+.skillsMgrInlineInput {
+  width: 100%;
+  padding: 5px 8px;
+  font-size: 13px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color var(--transition-fast);
+}
+
+.skillsMgrInlineInput:focus {
+  border-color: var(--color-primary-brand);
+}
+
+.skillsMgrInlineActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-1);
+}
+
 /* Actions row */
 .settingsActions {
   display: flex;
@@ -2040,6 +2775,91 @@
 
 .filesHiddenInput {
   display: none;
+}
+
+/* Skills bar above files */
+.filesSkillsBar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding-bottom: var(--space-3);
+  margin-bottom: var(--space-1);
+}
+
+.filesSkillsLabel {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+}
+
+.filesSkillsChips {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.filesSkillChip {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 3px 6px 3px 10px;
+  background: rgba(139, 92, 246, 0.07);
+  border: 1px solid rgba(139, 92, 246, 0.2);
+  border-radius: 100px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #7c3aed;
+}
+
+.filesSkillChipName {
+  white-space: nowrap;
+}
+
+.filesSkillChipRemove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: rgba(139, 92, 246, 0.5);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.filesSkillChipRemove:hover {
+  background: rgba(139, 92, 246, 0.12);
+  color: #7c3aed;
+}
+
+.filesSkillAddBtn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 3px 10px;
+  border: 1px dashed var(--color-border);
+  border-radius: 100px;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.filesSkillAddBtn:hover {
+  border-color: var(--color-text-tertiary);
+  color: var(--color-text);
+  background: var(--color-surface);
 }
 
 /* Breadcrumb */

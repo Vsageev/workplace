@@ -24,7 +24,7 @@ test('updateAgent renames the preset instruction file when the provider changes'
       apiKeyId: 'seed-key',
       apiKeyName: 'Seed Key',
       apiKeyPrefix: 'ws_seed',
-      capabilities: [],
+      capabilities: ['cards:write'],
     });
 
     const agentDir = agents.getAgentEntryPath(agent.id, '/');
@@ -35,7 +35,7 @@ test('updateAgent renames the preset instruction file when the provider changes'
     assert.equal(fs.existsSync(claudePath), true);
     assert.equal(fs.existsSync(agentsPath), false);
 
-    const updated = agents.updateAgent(agent.id, { model: 'Codex' });
+    const updated = await agents.updateAgent(agent.id, { model: 'Codex' });
 
     assert.ok(updated);
     assert.equal(updated.model, 'Codex');
@@ -65,7 +65,7 @@ test('updateAgent renames the preset instruction file when the UI sends a lowerc
       apiKeyId: 'seed-key',
       apiKeyName: 'Seed Key',
       apiKeyPrefix: 'ws_seed',
-      capabilities: [],
+      capabilities: ['cards:write'],
     });
 
     const agentDir = agents.getAgentEntryPath(agent.id, '/');
@@ -76,7 +76,7 @@ test('updateAgent renames the preset instruction file when the UI sends a lowerc
     assert.equal(fs.existsSync(claudePath), true);
     assert.equal(fs.existsSync(agentsPath), false);
 
-    const updated = agents.updateAgent(agent.id, { model: 'codex' });
+    const updated = await agents.updateAgent(agent.id, { model: 'codex' });
 
     assert.ok(updated);
     assert.equal(updated.model, 'codex');
@@ -106,7 +106,7 @@ test('updateAgent does not overwrite an existing target instruction file on prov
       apiKeyId: 'seed-key',
       apiKeyName: 'Seed Key',
       apiKeyPrefix: 'ws_seed',
-      capabilities: [],
+      capabilities: ['cards:write'],
     });
 
     const agentDir = agents.getAgentEntryPath(agent.id, '/');
@@ -117,7 +117,7 @@ test('updateAgent does not overwrite an existing target instruction file on prov
     fs.writeFileSync(agentsPath, 'existing target content', 'utf8');
     const originalClaudeContent = fs.readFileSync(claudePath, 'utf8');
 
-    const updated = agents.updateAgent(agent.id, { model: 'Codex' });
+    const updated = await agents.updateAgent(agent.id, { model: 'Codex' });
 
     assert.ok(updated);
     assert.equal(fs.readFileSync(claudePath, 'utf8'), originalClaudeContent);

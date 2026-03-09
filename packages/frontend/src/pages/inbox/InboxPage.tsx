@@ -29,6 +29,7 @@ import {
   Pin,
   PinOff,
   ArrowLeft,
+  AlertTriangle,
 } from 'lucide-react';
 import { api, apiUpload, ApiError } from '../../lib/api';
 import { toast } from '../../stores/toast';
@@ -1615,6 +1616,15 @@ export function InboxPage() {
                     </div>
                     {group.messages.map((msg) => {
                       if (msg.type === 'system') {
+                        const meta = msg.metadata ? (() => { try { return JSON.parse(msg.metadata); } catch { return null; } })() : null;
+                        if (meta?.fallbackRetry) {
+                          return (
+                            <div key={msg.id} className={styles.fallbackNotice}>
+                              <AlertTriangle size={14} />
+                              <span>Model error — switched to <strong>{meta.fallbackModel ?? 'fallback'}</strong></span>
+                            </div>
+                          );
+                        }
                         return (
                           <div key={msg.id} className={styles.systemMessage}>
                             {msg.content}

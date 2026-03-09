@@ -16,7 +16,6 @@ import {
   Pencil,
   Trash2,
   Plus,
-  Search,
   Star,
   X,
   PanelLeftClose,
@@ -38,7 +37,6 @@ import styles from './Sidebar.module.css';
 
 interface SidebarProps {
   onNavigate?: () => void;
-  onOpenCommandPalette?: () => void;
   onQuickCreateCard?: () => void;
   unreadCount?: number;
   activeRunsCount?: number;
@@ -46,7 +44,7 @@ interface SidebarProps {
   onToggleCollapse?: () => void;
 }
 
-export function Sidebar({ onNavigate, onOpenCommandPalette, onQuickCreateCard, unreadCount = 0, activeRunsCount = 0, collapsed = false, onToggleCollapse }: SidebarProps) {
+export function Sidebar({ onNavigate, onQuickCreateCard, unreadCount = 0, activeRunsCount = 0, collapsed = false, onToggleCollapse }: SidebarProps) {
   const { user, logout } = useAuth();
   const { workspaces, activeWorkspace, activeWorkspaceId, setActiveWorkspace, refetchWorkspaces } = useWorkspace();
   const { confirm, dialog: confirmDialog } = useConfirm();
@@ -222,29 +220,6 @@ export function Sidebar({ onNavigate, onOpenCommandPalette, onQuickCreateCard, u
           )}
         </div>
       )}
-
-      {onOpenCommandPalette && (
-        collapsed ? (
-          <Tooltip label="Search" position="right">
-            <button
-              className={styles.collapsedIconBtn}
-              onClick={onOpenCommandPalette}
-            >
-              <Search size={18} />
-            </button>
-          </Tooltip>
-        ) : (
-          <button
-            className={styles.searchButton}
-            onClick={onOpenCommandPalette}
-          >
-            <Search size={14} />
-            <span>Search...</span>
-            <kbd className={styles.searchKbd}>{navigator.platform?.includes('Mac') ? '\u2318' : 'Ctrl'}K</kbd>
-          </button>
-        )
-      )}
-
 
       <div className={styles.scrollArea}>
       {favorites.length > 0 && !collapsed && (

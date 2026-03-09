@@ -1,4 +1,4 @@
-import type { ClassAttributes, ComponentProps, HTMLAttributes, ReactNode } from 'react';
+import type { ClassAttributes, ComponentProps, HTMLAttributes, MouseEvent, ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import type { ExtraProps } from 'react-markdown';
@@ -83,11 +83,55 @@ function MarkdownImage(props: ComponentProps<'img'>) {
   return <img src={resolvedSrc} alt={alt} {...rest} />;
 }
 
+/**
+ * Detects links that point to local file paths (e.g. http://localhost:5173/Users/vlad/file.dart#L61)
+ * and opens them in the configured editor instead of navigating in the browser.
+ */
+function FileLink(props: ComponentProps<'a'>) {
+  const { href, children, ...rest } = props;
+
+  function parseFileLink(url: string | undefined): { filePath: string; line?: number } | null {
+    if (!url) return null;
+    try {
+      const parsed = new URL(url, window.location.origin);
+      const pathname = parsed.pathname;
+      // Detect absolute file paths (macOS /Users/..., Linux /home/..., or generic /...)
+      if (!pathname.match(/^\/(?:Users|home|tmp|var|opt|etc)\//)) return null;
+      // Must have a file extension to avoid false positives with app routes
+      if (!pathname.match(/\.\w+$/)) return null;
+      const lineMatch = parsed.hash.match(/^#L(\d+)/);
+      return { filePath: pathname, line: lineMatch ? parseInt(lineMatch[1], 10) : undefined };
+    } catch {
+      return null;
+    }
+  }
+
+  const fileInfo = parseFileLink(href);
+
+  function handleClick(e: MouseEvent<HTMLAnchorElement>) {
+    if (!fileInfo) return;
+    e.preventDefault();
+    const editor = localStorage.getItem('ws_editor_protocol') || 'cursor';
+    const lineStr = fileInfo.line ? `:${fileInfo.line}` : '';
+    if (editor === 'vscode') {
+      window.open(`vscode://file${fileInfo.filePath}${lineStr}`, '_self');
+    } else {
+      window.open(`cursor://file${fileInfo.filePath}${lineStr}`, '_self');
+    }
+  }
+
+  return (
+    <a href={href} onClick={handleClick} {...rest}>
+      {children}
+    </a>
+  );
+}
+
 export function MarkdownContent({ children, compact, className }: MarkdownContentProps) {
   const cls = [styles.markdown, compact && styles.compact, className].filter(Boolean).join(' ');
   return (
     <div className={cls}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock, img: MarkdownImage }}>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock, img: MarkdownImage, a: FileLink }}>
         {children}
       </ReactMarkdown>
     </div>

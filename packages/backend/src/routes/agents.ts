@@ -378,6 +378,7 @@ export async function agentRoutes(app: FastifyInstance) {
           modelId: z.string().max(200).nullable().optional(),
           thinkingLevel: z.enum(['low', 'medium', 'high']).nullable().optional(),
           status: z.enum(['active', 'inactive', 'error']).optional(),
+          apiKeyId: z.string().min(1).optional(),
           skipPermissions: z.boolean().optional(),
           groupId: z.string().nullable().optional(),
           avatarIcon: avatarIconSchema.optional(),
@@ -400,7 +401,12 @@ export async function agentRoutes(app: FastifyInstance) {
       },
     },
     async (request, reply) => {
-      const updated = updateAgent(request.params.id, request.body);
+      let updated;
+      try {
+        updated = await updateAgent(request.params.id, request.body);
+      } catch (err) {
+        return reply.badRequest((err as Error).message);
+      }
       if (!updated) return reply.notFound('Agent not found');
 
       // Sync cron jobs if they were updated

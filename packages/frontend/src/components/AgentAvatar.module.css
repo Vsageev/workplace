@@ -78,7 +78,7 @@
 }
 
 .shapeCardManageable {
-  cursor: default;
+  cursor: pointer;
 }
 
 .shapeCardBtn {
@@ -131,15 +131,15 @@
 
 .shapeCardActions {
   position: absolute;
-  inset: 0;
+  top: 2px;
+  right: 2px;
   display: flex;
   align-items: center;
-  justify-content: center;
   gap: 2px;
-  background: color-mix(in srgb, var(--color-card) 85%, transparent);
   opacity: 0;
   pointer-events: none;
   transition: opacity var(--transition-fast);
+  z-index: 1;
 }
 
 .shapeCardManageable:hover .shapeCardActions {

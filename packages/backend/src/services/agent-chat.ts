@@ -4,8 +4,10 @@ import path from 'node:path';
 import { store } from '../db/index.js';
 import { env } from '../config/env.js';
 import { extractFinalResponseText } from '../lib/agent-output.js';
-import { getAgent, listAgents } from './agents.js';
+import { allocatePort, releasePort } from '../lib/port-allocator.js';
+import { getAgent, listAgents, prepareAgentWorkspaceAccess } from './agents.js';
 import { createAgentRun, completeAgentRun } from './agent-runs.js';
+import { getFallbackModelConfig } from './project-settings.js';
 
 const STORAGE_DIR = path.resolve(env.DATA_DIR, 'storage');
 
@@ -15,6 +17,85 @@ const AGENT_CHAT_QUEUE_COLLECTION = 'agentChatQueue';
 const AGENT_CHAT_QUEUE_RETRY_BASE_MS = 1000;
 const AGENT_CHAT_QUEUE_RETRY_MAX_MS = 30000;
 const AGENT_CHAT_QUEUE_DEFAULT_MAX_ATTEMPTS = 4;
+
+// ---------------------------------------------------------------------------
+// Global agent concurrency limiter
+// ---------------------------------------------------------------------------
+
+/** Patterns that indicate external API rate limiting in agent stderr output */
+const RATE_LIMIT_PATTERNS = [
+  /rate.?limit/i,
+  /too many requests/i,
+  /429/,
+  /overloaded/i,
+  /capacity/i,
+  /retry.?after/i,
+  /throttl/i,
+];
+
+function isRateLimitError(stderr: string): boolean {
+  return RATE_LIMIT_PATTERNS.some((p) => p.test(stderr));
+}
+
+/**
+ * Global concurrency gate — tracks how many agent processes are running
+ * across all conversations. When at capacity, new spawns are deferred
+ * until a slot opens up.
+ */
+let globalRunningCount = 0;
+const concurrencyWaiters: Array<() => void> = [];
+
+function getMaxConcurrentAgents(): number {
+  return env.MAX_CONCURRENT_AGENTS;
+}
+
+function acquireConcurrencySlot(): boolean {
+  if (globalRunningCount < getMaxConcurrentAgents()) {
+    globalRunningCount++;
+    return true;
+  }
+  return false;
+}
+
+function waitForConcurrencySlot(): Promise<void> {
+  if (acquireConcurrencySlot()) return Promise.resolve();
+  return new Promise<void>((resolve) => {
+    concurrencyWaiters.push(() => {
+      globalRunningCount++;
+      resolve();
+    });
+  });
+}
+
+function releaseConcurrencySlot() {
+  globalRunningCount--;
+  if (globalRunningCount < 0) globalRunningCount = 0;
+  // Wake the next waiter if there's capacity
+  while (concurrencyWaiters.length > 0 && globalRunningCount < getMaxConcurrentAgents()) {
+    const waiter = concurrencyWaiters.shift();
+    if (waiter) {
+      globalRunningCount++;
+      waiter();
+    }
+  }
+}
+
+/** Backoff delay (ms) when a run fails due to rate limiting */
+function rateLimitBackoffMs(attempt: number): number {
+  // 5s, 15s, 30s, 60s — longer than normal retries since rate limits need real cooldown
+  const base = 5000;
+  const delay = Math.min(base * Math.pow(2, attempt), 60000);
+  // Add jitter (±25%)
+  return delay * (0.75 + Math.random() * 0.5);
+}
+
+export function getGlobalRunningAgentCount(): number {
+  return globalRunningCount;
+}
+
+export function getMaxConcurrentAgentLimit(): number {
+  return getMaxConcurrentAgents();
+}
 const AGENT_CHAT_QUEUE_RETENTION_MS = 24 * 60 * 60 * 1000;
 const AGENT_CHAT_RECOVERED_QUEUE_MATCH_WINDOW_MS = 5 * 60 * 1000;
 
@@ -33,14 +114,27 @@ interface CliCommand {
   stdinData?: string;
 }
 
+const CWD_WARNING =
+  'IMPORTANT: Your current working directory (cwd) is an internal agent data folder inside a git repository. ' +
+  'Do NOT treat the enclosing git repository as your project. ' +
+  'Do NOT create project files, source code, or scaffolding in your cwd. ' +
+  'Your actual project location should come from your task instructions, architecture document, or CLAUDE.md. ' +
+  'If you need to build a new project, use the $PROJECTS_DIR environment variable. ' +
+  'If you need to modify an existing project, cd into that project\'s actual path first.\n\n' +
+  'PORT ASSIGNMENT: A unique random port is provided via $PROJECT_PORT. ' +
+  'Always use $PROJECT_PORT for any dev server, HTTP listener, or project port instead of hardcoded defaults like 3000, 5173, or 8080. ' +
+  'This prevents port conflicts when multiple agents run simultaneously.';
+
 const CHAT_MODE_SYSTEM_PROMPT =
   'You are a general-purpose assistant in a direct user chat. ' +
   'Non-coding requests are valid and should be handled directly when possible. ' +
   'Do not claim you are only a software engineering assistant. ' +
-  'If a request cannot be fully completed due to tool or permission limits, explain the limitation briefly and provide the best actionable alternative.';
+  'If a request cannot be fully completed due to tool or permission limits, explain the limitation briefly and provide the best actionable alternative.\n\n' +
+  CWD_WARNING;
 
 const TASK_MODE_SYSTEM_PROMPT =
-  'You are a task execution agent. Complete the assigned task and report results.';
+  'You are a task execution agent. Complete the assigned task and report results.\n\n' +
+  CWD_WARNING;
 
 interface BuildCliOptions {
   model: string;
@@ -561,6 +655,8 @@ function buildChildEnv(agent: { apiKeyId: string; workspaceApiKey: string | null
   delete childEnv.CLAUDECODE;
   delete childEnv.CLAUDE_CODE_ENTRYPOINT;
   delete childEnv.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS;
+  delete childEnv.WORKSPACE_API_URL;
+  delete childEnv.WORKSPACE_API_KEY;
 
   if (agent.apiKeyId) {
     const apiKey = store.getById('apiKeys', agent.apiKeyId);
@@ -576,6 +672,11 @@ function buildChildEnv(agent: { apiKeyId: string; workspaceApiKey: string | null
     childEnv.WORKSPACE_API_URL = `${protocol}://${host}:${env.PORT}`;
     childEnv.WORKSPACE_API_KEY = agent.workspaceApiKey;
   }
+
+  // Provide the projects output directory so agents never build inside the agent data dir
+  const projectsDir = path.resolve(env.PROJECTS_DIR);
+  fs.mkdirSync(projectsDir, { recursive: true });
+  childEnv.PROJECTS_DIR = projectsDir;
 
   return childEnv;
 }
@@ -682,6 +783,7 @@ interface RunHandle {
   watcher: fs.FSWatcher | null;
   onStdoutChunk: ((text: string) => void) | null;
   onExit: ((result: AgentProcessResult) => void) | null;
+  allocatedPort: number | null;
 }
 
 // Track running processes per run key so parallel chats/tasks can run.
@@ -826,7 +928,11 @@ function attachToProcess(options: AttachOptions): RunHandle {
       handle.watcher.close();
       handle.watcher = null;
     }
+    if (handle.allocatedPort !== null) {
+      releasePort(handle.allocatedPort);
+    }
     runningProcesses.delete(runKey);
+    releaseConcurrencySlot();
 
     // Read final output
     let stdout = '';
@@ -884,6 +990,7 @@ function attachToProcess(options: AttachOptions): RunHandle {
     watcher,
     onStdoutChunk: options.onStdoutChunk ?? null,
     onExit: options.onExit ?? null,
+    allocatedPort: null,
   };
 
   runningProcesses.set(runKey, handle);
@@ -894,7 +1001,10 @@ function attachToProcess(options: AttachOptions): RunHandle {
 // runAgentProcess — spawns detached, writes to files
 // ---------------------------------------------------------------------------
 
-function runAgentProcess(options: AgentProcessOptions): string {
+async function runAgentProcess(options: AgentProcessOptions): Promise<string> {
+  // Wait for a global concurrency slot before spawning
+  await waitForConcurrencySlot();
+
   const workDir = path.join(AGENTS_DIR, options.agentId);
   const { bin, args, stdinData } = buildCliCommand({
     model: options.agent.model,
@@ -905,6 +1015,10 @@ function runAgentProcess(options: AgentProcessOptions): string {
     imagePaths: options.imagePaths,
   });
   const childEnv = buildChildEnv(options.agent);
+
+  // Allocate a random port so the agent's project never conflicts with others
+  const projectPort = await allocatePort();
+  childEnv.PROJECT_PORT = String(projectPort);
 
   // Record the agent run first to get runId for log directory
   const agentRun = createAgentRun({
@@ -944,6 +1058,8 @@ function runAgentProcess(options: AgentProcessOptions): string {
   } catch (err) {
     fs.closeSync(stdoutFd);
     fs.closeSync(stderrFd);
+    releasePort(projectPort);
+    releaseConcurrencySlot();
     completeAgentRun(runId, (err as Error).message);
     options.onSpawnError(err as Error);
     return runId;
@@ -991,8 +1107,10 @@ function runAgentProcess(options: AgentProcessOptions): string {
     if (handle) {
       clearInterval(handle.pollTimer);
       if (handle.watcher) handle.watcher.close();
+      if (handle.allocatedPort !== null) releasePort(handle.allocatedPort);
       runningProcesses.delete(options.runKey);
     }
+    releaseConcurrencySlot();
     completeAgentRun(runId, err.message, { stderr: err.message });
     options.onSpawnError(err);
   });
@@ -1012,6 +1130,7 @@ function runAgentProcess(options: AgentProcessOptions): string {
 
   // For fresh spawns, start reading from byte 0
   handle.stdoutOffset = 0;
+  handle.allocatedPort = projectPort;
   return runId;
 }
 
@@ -1119,64 +1238,136 @@ function spawnChatProcess(
   fullPrompt: string,
   imagePaths: string[],
   callbacks: ExecutePromptCallbacks,
+  options?: { isFallback?: boolean },
 ) {
-  const agent = getAgent(agentId);
-  if (!agent) {
-    callbacks.onError('Agent not found');
-    return;
-  }
+  const isFallback = options?.isFallback ?? false;
 
-  const key = processKey(agentId, conversationId);
-  const hasImages = imagePaths.length > 0;
-  let spawnedRunId: string | null = null;
+  void prepareAgentWorkspaceAccess(agentId).then((agent) => {
+    if (!agent) {
+      callbacks.onError('Agent not found');
+      return;
+    }
 
-  runAgentProcess({
-    agentId,
-    agent,
-    runKey: key,
-    prompt: fullPrompt,
-    systemPrompt: CHAT_MODE_SYSTEM_PROMPT,
-    imagePaths: hasImages ? imagePaths : undefined,
-    triggerType: 'chat',
-    triggerRef: { conversationId },
-    onRunCreated: (runId) => {
-      spawnedRunId = runId;
-      callbacks.onRunCreated?.(runId);
-    },
-    onExit: ({ code, stdout, stderr, runStartedAt }) => {
-      if (isRunMarkedKilledByUser(spawnedRunId)) {
-        callbacks.onError('Killed by user');
-        return;
-      }
+    // If this is a fallback retry, override agent model with global fallback settings
+    const effectiveAgent = isFallback ? applyFallbackModel(agent) : agent;
+    if (isFallback && !effectiveAgent) {
+      callbacks.onError('Fallback model is not configured');
+      return;
+    }
 
-      if ((code ?? 1) !== 0 && !stdout.trim()) {
-        const errMsg = stderr.trim() || `Process exited with code ${code}`;
-        callbacks.onError(errMsg);
-        return;
-      }
+    const key = processKey(agentId, conversationId);
+    const hasImages = imagePaths.length > 0;
+    let spawnedRunId: string | null = null;
 
-      const updatesFromApi = listAgentApiUpdates(conversationId, runStartedAt);
-      const finalApiMessage = findFinalAgentApiMessage(updatesFromApi);
-      // extractFinalResponseText handles both plain text and stream-json output gracefully.
-      const stdoutText = extractFinalResponseText(stdout);
+    void runAgentProcess({
+      agentId,
+      agent: effectiveAgent!,
+      runKey: key,
+      prompt: fullPrompt,
+      systemPrompt: CHAT_MODE_SYSTEM_PROMPT,
+      imagePaths: hasImages ? imagePaths : undefined,
+      triggerType: 'chat',
+      triggerRef: { conversationId },
+      onRunCreated: (runId) => {
+        spawnedRunId = runId;
+        callbacks.onRunCreated?.(runId);
+      },
+      onExit: ({ code, stdout, stderr, runStartedAt }) => {
+        if (isRunMarkedKilledByUser(spawnedRunId)) {
+          callbacks.onError('Killed by user');
+          return;
+        }
 
-      let msg: Record<string, unknown>;
-      if (finalApiMessage) {
-        msg = finalApiMessage;
-      } else if (stdoutText) {
-        msg = saveMessage(conversationId, 'inbound', stdoutText);
-      } else if (updatesFromApi.length > 0) {
-        msg = updatesFromApi[updatesFromApi.length - 1];
-      } else {
-        msg = saveMessage(conversationId, 'inbound', '(empty response)');
-      }
+        if ((code ?? 1) !== 0 && !stdout.trim()) {
+          // Primary model failed — attempt fallback if configured and not already a fallback
+          if (!isFallback) {
+            const fallback = getFallbackModelConfig();
+            if (fallback) {
+              const errMsg = stderr.trim() || `Process exited with code ${code}`;
+              console.log(
+                `[agent-chat] Primary model failed for agent ${agentId}: ${errMsg}. Retrying with fallback model "${fallback.model}"...`,
+              );
+              saveAgentConversationMessage({
+                conversationId,
+                direction: 'inbound',
+                type: 'system',
+                content: `Switched to fallback model`,
+                metadata: { agentChatUpdate: true, isFinal: false, fallbackRetry: true, fallbackModel: fallback.model },
+              });
+              spawnChatProcess(agentId, conversationId, fullPrompt, imagePaths, callbacks, {
+                isFallback: true,
+              });
+              return;
+            }
+          }
+          const errMsg = stderr.trim() || `Process exited with code ${code}`;
+          callbacks.onError(errMsg);
+          return;
+        }
 
-      callbacks.onDone(msg);
-    },
-    onSpawnError: (err) => {
-      callbacks.onError(`Failed to start CLI: ${err.message}`);
-    },
+        const updatesFromApi = listAgentApiUpdates(conversationId, runStartedAt);
+        const finalApiMessage = findFinalAgentApiMessage(updatesFromApi);
+        // extractFinalResponseText handles both plain text and stream-json output gracefully.
+        const stdoutText = extractFinalResponseText(stdout);
+
+        let msg: Record<string, unknown>;
+        if (finalApiMessage) {
+          msg = finalApiMessage;
+        } else if (stdoutText) {
+          msg = saveMessage(conversationId, 'inbound', stdoutText);
+        } else if (updatesFromApi.length > 0) {
+          msg = updatesFromApi[updatesFromApi.length - 1];
+        } else {
+          msg = saveMessage(conversationId, 'inbound', '(empty response)');
+        }
+
+        callbacks.onDone(msg);
+      },
+      onSpawnError: (err) => {
+        // Primary model spawn failed — attempt fallback
+        if (!isFallback) {
+          const fallback = getFallbackModelConfig();
+          if (fallback) {
+            console.log(
+              `[agent-chat] Primary model spawn failed for agent ${agentId}: ${err.message}. Retrying with fallback model "${fallback.model}"...`,
+            );
+            saveAgentConversationMessage({
+              conversationId,
+              direction: 'inbound',
+              type: 'system',
+              content: `Switched to fallback model`,
+              metadata: { agentChatUpdate: true, isFinal: false, fallbackRetry: true, fallbackModel: fallback.model },
+            });
+            spawnChatProcess(agentId, conversationId, fullPrompt, imagePaths, callbacks, {
+              isFallback: true,
+            });
+            return;
+          }
+        }
+        callbacks.onError(`Failed to start CLI: ${err.message}`);
+      },
+    }).catch((err: unknown) => {
+      callbacks.onError((err as Error).message);
+    });
+  }).catch((error: unknown) => {
+    callbacks.onError((error as Error).message);
   });
+}
+
+/**
+ * Returns a copy of the agent config with the model overridden by the global fallback model.
+ * Returns null if no fallback model is configured.
+ */
+function applyFallbackModel(
+  agent: NonNullable<Awaited<ReturnType<typeof prepareAgentWorkspaceAccess>>>,
+): typeof agent | null {
+  const fallback = getFallbackModelConfig();
+  if (!fallback) return null;
+  return {
+    ...agent,
+    model: fallback.model,
+    modelId: fallback.modelId,
+  };
 }
 
 export function executePrompt(
@@ -1340,31 +1531,50 @@ function retryOrFailQueueItem(
   errorMessage: string,
   attemptsUsed: number,
 ) {
-  const maxAttempts = normalizeQueueMaxAttempts(queueItem.maxAttempts);
+  const rateLimited = isRateLimitError(errorMessage);
+  // Rate-limited runs get extra attempts and longer backoff
+  const maxAttempts = rateLimited
+    ? Math.max(normalizeQueueMaxAttempts(queueItem.maxAttempts), 8)
+    : normalizeQueueMaxAttempts(queueItem.maxAttempts);
+
   if (attemptsUsed < maxAttempts) {
-    const retryDelayMs = getQueueItemRetryDelayMs(attemptsUsed);
+    const retryDelayMs = rateLimited
+      ? rateLimitBackoffMs(attemptsUsed)
+      : getQueueItemRetryDelayMs(attemptsUsed);
+
+    if (rateLimited) {
+      console.log(
+        `[agent-chat] Rate limit detected for agent ${agentId}, attempt ${attemptsUsed}/${maxAttempts}. ` +
+        `Retrying in ${Math.round(retryDelayMs / 1000)}s`,
+      );
+    }
+
     store.update(AGENT_CHAT_QUEUE_COLLECTION, queueItemId, {
       status: 'queued',
       completedAt: null,
-      errorMessage,
+      errorMessage: rateLimited ? `Rate limited — retrying (attempt ${attemptsUsed}/${maxAttempts})` : errorMessage,
       runId: null,
       nextAttemptAt: new Date(Date.now() + retryDelayMs).toISOString(),
     });
     return;
   }
 
+  const displayError = rateLimited
+    ? `Rate limited by external API after ${maxAttempts} retries. Please try again later.`
+    : errorMessage;
+
   store.update(AGENT_CHAT_QUEUE_COLLECTION, queueItemId, {
     status: 'failed',
     completedAt: new Date().toISOString(),
     nextAttemptAt: null,
     runId: null,
-    errorMessage,
+    errorMessage: displayError,
   });
   saveAgentConversationMessage({
     conversationId,
     direction: 'inbound',
     type: 'system',
-    content: `Queued message failed after ${maxAttempts} attempt${maxAttempts === 1 ? '' : 's'}: ${errorMessage}`,
+    content: `Queued message failed after ${maxAttempts} attempt${maxAttempts === 1 ? '' : 's'}: ${displayError}`,
     metadata: {
       agentChatUpdate: true,
       isFinal: true,
@@ -1528,6 +1738,12 @@ async function drainConversationQueue(agentId: string, conversationId: string): 
 
       if (isAgentBusy(agentId, conversationId)) {
         scheduleQueueDrain(agentId, conversationId, 1000);
+        return;
+      }
+
+      // Global concurrency gate — defer if all slots are occupied
+      if (globalRunningCount >= getMaxConcurrentAgents()) {
+        scheduleQueueDrain(agentId, conversationId, 2000);
         return;
       }
 
@@ -1822,9 +2038,6 @@ export function executeCronTask(
   agentId: string,
   job: { id: string; prompt: string },
 ) {
-  const agent = getAgent(agentId);
-  if (!agent) return;
-
   const key = `${agentId}:cron:${job.id}`;
   if (runningProcesses.has(key)) {
     // Previous run still in progress — skip this invocation
@@ -1843,24 +2056,57 @@ export function executeCronTask(
     `**Task:** ${job.prompt}\n\n` +
     `Complete this task.`;
 
-  runAgentProcess({
-    agentId,
-    agent,
+  void prepareAgentWorkspaceAccess(agentId).then((agent) => {
+    if (!agent) return;
 
-    runKey: key,
-    prompt,
-    systemPrompt: TASK_MODE_SYSTEM_PROMPT,
-    triggerType: 'cron_job',
-    triggerRef: { cronJobId: job.id },
-    onExit: ({ code, stderr }) => {
-      if ((code ?? 1) !== 0) {
-        const errMsg = stderr.trim() || `Process exited with code ${code}`;
-        console.error(`Agent cron task error for job ${job.id}:`, errMsg);
-      }
-    },
-    onSpawnError: (err) => {
-      console.error(`Agent cron task failed to start for job ${job.id}:`, err.message);
-    },
+    const spawnCronRun = (effectiveAgent: typeof agent, isFallback: boolean) => {
+      void runAgentProcess({
+        agentId,
+        agent: effectiveAgent,
+
+        runKey: key,
+        prompt,
+        systemPrompt: TASK_MODE_SYSTEM_PROMPT,
+        triggerType: 'cron_job',
+        triggerRef: { cronJobId: job.id },
+        onExit: ({ code, stdout, stderr }) => {
+          if ((code ?? 1) !== 0 && !stdout.trim() && !isFallback) {
+            const fallbackAgent = applyFallbackModel(agent);
+            if (fallbackAgent) {
+              const errMsg = stderr.trim() || `Process exited with code ${code}`;
+              console.log(
+                `[agent-chat] Cron job ${job.id} primary model failed: ${errMsg}. Retrying with fallback model "${fallbackAgent.model}"...`,
+              );
+              spawnCronRun(fallbackAgent, true);
+              return;
+            }
+          }
+          if ((code ?? 1) !== 0) {
+            const errMsg = stderr.trim() || `Process exited with code ${code}`;
+            console.error(`Agent cron task error for job ${job.id}:`, errMsg);
+          }
+        },
+        onSpawnError: (err) => {
+          if (!isFallback) {
+            const fallbackAgent = applyFallbackModel(agent);
+            if (fallbackAgent) {
+              console.log(
+                `[agent-chat] Cron job ${job.id} primary model spawn failed: ${err.message}. Retrying with fallback model "${fallbackAgent.model}"...`,
+              );
+              spawnCronRun(fallbackAgent, true);
+              return;
+            }
+          }
+          console.error(`Agent cron task failed to start for job ${job.id}:`, err.message);
+        },
+      }).catch((err: unknown) => {
+        console.error(`Agent cron task failed for job ${job.id}:`, (err as Error).message);
+      });
+    };
+
+    spawnCronRun(agent, false);
+  }).catch((error: unknown) => {
+    console.error(`Agent cron task failed to prepare for job ${job.id}:`, (error as Error).message);
   });
 }
 
@@ -1874,12 +2120,6 @@ export function executeCardTask(
   callbacks: { onDone: () => void; onError: (err: string) => void; onRunCreated?: (runId: string) => void },
   customPrompt?: string,
 ) {
-  const agent = getAgent(agentId);
-  if (!agent) {
-    callbacks.onError('Agent not found');
-    return;
-  }
-
   const key = `${agentId}:card:${card.id}`;
   if (runningProcesses.has(key)) {
     callbacks.onError('Agent is already processing this card');
@@ -1909,27 +2149,63 @@ export function executeCardTask(
       `${descriptionLine}\n\n` +
       `Complete this task.`;
 
-  runAgentProcess({
-    agentId,
-    agent,
+  void prepareAgentWorkspaceAccess(agentId).then((agent) => {
+    if (!agent) {
+      callbacks.onError('Agent not found');
+      return;
+    }
 
-    runKey: key,
-    prompt,
-    systemPrompt: TASK_MODE_SYSTEM_PROMPT,
-    triggerType: 'card_assignment',
-    triggerRef: { cardId: card.id },
-    onRunCreated: callbacks.onRunCreated,
-    onExit: ({ code, stderr }) => {
-      if ((code ?? 1) !== 0) {
-        const errMsg = stderr.trim() || `Process exited with code ${code}`;
-        callbacks.onError(errMsg);
-        return;
-      }
+    const spawnCardRun = (effectiveAgent: typeof agent, isFallback: boolean) => {
+      void runAgentProcess({
+        agentId,
+        agent: effectiveAgent,
 
-      callbacks.onDone();
-    },
-    onSpawnError: (err) => {
-      callbacks.onError(`Failed to start CLI: ${err.message}`);
-    },
+        runKey: key,
+        prompt,
+        systemPrompt: TASK_MODE_SYSTEM_PROMPT,
+        triggerType: 'card_assignment',
+        triggerRef: { cardId: card.id },
+        onRunCreated: callbacks.onRunCreated,
+        onExit: ({ code, stdout, stderr }) => {
+          if ((code ?? 1) !== 0 && !stdout.trim() && !isFallback) {
+            const fallbackAgent = applyFallbackModel(agent);
+            if (fallbackAgent) {
+              const errMsg = stderr.trim() || `Process exited with code ${code}`;
+              console.log(
+                `[agent-chat] Card task ${card.id} primary model failed: ${errMsg}. Retrying with fallback model "${fallbackAgent.model}"...`,
+              );
+              spawnCardRun(fallbackAgent, true);
+              return;
+            }
+          }
+          if ((code ?? 1) !== 0) {
+            const errMsg = stderr.trim() || `Process exited with code ${code}`;
+            callbacks.onError(errMsg);
+            return;
+          }
+
+          callbacks.onDone();
+        },
+        onSpawnError: (err) => {
+          if (!isFallback) {
+            const fallbackAgent = applyFallbackModel(agent);
+            if (fallbackAgent) {
+              console.log(
+                `[agent-chat] Card task ${card.id} primary model spawn failed: ${err.message}. Retrying with fallback model "${fallbackAgent.model}"...`,
+              );
+              spawnCardRun(fallbackAgent, true);
+              return;
+            }
+          }
+          callbacks.onError(`Failed to start CLI: ${err.message}`);
+        },
+      }).catch((err: unknown) => {
+        callbacks.onError((err as Error).message);
+      });
+    };
+
+    spawnCardRun(agent, false);
+  }).catch((error: unknown) => {
+    callbacks.onError((error as Error).message);
   });
 }

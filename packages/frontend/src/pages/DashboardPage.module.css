@@ -2,43 +2,6 @@
   max-width: 1200px;
 }
 
-/* Search bar */
-.searchBar {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  width: 100%;
-  padding: 10px var(--space-4);
-  background: var(--color-card);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  color: var(--color-text-tertiary);
-  font-size: 14px;
-  cursor: pointer;
-  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
-  margin-bottom: var(--space-5);
-}
-
-.searchBar:hover {
-  border-color: var(--color-text-tertiary);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-}
-
-.searchBarText {
-  flex: 1;
-  text-align: left;
-}
-
-.searchBarKbd {
-  font-size: 11px;
-  font-family: inherit;
-  padding: 2px 6px;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  color: var(--color-text-tertiary);
-}
-
 .statsGrid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -1143,17 +1106,6 @@
     padding-right: 0;
   }
 
-  /* Search bar: hide kbd shortcut, tighten padding */
-  .searchBar {
-    padding: 10px var(--space-3);
-    font-size: 13px;
-    margin-bottom: var(--space-4);
-  }
-
-  .searchBarKbd {
-    display: none;
-  }
-
   /* Stat cards: compact padding */
   .statCard {
     padding: var(--space-3) var(--space-4);
@@ -1558,4 +1510,3 @@
   background: var(--chip-color, var(--color-text-tertiary));
   flex-shrink: 0;
 }
-

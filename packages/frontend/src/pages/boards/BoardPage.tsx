@@ -618,18 +618,6 @@ export function BoardPage() {
     });
   }, [id]);
 
-  // Cmd/Ctrl+F focuses the filter input
-  useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
-        e.preventDefault();
-        filterInputRef.current?.focus();
-      }
-    }
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, []);
-
   function handleDragStart(e: React.DragEvent, boardCard: BoardCardEntry) {
     dragCardRef.current = boardCard;
     isDraggingRef.current = true;
@@ -1210,7 +1198,7 @@ export function BoardPage() {
               ref={filterInputRef}
               className={styles.filterInput}
               type="text"
-              placeholder={`Filter cards\u2026 ${navigator.platform?.includes('Mac') ? '\u2318' : 'Ctrl+'}F`}
+              placeholder="Filter cards..."
               value={filterText}
               onChange={(e) => setFilterText(e.target.value)}
               onKeyDown={(e) => {

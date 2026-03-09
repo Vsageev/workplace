@@ -5,10 +5,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { store } from '../db/index.js';
 import { env } from '../config/env.js';
-import { createApiKey, deleteApiKey } from './api-keys.js';
+import { createApiKey, deleteApiKey, validateApiKey } from './api-keys.js';
 import { stopAllAgentCronJobs } from './agent-cron.js';
 import type { CronJob } from './agent-cron.js';
 import { hashPassword } from './auth.js';
+import { attachSkillToAgent } from './skills.js';
 
 const AGENTS_DIR = path.resolve(env.DATA_DIR, 'agents');
 
@@ -37,6 +38,7 @@ interface PresetDef {
   name: string;
   description: string;
   files: PresetFileDef[];
+  defaultSkills: string[];
 }
 
 function renderTemplate(template: string, vars: Record<string, string>): string {
@@ -58,12 +60,28 @@ function loadPresets(): Record<string, PresetDef> {
 
     const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
     const files: PresetFileDef[] = manifest.files.map(
-      (f: { type: string; name: string; template?: string; target?: string; models?: string[] }) => {
+      (f: {
+        type: string;
+        name: string;
+        template?: string;
+        target?: string;
+        models?: string[];
+      }) => {
         if (f.type === 'symlink') {
-          return { type: 'symlink', name: f.name, target: f.target!, models: f.models } as PresetSymlinkFileDef;
+          return {
+            type: 'symlink',
+            name: f.name,
+            target: f.target!,
+            models: f.models,
+          } as PresetSymlinkFileDef;
         }
         const templateContent = fs.readFileSync(path.join(presetDir, f.template!), 'utf-8');
-        return { type: 'file', name: f.name, template: templateContent, models: f.models } as PresetTextFileDef;
+        return {
+          type: 'file',
+          name: f.name,
+          template: templateContent,
+          models: f.models,
+        } as PresetTextFileDef;
       },
     );
 
@@ -72,6 +90,7 @@ function loadPresets(): Record<string, PresetDef> {
       name: manifest.name,
       description: manifest.description,
       files,
+      defaultSkills: Array.isArray(manifest.defaultSkills) ? manifest.defaultSkills : [],
     };
   }
 
@@ -93,9 +112,24 @@ interface CliInfo {
 }
 
 const CLI_DEFS: { id: string; name: string; command: string; downloadUrl: string }[] = [
-  { id: 'claude', name: 'Claude', command: 'claude', downloadUrl: 'https://docs.anthropic.com/en/docs/claude-code' },
-  { id: 'codex', name: 'Codex', command: 'codex', downloadUrl: 'https://developers.openai.com/codex/quickstart/' },
-  { id: 'qwen', name: 'Qwen', command: 'qwen', downloadUrl: 'https://qwenlm.github.io/qwen-code-docs/' },
+  {
+    id: 'claude',
+    name: 'Claude',
+    command: 'claude',
+    downloadUrl: 'https://docs.anthropic.com/en/docs/claude-code',
+  },
+  {
+    id: 'codex',
+    name: 'Codex',
+    command: 'codex',
+    downloadUrl: 'https://developers.openai.com/codex/quickstart/',
+  },
+  {
+    id: 'qwen',
+    name: 'Qwen',
+    command: 'qwen',
+    downloadUrl: 'https://qwenlm.github.io/qwen-code-docs/',
+  },
 ];
 
 function isCommandAvailable(command: string): boolean {
@@ -150,12 +184,18 @@ function asAgentGroup(rec: Record<string, unknown>): AgentGroupRecord {
 }
 
 export function listAgentGroups(): AgentGroupRecord[] {
-  return store.getAll('agentGroups').map(asAgentGroup).sort((a, b) => a.order - b.order);
+  return store
+    .getAll('agentGroups')
+    .map(asAgentGroup)
+    .sort((a, b) => a.order - b.order);
 }
 
 export function createAgentGroup(name: string): AgentGroupRecord {
   const all = store.getAll('agentGroups');
-  const maxOrder = all.reduce((max, r) => Math.max(max, typeof r.order === 'number' ? r.order : 0), -1);
+  const maxOrder = all.reduce(
+    (max, r) => Math.max(max, typeof r.order === 'number' ? r.order : 0),
+    -1,
+  );
   const record = store.insert('agentGroups', {
     id: randomUUID(),
     name,
@@ -312,6 +352,7 @@ export interface AgentRecord {
   capabilities: string[];
   skipPermissions: boolean;
   cronJobs: CronJob[];
+  skillIds: string[];
   groupId: string | null;
   workspaceApiKey: string | null;
   workspaceApiKeyId: string | null;
@@ -414,11 +455,10 @@ function asAgent(rec: Record<string, unknown>): AgentRecord {
       : null,
     skipPermissions: Boolean(rec.skipPermissions),
     cronJobs: Array.isArray(rec.cronJobs) ? rec.cronJobs : [],
+    skillIds: Array.isArray(rec.skillIds) ? rec.skillIds : [],
     avatarIcon: typeof rec.avatarIcon === 'string' ? rec.avatarIcon : 'spark',
-    avatarBgColor:
-      typeof rec.avatarBgColor === 'string' ? rec.avatarBgColor : '#1a1a2e',
-    avatarLogoColor:
-      typeof rec.avatarLogoColor === 'string' ? rec.avatarLogoColor : '#e94560',
+    avatarBgColor: typeof rec.avatarBgColor === 'string' ? rec.avatarBgColor : '#1a1a2e',
+    avatarLogoColor: typeof rec.avatarLogoColor === 'string' ? rec.avatarLogoColor : '#e94560',
   } as unknown as AgentRecord;
 }
 
@@ -459,8 +499,46 @@ const WORKSPACE_API_PERMISSIONS = [
   'boards:write',
   'tags:write',
   'settings:read',
+  'settings:write',
   'conversations:write',
 ];
+
+const WORKSPACE_API_PERMISSION_SET = new Set(WORKSPACE_API_PERMISSIONS);
+
+function normalizePermissionList(permissions: unknown): string[] {
+  if (!Array.isArray(permissions)) return [];
+
+  return [
+    ...new Set(
+      permissions.filter((permission): permission is string => typeof permission === 'string'),
+    ),
+  ];
+}
+
+function arraysEqualAsSets(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) return false;
+  const rightSet = new Set(right);
+  return left.every((permission) => rightSet.has(permission));
+}
+
+function scopeWorkspaceApiPermissions(requestedPermissions: unknown): string[] {
+  const normalized = normalizePermissionList(requestedPermissions);
+  return normalized.filter((permission) => WORKSPACE_API_PERMISSION_SET.has(permission));
+}
+
+function deriveWorkspaceApiPermissions(requestedPermissions: unknown, context: string): string[] {
+  const scoped = scopeWorkspaceApiPermissions(requestedPermissions);
+
+  if (scoped.length === 0) {
+    throw new Error(`${context} does not grant any agent-usable workspace permissions`);
+  }
+
+  return scoped;
+}
+
+interface SyncAgentWorkspaceAccessOptions {
+  strictSourceKey?: boolean;
+}
 
 const AGENT_USER_EMAIL_DOMAIN = 'agents.local';
 
@@ -514,6 +592,10 @@ function normalizeAgentServiceUser(
 export async function createAgent(params: CreateAgentParams): Promise<AgentRecord> {
   const preset = AGENT_PRESETS[params.preset];
   if (!preset) throw new Error(`Unknown preset: ${params.preset}`);
+  const workspaceApiPermissions = deriveWorkspaceApiPermissions(
+    params.capabilities,
+    `API key "${params.apiKeyName}"`,
+  );
 
   const agentId = randomUUID();
   let serviceUserId: string | null = null;
@@ -527,7 +609,7 @@ export async function createAgent(params: CreateAgentParams): Promise<AgentRecor
     // Step 2: Create workspace API key
     const wsKey = await createApiKey({
       name: `Agent: ${params.name}`,
-      permissions: WORKSPACE_API_PERMISSIONS,
+      permissions: workspaceApiPermissions,
       createdById: serviceUserId,
       description: `Auto-created workspace API key for agent "${params.name}"`,
     });
@@ -579,6 +661,23 @@ export async function createAgent(params: CreateAgentParams): Promise<AgentRecor
       fs.symlinkSync(fileDef.target, filePath);
     }
 
+    // Step 5: Auto-attach default skills from preset
+    if (preset.defaultSkills.length > 0) {
+      const allSkills = store.getAll('skills');
+      for (const skillName of preset.defaultSkills) {
+        const skill = allSkills.find(
+          (s) => (s.name as string).toLowerCase() === skillName.toLowerCase(),
+        );
+        if (skill) {
+          try {
+            attachSkillToAgent(agentId, skill.id as string);
+          } catch {
+            // Non-fatal: skill attachment failure shouldn't block agent creation
+          }
+        }
+      }
+    }
+
     return asAgent(record);
   } catch (error) {
     // Rollback: delete created resources on failure
@@ -608,10 +707,27 @@ export function getAgent(id: string): AgentRecord | null {
   return rec ? asAgent(rec) : null;
 }
 
-export function updateAgent(
+export async function updateAgent(
   id: string,
-  data: Partial<Pick<AgentRecord, 'name' | 'description' | 'model' | 'modelId' | 'thinkingLevel' | 'status' | 'skipPermissions' | 'cronJobs' | 'groupId' | 'avatarIcon' | 'avatarBgColor' | 'avatarLogoColor'>>,
-): AgentRecord | null {
+  data: Partial<
+    Pick<
+      AgentRecord,
+      | 'name'
+      | 'description'
+      | 'model'
+      | 'modelId'
+      | 'thinkingLevel'
+      | 'status'
+      | 'skipPermissions'
+      | 'cronJobs'
+      | 'groupId'
+      | 'avatarIcon'
+      | 'avatarBgColor'
+      | 'avatarLogoColor'
+      | 'apiKeyId'
+    >
+  >,
+): Promise<AgentRecord | null> {
   const current = store.getById('agents', id);
   if (!current) return null;
   const currentAgent = asAgent(current);
@@ -629,6 +745,17 @@ export function updateAgent(
   if (data.avatarIcon !== undefined) patch.avatarIcon = data.avatarIcon;
   if (data.avatarBgColor !== undefined) patch.avatarBgColor = data.avatarBgColor;
   if (data.avatarLogoColor !== undefined) patch.avatarLogoColor = data.avatarLogoColor;
+  if (data.apiKeyId !== undefined) {
+    const apiKey = store.getById('apiKeys', data.apiKeyId);
+    if (!apiKey || apiKey.isActive === false) {
+      throw new Error('API key not found');
+    }
+
+    patch.apiKeyId = data.apiKeyId;
+    patch.apiKeyName = apiKey.name as string;
+    patch.apiKeyPrefix = apiKey.keyPrefix as string;
+    patch.capabilities = normalizePermissionList(apiKey.permissions);
+  }
 
   const updated = store.update('agents', id, patch);
   if (!updated) return null;
@@ -642,6 +769,10 @@ export function updateAgent(
     if (serviceUserId) {
       normalizeAgentServiceUser(serviceUserId, id, data.name);
     }
+  }
+
+  if (data.apiKeyId !== undefined) {
+    return syncAgentWorkspaceAccess(id, { strictSourceKey: true });
   }
 
   return asAgent(updated);
@@ -679,8 +810,13 @@ export async function deleteAgent(id: string): Promise<boolean> {
   for (const conv of agentConversations) {
     let meta: Record<string, unknown> = {};
     try {
-      meta = typeof conv.metadata === 'string' ? JSON.parse(conv.metadata) : (conv.metadata as Record<string, unknown>) ?? {};
-    } catch { /* ignore */ }
+      meta =
+        typeof conv.metadata === 'string'
+          ? JSON.parse(conv.metadata)
+          : ((conv.metadata as Record<string, unknown>) ?? {});
+    } catch {
+      /* ignore */
+    }
 
     meta.agentDeleted = true;
     meta.agentName = agent.name;
@@ -703,35 +839,76 @@ export async function deleteAgent(id: string): Promise<boolean> {
   return true;
 }
 
-export async function ensureAgentServiceAccounts(): Promise<void> {
-  const agents = store.getAll('agents') as Record<string, unknown>[];
+async function syncAgentWorkspaceAccess(
+  agentId: string,
+  options: SyncAgentWorkspaceAccessOptions = {},
+): Promise<AgentRecord | null> {
+  const rawAgent = store.getById('agents', agentId);
+  if (!rawAgent) return null;
 
-  for (const rawAgent of agents) {
-    const agentId = rawAgent.id as string;
-    const agentName = String(rawAgent.name ?? 'Agent');
+  const agentName = String(rawAgent.name ?? 'Agent');
+  const directServiceUserId = rawAgent.serviceUserId as string | null | undefined;
+  const directServiceUser = directServiceUserId
+    ? store.getById('users', directServiceUserId)
+    : null;
 
-    const directServiceUserId = rawAgent.serviceUserId as string | null | undefined;
-    const directServiceUser = directServiceUserId
-      ? store.getById('users', directServiceUserId)
-      : null;
+  const serviceUser = directServiceUser
+    ? normalizeAgentServiceUser(directServiceUser.id as string, agentId, agentName)
+    : await createAgentServiceUser(agentId, agentName);
+  const serviceUserId = serviceUser.id as string;
 
-    const serviceUser = directServiceUser
-      ? normalizeAgentServiceUser(directServiceUser.id as string, agentId, agentName)
-      : await createAgentServiceUser(agentId, agentName);
-    const serviceUserId = serviceUser.id as string;
+  const sourceKeyId = rawAgent.apiKeyId as string;
+  const sourceKey = sourceKeyId ? store.getById('apiKeys', sourceKeyId) : null;
+  const sourceKeyIsActive = Boolean(sourceKey && sourceKey.isActive !== false);
+  const sourcePermissions = sourceKeyIsActive
+    ? normalizePermissionList(sourceKey?.permissions)
+    : [];
+  const desiredWorkspacePermissions = scopeWorkspaceApiPermissions(sourcePermissions);
 
-    const currentKeyId = rawAgent.workspaceApiKeyId as string | null | undefined;
-    const currentKey = currentKeyId ? store.getById('apiKeys', currentKeyId) : null;
-    const keyOwnerMatches = currentKey?.createdById === serviceUserId;
-    const currentKeyValue = (rawAgent.workspaceApiKey as string | null | undefined) ?? null;
+  if (options.strictSourceKey) {
+    if (!sourceKeyIsActive) {
+      throw new Error('API key not found');
+    }
 
-    let nextKeyId = currentKeyId ?? null;
-    let nextKeyValue = currentKeyValue;
+    if (desiredWorkspacePermissions.length === 0) {
+      throw new Error(
+        `API key "${String(sourceKey?.name ?? 'Unknown')}" does not grant any agent-usable workspace permissions`,
+      );
+    }
+  }
 
-    if (!currentKey || !keyOwnerMatches || !currentKeyValue) {
+  const currentKeyId = rawAgent.workspaceApiKeyId as string | null | undefined;
+  const currentKey = currentKeyId ? store.getById('apiKeys', currentKeyId) : null;
+  const keyOwnerMatches = currentKey?.createdById === serviceUserId;
+  const keyPermissionsMatch = currentKey
+    ? arraysEqualAsSets(
+        normalizePermissionList(currentKey.permissions),
+        desiredWorkspacePermissions,
+      )
+    : false;
+  const currentKeyValue = (rawAgent.workspaceApiKey as string | null | undefined) ?? null;
+  const currentKeyValueRecord = currentKeyValue ? await validateApiKey(currentKeyValue) : null;
+  const keyValueMatchesRecord = currentKeyValue
+    ? currentKeyValueRecord?.id === currentKeyId
+    : false;
+
+  let nextKeyId: string | null = null;
+  let nextKeyValue: string | null = null;
+
+  if (desiredWorkspacePermissions.length > 0) {
+    nextKeyId = currentKeyId ?? null;
+    nextKeyValue = currentKeyValue;
+
+    if (
+      !currentKey ||
+      !keyOwnerMatches ||
+      !currentKeyValue ||
+      !keyPermissionsMatch ||
+      !keyValueMatchesRecord
+    ) {
       const wsKey = await createApiKey({
         name: `Agent: ${agentName}`,
-        permissions: WORKSPACE_API_PERMISSIONS,
+        permissions: desiredWorkspacePermissions,
         createdById: serviceUserId,
         description: `Auto-created workspace API key for agent "${agentName}"`,
       });
@@ -741,12 +918,41 @@ export async function ensureAgentServiceAccounts(): Promise<void> {
         await deleteApiKey(currentKeyId).catch(() => {});
       }
     }
+  } else if (currentKeyId) {
+    await deleteApiKey(currentKeyId).catch(() => {});
+  }
 
-    store.update('agents', agentId, {
-      serviceUserId,
-      workspaceApiKeyId: nextKeyId,
-      workspaceApiKey: nextKeyValue,
-    });
+  const updated = store.update('agents', agentId, {
+    serviceUserId,
+    apiKeyName: sourceKeyIsActive ? (sourceKey?.name as string) : '',
+    apiKeyPrefix: sourceKeyIsActive ? (sourceKey?.keyPrefix as string) : '',
+    capabilities: sourcePermissions,
+    workspaceApiKeyId: nextKeyId,
+    workspaceApiKey: nextKeyValue,
+  });
+
+  return updated ? asAgent(updated) : null;
+}
+
+export async function syncAgentsForApiKey(apiKeyId: string): Promise<void> {
+  const agents = store.find(
+    'agents',
+    (record: Record<string, unknown>) => record.apiKeyId === apiKeyId,
+  );
+  for (const agent of agents) {
+    await syncAgentWorkspaceAccess(agent.id as string);
+  }
+}
+
+export async function prepareAgentWorkspaceAccess(agentId: string): Promise<AgentRecord | null> {
+  return syncAgentWorkspaceAccess(agentId);
+}
+
+export async function ensureAgentServiceAccounts(): Promise<void> {
+  const agents = store.getAll('agents') as Record<string, unknown>[];
+
+  for (const rawAgent of agents) {
+    await syncAgentWorkspaceAccess(rawAgent.id as string);
   }
 }
 
@@ -919,7 +1125,12 @@ export function createAgentFolder(agentId: string, dirPath: string, name: string
   };
 }
 
-export function createAgentReference(agentId: string, dirPath: string, name: string, target: string): AgentFileEntry {
+export function createAgentReference(
+  agentId: string,
+  dirPath: string,
+  name: string,
+  target: string,
+): AgentFileEntry {
   const parentPath = validateAgentPath(agentId, dirPath);
   const safeName = name.replace(/[/\\:*?"<>|]/g, '_').trim();
   if (!safeName) throw new Error('Invalid reference name');

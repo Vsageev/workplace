@@ -1,6 +1,6 @@
 # Development Guide
 
-This document provides guidelines and utilities to make development faster and more consistent.
+This document covers local development commands, shared utilities, testing commands, and baseline code style. Keep API contract guidance in [backend-api-design-guidelines.md](./backend-api-design-guidelines.md), security rules in [security-guidelines.md](./security-guidelines.md), and instruction-maintenance rules in [instruction-authoring.md](./instruction-authoring.md).
 
 ## Quick Start
 
@@ -35,98 +35,6 @@ const date = formatDate(new Date().toISOString());
 const response = createListResponse(items, total, limit, offset);
 ```
 
-## API Response Standards
-
-### List Responses
-
-All list endpoints should return consistent shapes:
-
-```typescript
-import { apiListResponse } from '#lib/api-helpers';
-
-// In your route handler
-app.get('/api/items', async (req, reply) => {
-  const { limit = 20, offset = 0 } = req.query;
-  const items = await getItems(limit, offset);
-  const total = await countItems();
-  
-  return reply.send(apiListResponse(items, total, limit, offset));
-});
-```
-
-Expected response shape:
-```json
-{
-  "entries": [...],
-  "total": 100,
-  "limit": 20,
-  "offset": 0
-}
-```
-
-### Error Responses
-
-Use Fastify's built-in error handling via `@fastify/sensible`:
-
-```typescript
-// In route handlers
-if (!item) {
-  return reply.notFound('Item not found');
-}
-
-// For validation errors
-throw reply.badRequest('Invalid input');
-```
-
-## Rate Limiting
-
-For development-speed rate limiting without complex setup:
-
-```typescript
-import { createAgentRateLimiter } from '#lib/api-helpers';
-
-const rateLimiter = createAgentRateLimiter();
-
-// In your route
-if (!rateLimiter.isAllowed(agentId)) {
-  return reply.tooManyRequests('Rate limit exceeded');
-}
-```
-
-## Security Guidelines
-
-### API Keys
-
-- Use scoped API keys for development tasks
-- Set expiration dates (90 days recommended)
-- Choose the most restrictive key that allows your task
-
-Available dev keys (see AGENTS.md for details):
-- `ws_tbrz6` - Dev Tasks (cards, boards, messages write)
-- `ws_qijlI` - UI Dev (cards, messages write)
-
-### Input Validation
-
-Always validate inputs using Zod schemas:
-
-```typescript
-import { z } from 'zod';
-
-const createItemSchema = z.object({
-  name: z.string().min(1),
-  description: z.string().optional(),
-});
-
-// Use in route schema
-app.post('/api/items', {
-  schema: {
-    body: createItemSchema,
-  },
-}, async (req, reply) => {
-  // req.body is already validated
-});
-```
-
 ## Testing
 
 ```bash
@@ -146,6 +54,8 @@ pnpm --filter frontend test
 - Follow existing naming conventions (camelCase for variables, PascalCase for types)
 - Keep functions small and focused
 - Add comments only for complex logic (focus on why, not what)
+- Prefer extending existing shared utilities before adding new local helpers
+- When adding backend endpoints or mutating flows, read the dedicated API and security docs instead of copying rules into feature docs
 
 ## Common Tasks
 
@@ -153,8 +63,9 @@ pnpm --filter frontend test
 
 1. Create route file in `packages/backend/src/routes/`
 2. Define Zod schema for validation
-3. Use `apiListResponse` for list endpoints
-4. Add route registration in `app.ts`
+3. Follow [backend-api-design-guidelines.md](./backend-api-design-guidelines.md) for list shapes, batching, and retry-safety
+4. Follow [security-guidelines.md](./security-guidelines.md) for validation and sensitive-field handling
+5. Add route registration in `app.ts`
 
 ### Adding a New Service
 

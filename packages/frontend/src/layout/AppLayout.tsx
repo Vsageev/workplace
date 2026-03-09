@@ -5,10 +5,7 @@ import { Menu, X, ChevronLeft, MessageSquare } from 'lucide-react';
 import { CreateCardModal } from '../ui';
 import type { CreateCardData } from '../ui/CreateCardModal';
 import { WorkspaceProvider } from '../stores/WorkspaceContext';
-import { CommandPalette } from '../components/CommandPalette';
-import { KeyboardShortcutsDialog } from '../components/KeyboardShortcutsDialog';
 import { NavigationProgress } from '../components/NavigationProgress';
-import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import { useUnreadBadgeTitle } from '../hooks/useDocumentTitle';
 import { useUnreadCount } from '../hooks/useUnreadCount';
 import { useActiveRunsCount } from '../hooks/useActiveRunsCount';
@@ -54,8 +51,6 @@ export function AppLayout() {
     () => localStorage.getItem('sidebar-collapsed') === 'true',
   );
   const [isMobile, setIsMobile] = useState(isMobileViewport);
-  const [paletteOpen, setPaletteOpen] = useState(false);
-  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [quickCreateOpen, setQuickCreateOpen] = useState(false);
   const unreadCount = useUnreadCount();
   const activeRunsCount = useActiveRunsCount();
@@ -135,12 +130,6 @@ export function AppLayout() {
 
   const mobileHeader = useMemo(() => getMobileHeaderInfo(location.pathname), [location.pathname]);
 
-  useKeyboardShortcuts({
-    onOpenPalette: useCallback(() => setPaletteOpen(true), []),
-    onOpenShortcuts: useCallback(() => setShortcutsOpen(true), []),
-    onToggleSidebar: isMobile ? undefined : toggleSidebarCollapse,
-  });
-
   const isSidebarCollapsed = sidebarCollapsed && !isMobile;
 
   const handleQuickCreate = useCallback(async (data: CreateCardData) => {
@@ -168,25 +157,6 @@ export function AppLayout() {
       action: { label: 'Open', onClick: () => navigate(`/cards/${card.id}`) },
     });
   }, [navigate]);
-
-  const handleGlobalKeyDown = useCallback((e: KeyboardEvent) => {
-    if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-      e.preventDefault();
-      setPaletteOpen((v) => !v);
-    }
-  }, []);
-
-  useEffect(() => {
-    document.addEventListener('keydown', handleGlobalKeyDown);
-    return () => document.removeEventListener('keydown', handleGlobalKeyDown);
-  }, [handleGlobalKeyDown]);
-
-  // Allow child pages (e.g. Dashboard) to open the command palette via custom event
-  useEffect(() => {
-    const handler = () => setPaletteOpen(true);
-    window.addEventListener('open-command-palette', handler);
-    return () => window.removeEventListener('open-command-palette', handler);
-  }, []);
 
   // Allow child pages to open quick-create card modal via custom event
   useEffect(() => {
@@ -263,7 +233,6 @@ export function AppLayout() {
           </button>
           <Sidebar
             onNavigate={() => setSidebarOpen(false)}
-            onOpenCommandPalette={() => setPaletteOpen(true)}
             onQuickCreateCard={() => setQuickCreateOpen(true)}
             unreadCount={unreadCount ?? 0}
             activeRunsCount={activeRunsCount ?? 0}
@@ -276,8 +245,6 @@ export function AppLayout() {
           <Outlet />
         </main>
 
-        <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} onQuickCreateCard={() => setQuickCreateOpen(true)} />
-        <KeyboardShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
         {quickCreateOpen && (
           <CreateCardModal
             onClose={() => setQuickCreateOpen(false)}
