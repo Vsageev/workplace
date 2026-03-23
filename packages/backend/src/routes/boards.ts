@@ -44,6 +44,7 @@ const columnSchema = z.object({
   color: z.string().max(7).optional(),
   position: z.number().int().min(0),
   assignAgentId: z.uuid().nullable().optional(),
+  assignAgentPrompt: z.string().max(4000).nullable().optional(),
   wipLimit: z.number().int().min(1).nullable().optional(),
 });
 
@@ -63,7 +64,27 @@ const updateBoardBody = z.object({
 });
 
 const batchRunStatusSchema = z.enum(['queued', 'running', 'completed', 'failed', 'cancelled', 'active']);
-const batchItemStatusSchema = z.enum(['queued', 'processing', 'completed', 'failed', 'cancelled']);
+const batchItemStatusSchema = z.enum([
+  'queued',
+  'processing',
+  'completed',
+  'failed',
+  'cancelled',
+  'skipped',
+]);
+const batchBlockingModeSchema = z.enum(['all_success', 'all_settled']);
+const batchStageSchema = z.object({
+  id: z.string().min(1).max(100).optional(),
+  cardIds: z.array(z.uuid()).min(1),
+  dependsOnStageIds: z.array(z.string().min(1).max(100)).optional(),
+  dependsOnStageIndexes: z.array(z.number().int().min(0)).optional(),
+  blockingMode: batchBlockingModeSchema.optional(),
+});
+const batchCardDependencySchema = z.object({
+  cardId: z.uuid(),
+  dependsOnCardIds: z.array(z.uuid()).min(1),
+  blockingMode: batchBlockingModeSchema.optional(),
+});
 
 export async function boardRoutes(app: FastifyInstance) {
   const typedApp = app.withTypeProvider<ZodTypeProvider>();
@@ -261,6 +282,7 @@ export async function boardRoutes(app: FastifyInstance) {
           color: z.string().max(7).optional(),
           position: z.number().int().min(0).optional(),
           assignAgentId: z.uuid().nullable().optional(),
+          assignAgentPrompt: z.string().max(4000).nullable().optional(),
           wipLimit: z.number().int().min(1).nullable().optional(),
         }),
       },
@@ -587,9 +609,12 @@ export async function boardRoutes(app: FastifyInstance) {
         body: z.object({
           agentId: z.uuid(),
           prompt: z.string().min(1).max(10000),
+          cardIds: z.array(z.uuid()).min(1).optional(),
           columnIds: z.array(z.uuid()).optional(),
           textFilter: z.string().max(200).optional(),
           maxParallel: z.number().int().min(1).max(10).optional(),
+          stages: z.array(batchStageSchema).min(1).optional(),
+          cardDependencies: z.array(batchCardDependencySchema).min(1).optional(),
         }),
       },
     },

@@ -1,6 +1,23 @@
 import { api } from './api';
 
 export type AgentBatchRunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+export type AgentBatchBlockingMode = 'all_success' | 'all_settled';
+export type BatchPlanMode = 'ordered' | 'layers';
+
+export interface AgentBatchStageInput {
+  id?: string;
+  cardIds: string[];
+  dependsOnStageIds?: string[];
+  dependsOnStageIndexes?: number[];
+  blockingMode?: AgentBatchBlockingMode;
+}
+
+export interface BatchPlanCardLike {
+  id: string;
+  name: string;
+}
+
+export type BatchLayerAssignments = Record<string, number>;
 
 export interface AgentBatchRunLike {
   id: string;
@@ -85,4 +102,51 @@ export async function fetchProcessingCardAgents(
     }),
   );
   return cardToAgent;
+}
+
+export function normalizeBatchLayerAssignments<T extends BatchPlanCardLike>(
+  cards: T[],
+  assignments: BatchLayerAssignments,
+  layerCount: number,
+): BatchLayerAssignments {
+  const next: BatchLayerAssignments = {};
+  const maxLayerIndex = Math.max(0, layerCount - 1);
+
+  for (const card of cards) {
+    const rawValue = assignments[card.id];
+    const normalizedValue = Number.isInteger(rawValue)
+      ? Math.min(Math.max(rawValue, 0), maxLayerIndex)
+      : 0;
+    next[card.id] = normalizedValue;
+  }
+
+  return next;
+}
+
+export function buildStagesFromLayerAssignments<T extends BatchPlanCardLike>(
+  cards: T[],
+  assignments: BatchLayerAssignments,
+  layerCount: number,
+): AgentBatchStageInput[] {
+  if (cards.length === 0 || layerCount <= 1) return [];
+
+  const normalizedAssignments = normalizeBatchLayerAssignments(cards, assignments, layerCount);
+  const cardsByLayer = new Map<number, string[]>();
+
+  for (const card of cards) {
+    const layerIndex = normalizedAssignments[card.id] ?? 0;
+    const existing = cardsByLayer.get(layerIndex) ?? [];
+    existing.push(card.id);
+    cardsByLayer.set(layerIndex, existing);
+  }
+
+  const usedLayers = Array.from(cardsByLayer.entries())
+    .filter(([, cardIds]) => cardIds.length > 0)
+    .sort((a, b) => a[0] - b[0]);
+
+  return usedLayers.map(([originalLayerIndex, cardIds], stageIndex) => ({
+    id: `layer-${originalLayerIndex + 1}`,
+    cardIds,
+    dependsOnStageIndexes: stageIndex === 0 ? undefined : [stageIndex - 1],
+  }));
 }

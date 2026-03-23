@@ -77,6 +77,7 @@ async function insertBoard(
         color: col.color ?? '#6B7280',
         position: col.position,
         assignAgentId: col.assignAgentId ?? null,
+        assignAgentPrompt: col.assignAgentPrompt ?? null,
       });
     }
   }
@@ -123,7 +124,13 @@ export interface CreateBoardData {
   description?: string | null;
   collectionId?: string | null;
   defaultCollectionId?: string | null;
-  columns?: { name: string; color?: string; position: number; assignAgentId?: string | null }[];
+  columns?: {
+    name: string;
+    color?: string;
+    position: number;
+    assignAgentId?: string | null;
+    assignAgentPrompt?: string | null;
+  }[];
 }
 
 export interface UpdateBoardData {
@@ -138,6 +145,7 @@ export interface CreateColumnData {
   color?: string;
   position: number;
   assignAgentId?: string | null;
+  assignAgentPrompt?: string | null;
   wipLimit?: number | null;
 }
 
@@ -146,6 +154,7 @@ export interface UpdateColumnData {
   color?: string;
   position?: number;
   assignAgentId?: string | null;
+  assignAgentPrompt?: string | null;
   wipLimit?: number | null;
 }
 
@@ -388,6 +397,7 @@ export async function createColumn(boardId: string, data: CreateColumnData) {
     color: data.color ?? '#6B7280',
     position: data.position,
     assignAgentId: data.assignAgentId ?? null,
+    assignAgentPrompt: data.assignAgentPrompt ?? null,
     wipLimit: data.wipLimit ?? null,
   });
 }
@@ -422,7 +432,12 @@ async function tryAutoAssignAgent(columnId: string, cardId: string) {
   // Skip if card is already assigned to this agent
   if (card.assigneeId === column.assignAgentId) return;
 
-  await updateCard(cardId, { assigneeId: column.assignAgentId });
+  await updateCard(
+    cardId,
+    { assigneeId: column.assignAgentId },
+    undefined,
+    { assignmentPrompt: column.assignAgentPrompt ?? undefined },
+  );
 }
 
 // ── Board-Card placement ─────────────────────────────────────────────

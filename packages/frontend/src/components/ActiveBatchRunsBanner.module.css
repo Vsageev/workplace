@@ -139,6 +139,21 @@
   gap: var(--space-2);
 }
 
+.metaRow {
+  margin-top: var(--space-2);
+}
+
+.metaChip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+}
+
 .statsRow {
   display: flex;
   align-items: center;
@@ -169,6 +184,10 @@
 
 .statFailed {
   color: var(--color-error);
+}
+
+.statSkipped {
+  color: var(--color-warning);
 }
 
 .statTotal {
@@ -229,6 +248,11 @@
   background: rgba(239, 68, 68, 0.04);
   border: 1px solid rgba(239, 68, 68, 0.1);
   border-radius: var(--radius-md);
+}
+
+.errorItemSkipped {
+  background: rgba(245, 158, 11, 0.06);
+  border-color: rgba(245, 158, 11, 0.14);
 }
 
 .errorItemName {

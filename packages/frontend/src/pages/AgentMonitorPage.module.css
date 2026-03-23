@@ -1196,6 +1196,21 @@
   line-height: 1.45;
 }
 
+.batchMetaInfo {
+  margin-top: var(--space-2);
+}
+
+.batchMetaChip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+}
+
 .batchProgress {
   margin-top: var(--space-3);
 }
@@ -1259,6 +1274,10 @@
 
 .batchStatFailed {
   color: var(--color-error);
+}
+
+.batchStatSkipped {
+  color: var(--color-warning);
 }
 
 .batchStatTotal {

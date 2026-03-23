@@ -49,6 +49,10 @@
   background: #ef4444;
 }
 
+.cell_skipped {
+  background: #f59e0b;
+}
+
 .cell_cancelled {
   background: var(--color-text-tertiary);
   opacity: 0.3;

@@ -30,6 +30,10 @@ export interface UpdateCardData {
   position?: number;
 }
 
+interface UpdateCardOptions {
+  assignmentPrompt?: string;
+}
+
 export async function listCards(query: CardListQuery) {
   const limit = query.limit ?? 50;
   const offset = query.offset ?? 0;
@@ -240,6 +244,7 @@ export async function updateCard(
   id: string,
   data: UpdateCardData,
   audit?: { userId: string; ipAddress?: string; userAgent?: string },
+  options?: UpdateCardOptions,
 ) {
   // Capture current assignee before updating so we can detect changes
   const current = store.getById('cards', id) as any;
@@ -282,7 +287,7 @@ export async function updateCard(
       }, {
         onDone: () => {},
         onError: (err) => console.error(`Agent task error for card ${id}:`, err),
-      });
+      }, options?.assignmentPrompt);
     }
   }
 

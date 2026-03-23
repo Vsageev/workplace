@@ -1,9 +1,17 @@
-import { useState, useEffect, useRef } from 'react';
-import { X, Bot, Play, Check, CheckCircle2, Minus, Plus, Zap, Layers, ChevronDown, Search } from 'lucide-react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { X, Bot, Play, Check, CheckCircle2, Minus, Plus, Zap, Layers, ChevronDown, Search, ListOrdered } from 'lucide-react';
 import { Button, Tooltip } from '../../ui';
 import { api } from '../../lib/api';
 import { toast } from '../../stores/toast';
 import { AgentAvatar } from '../../components/AgentAvatar';
+import { BatchLayerPlanner } from '../../components/BatchLayerPlanner';
+import { ManualBatchCardSelector, type ManualBatchCardOption } from '../../components/ManualBatchCardSelector';
+import {
+  buildStagesFromLayerAssignments,
+  normalizeBatchLayerAssignments,
+  type BatchLayerAssignments,
+  type BatchPlanMode,
+} from '../../lib/agent-batch';
 import styles from './BoardBatchRunPanel.module.css';
 
 interface BoardColumn {
@@ -32,17 +40,28 @@ interface BatchResult {
 interface BoardBatchRunPanelProps {
   boardId: string;
   columns: BoardColumn[];
+  availableCards: Array<{
+    id: string;
+    name: string;
+    columnId?: string | null;
+    columnName?: string | null;
+  }>;
   onClose: () => void;
 }
 
-export function BoardBatchRunPanel({ boardId, columns, onClose }: BoardBatchRunPanelProps) {
+export function BoardBatchRunPanel({ boardId, columns, availableCards, onClose }: BoardBatchRunPanelProps) {
   const [agents, setAgents] = useState<AgentEntry[]>([]);
   const [agentId, setAgentId] = useState('');
   const [prompt, setPrompt] = useState('');
+  const [scopeMode, setScopeMode] = useState<'filters' | 'manual'>('filters');
   const [selectedColumnIds, setSelectedColumnIds] = useState<Set<string>>(
     () => new Set(columns.map((c) => c.id)),
   );
   const [textFilter, setTextFilter] = useState('');
+  const [manualCards, setManualCards] = useState<ManualBatchCardOption[]>([]);
+  const [planMode, setPlanMode] = useState<BatchPlanMode>('ordered');
+  const [layerCount, setLayerCount] = useState(2);
+  const [layerAssignments, setLayerAssignments] = useState<BatchLayerAssignments>({});
   const [maxParallel, setMaxParallel] = useState(3);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<BatchResult | null>(null);
@@ -80,8 +99,23 @@ export function BoardBatchRunPanel({ boardId, columns, onClose }: BoardBatchRunP
     return () => document.removeEventListener('mousedown', onClickOutside);
   }, []);
 
+  useEffect(() => {
+    const maxLayers = Math.max(1, manualCards.length);
+    setLayerCount((prev) => Math.min(Math.max(prev, 1), maxLayers));
+  }, [manualCards.length]);
+
+  useEffect(() => {
+    setLayerAssignments((prev) => normalizeBatchLayerAssignments(manualCards, prev, layerCount));
+  }, [manualCards, layerCount]);
+
   // Fetch preview count when filters change (debounced for text filter)
   useEffect(() => {
+    if (scopeMode !== 'filters') {
+      setPreviewLoading(false);
+      setPreviewCount(manualCards.length);
+      return;
+    }
+
     // No columns selected → 0 cards, no need to call API
     if (selectedColumnIds.size === 0) {
       setPreviewCount(0);
@@ -117,7 +151,32 @@ export function BoardBatchRunPanel({ boardId, columns, onClose }: BoardBatchRunP
       clearTimeout(timeout);
       previewAbortRef.current?.abort();
     };
-  }, [boardId, selectedColumnIds, textFilter, columns.length]);
+  }, [boardId, scopeMode, manualCards.length, selectedColumnIds, textFilter, columns.length]);
+
+  const configuredStages = useMemo(
+    () => (
+      scopeMode === 'manual' && planMode === 'layers'
+        ? buildStagesFromLayerAssignments(manualCards, layerAssignments, layerCount)
+        : []
+    ),
+    [scopeMode, planMode, manualCards, layerAssignments, layerCount],
+  );
+
+  const loadManualOptions = useCallback(async (query: string) => {
+    const needle = query.toLowerCase();
+    return availableCards
+      .filter((card) => {
+        if (!needle) return true;
+        return card.name.toLowerCase().includes(needle)
+          || (card.columnName ?? '').toLowerCase().includes(needle);
+      })
+      .slice(0, 30)
+      .map((card) => ({
+        id: card.id,
+        name: card.name,
+        subtitle: card.columnName ?? null,
+      }));
+  }, [availableCards]);
 
   function toggleColumn(id: string) {
     setSelectedColumnIds((prev) => {
@@ -142,14 +201,21 @@ export function BoardBatchRunPanel({ boardId, columns, onClose }: BoardBatchRunP
   async function handleSubmit() {
     if (!agentId || !prompt.trim() || submitting) return;
 
-    const columnIds =
-      selectedColumnIds.size === columns.length
-        ? undefined
-        : Array.from(selectedColumnIds);
+    if (scopeMode === 'manual') {
+      if (manualCards.length === 0) {
+        toast.error('Add at least one card');
+        return;
+      }
+    } else {
+      const columnIds =
+        selectedColumnIds.size === columns.length
+          ? undefined
+          : Array.from(selectedColumnIds);
 
-    if (columnIds !== undefined && columnIds.length === 0) {
-      toast.error('Select at least one column');
-      return;
+      if (columnIds !== undefined && columnIds.length === 0) {
+        toast.error('Select at least one column');
+        return;
+      }
     }
 
     setSubmitting(true);
@@ -161,9 +227,14 @@ export function BoardBatchRunPanel({ boardId, columns, onClose }: BoardBatchRunP
         body: JSON.stringify({
           agentId,
           prompt: prompt.trim(),
-          columnIds,
-          textFilter: textFilter.trim() || undefined,
+          cardIds: scopeMode === 'manual' ? manualCards.map((card) => card.id) : undefined,
+          columnIds:
+            scopeMode === 'filters' && selectedColumnIds.size < columns.length
+              ? Array.from(selectedColumnIds)
+              : undefined,
+          textFilter: scopeMode === 'filters' ? textFilter.trim() || undefined : undefined,
           maxParallel,
+          stages: configuredStages.length > 0 ? configuredStages : undefined,
         }),
       });
       setResult(res);
@@ -182,14 +253,19 @@ export function BoardBatchRunPanel({ boardId, columns, onClose }: BoardBatchRunP
   const allSelected = selectedColumnIds.size === columns.length;
   const selectedAgent = agents.find((a) => a.id === agentId);
 
-  const canRun = !submitting && !!agentId && !!prompt.trim() && selectedColumnIds.size > 0;
+  const canRun = !submitting
+    && !!agentId
+    && !!prompt.trim()
+    && (scopeMode === 'manual' ? manualCards.length > 0 : selectedColumnIds.size > 0);
   const disabledReason = submitting
     ? 'Batch run is starting…'
     : !agentId
       ? 'Select an agent first'
       : !prompt.trim()
         ? 'Enter a prompt'
-        : selectedColumnIds.size === 0
+        : scopeMode === 'manual' && manualCards.length === 0
+          ? 'Add at least one card'
+          : scopeMode === 'filters' && selectedColumnIds.size === 0
           ? 'Select at least one column'
           : undefined;
 
@@ -266,6 +342,29 @@ export function BoardBatchRunPanel({ boardId, columns, onClose }: BoardBatchRunP
             </div>
           </div>
 
+          <div className={styles.section}>
+            <div className={styles.sectionHeader}>
+              <ListOrdered size={14} className={styles.sectionIcon} />
+              <span className={styles.sectionLabel}>Batch scope</span>
+            </div>
+            <div className={styles.columnChips}>
+              <button
+                type="button"
+                className={`${styles.columnChip} ${scopeMode === 'filters' ? styles.columnChipSelected : ''}`}
+                onClick={() => setScopeMode('filters')}
+              >
+                Filtered set
+              </button>
+              <button
+                type="button"
+                className={`${styles.columnChip} ${scopeMode === 'manual' ? styles.columnChipSelected : ''}`}
+                onClick={() => setScopeMode('manual')}
+              >
+                Manual order
+              </button>
+            </div>
+          </div>
+
           {/* Prompt */}
           <div className={styles.section}>
             <div className={styles.sectionHeader}>
@@ -282,62 +381,99 @@ export function BoardBatchRunPanel({ boardId, columns, onClose }: BoardBatchRunP
             />
           </div>
 
-          {/* Columns */}
-          {columns.length > 0 && (
-            <div className={styles.section}>
-              <div className={styles.sectionHeader}>
-                <Layers size={14} className={styles.sectionIcon} />
-                <span className={styles.sectionLabel}>
-                  Columns
-                  <span className={styles.sectionCount}>
-                    {selectedColumnIds.size}/{columns.length}
-                  </span>
-                </span>
-                <button
-                  className={styles.toggleAllBtn}
-                  onClick={allSelected ? deselectAll : selectAll}
-                  type="button"
-                >
-                  {allSelected ? 'Clear' : 'All'}
-                </button>
-              </div>
-              <div className={styles.columnChips}>
-                {columns.map((col) => {
-                  const selected = selectedColumnIds.has(col.id);
-                  return (
+          {scopeMode === 'filters' ? (
+            <>
+              {/* Columns */}
+              {columns.length > 0 && (
+                <div className={styles.section}>
+                  <div className={styles.sectionHeader}>
+                    <Layers size={14} className={styles.sectionIcon} />
+                    <span className={styles.sectionLabel}>
+                      Columns
+                      <span className={styles.sectionCount}>
+                        {selectedColumnIds.size}/{columns.length}
+                      </span>
+                    </span>
                     <button
-                      key={col.id}
-                      className={`${styles.columnChip} ${selected ? styles.columnChipSelected : ''}`}
-                      onClick={() => toggleColumn(col.id)}
+                      className={styles.toggleAllBtn}
+                      onClick={allSelected ? deselectAll : selectAll}
                       type="button"
                     >
-                      <span
-                        className={styles.columnDot}
-                        style={{ background: col.color }}
-                      />
-                      {col.name}
+                      {allSelected ? 'Clear' : 'All'}
                     </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
+                  </div>
+                  <div className={styles.columnChips}>
+                    {columns.map((col) => {
+                      const selected = selectedColumnIds.has(col.id);
+                      return (
+                        <button
+                          key={col.id}
+                          className={`${styles.columnChip} ${selected ? styles.columnChipSelected : ''}`}
+                          onClick={() => toggleColumn(col.id)}
+                          type="button"
+                        >
+                          <span
+                            className={styles.columnDot}
+                            style={{ background: col.color }}
+                          />
+                          {col.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
-          {/* Text Filter */}
-          <div className={styles.section}>
-            <div className={styles.sectionHeader}>
-              <Search size={14} className={styles.sectionIcon} />
-              <span className={styles.sectionLabel}>Filter cards</span>
-            </div>
-            <input
-              className={styles.textFilterInput}
-              type="text"
-              placeholder="Filter by card name…"
-              value={textFilter}
-              onChange={(e) => setTextFilter(e.target.value)}
-              maxLength={200}
-            />
-          </div>
+              {/* Text Filter */}
+              <div className={styles.section}>
+                <div className={styles.sectionHeader}>
+                  <Search size={14} className={styles.sectionIcon} />
+                  <span className={styles.sectionLabel}>Filter cards</span>
+                </div>
+                <input
+                  className={styles.textFilterInput}
+                  type="text"
+                  placeholder="Filter by card name…"
+                  value={textFilter}
+                  onChange={(e) => setTextFilter(e.target.value)}
+                  maxLength={200}
+                />
+              </div>
+            </>
+          ) : (
+            <>
+              <div className={styles.section}>
+                <div className={styles.sectionHeader}>
+                  <ListOrdered size={14} className={styles.sectionIcon} />
+                  <span className={styles.sectionLabel}>Manual card order</span>
+                </div>
+                <ManualBatchCardSelector
+                  selectedCards={manualCards}
+                  onChange={setManualCards}
+                  loadOptions={loadManualOptions}
+                  searchPlaceholder="Search board cards or columns…"
+                  emptySearchLabel="No board cards available"
+                  emptySelectedLabel="Add cards to run them in this exact order"
+                />
+              </div>
+
+              <div className={styles.section}>
+                <div className={styles.sectionHeader}>
+                  <Layers size={14} className={styles.sectionIcon} />
+                  <span className={styles.sectionLabel}>Execution plan</span>
+                </div>
+                <BatchLayerPlanner
+                  selectedCards={manualCards}
+                  planMode={planMode}
+                  onPlanModeChange={setPlanMode}
+                  layerCount={layerCount}
+                  onLayerCountChange={setLayerCount}
+                  assignments={layerAssignments}
+                  onAssignmentsChange={setLayerAssignments}
+                />
+              </div>
+            </>
+          )}
 
           {/* Concurrency */}
           <div className={styles.section}>
@@ -386,9 +522,16 @@ export function BoardBatchRunPanel({ boardId, columns, onClose }: BoardBatchRunP
                 {previewLoading ? '…' : previewCount} card{previewCount !== 1 ? 's' : ''}
               </span>
             )}
-            {selectedColumnIds.size > 0 && selectedColumnIds.size < columns.length && (
+            {scopeMode === 'filters' && selectedColumnIds.size > 0 && selectedColumnIds.size < columns.length && (
               <span className={styles.footerColumns}>
                 {selectedColumnIds.size} column{selectedColumnIds.size !== 1 ? 's' : ''}
+              </span>
+            )}
+            {scopeMode === 'manual' && manualCards.length > 0 && (
+              <span className={styles.footerColumns}>
+                {planMode === 'layers' && configuredStages.length > 0
+                  ? `${configuredStages.length} layer${configuredStages.length === 1 ? '' : 's'}`
+                  : `First: ${manualCards[0]?.name}`}
               </span>
             )}
           </div>

@@ -564,8 +564,17 @@
   transition: background var(--transition-fast);
 }
 
+.automationMenuItem:disabled {
+  cursor: default;
+  opacity: 0.72;
+}
+
 .automationMenuItem:hover {
   background: var(--color-surface);
+}
+
+.automationMenuItem:disabled:hover {
+  background: none;
 }
 
 .automationMenuItem.automationMenuItemActive {
@@ -573,10 +582,159 @@
   font-weight: 500;
 }
 
+.automationMenuItemLabel {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.automationMenuItemMeta {
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--color-text-tertiary);
+  font-weight: 400;
+}
+
 .automationDivider {
   height: 1px;
   background: var(--color-border-subtle);
   margin: var(--space-1) 0;
+}
+
+.automationMenuSectionTitle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3) var(--space-1);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.automationPromptWrap {
+  padding: 0 var(--space-3) var(--space-2);
+}
+
+.automationPromptInput {
+  width: 100%;
+  min-height: 88px;
+  resize: vertical;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-background);
+  color: var(--color-text);
+  font: inherit;
+  line-height: 1.45;
+  padding: var(--space-2);
+}
+
+.automationPromptInput:focus {
+  outline: none;
+  border-color: var(--color-link);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+}
+
+.automationPromptHint {
+  margin-top: var(--space-2);
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--color-text-tertiary);
+}
+
+.automationPromptActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.automationPromptSave,
+.automationPromptClear {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-card);
+  color: var(--color-text);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 6px 10px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.automationPromptSave:hover,
+.automationPromptClear:hover {
+  background: var(--color-surface);
+}
+
+.automationPromptSave:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.automationPickerSubtitle {
+  margin-top: var(--space-2);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+}
+
+.automationPickerList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+  max-height: min(420px, 60vh);
+  overflow-y: auto;
+}
+
+.automationPickerEmpty {
+  padding: var(--space-3);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-lg);
+  color: var(--color-text-tertiary);
+  text-align: center;
+  font-size: 13px;
+}
+
+.automationPickerItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-card);
+  color: var(--color-text);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color var(--transition-fast), background var(--transition-fast), transform var(--transition-fast);
+}
+
+.automationPickerItem:hover {
+  background: var(--color-surface);
+  border-color: var(--color-border-strong);
+  transform: translateY(-1px);
+}
+
+.automationPickerItem.automationPickerItemActive {
+  border-color: rgba(59, 130, 246, 0.35);
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.automationPickerName {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.automationPickerCheck {
+  color: var(--color-link);
+  flex-shrink: 0;
 }
 
 .cardCount {

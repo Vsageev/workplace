@@ -18,7 +18,9 @@ interface BatchRunEntry {
   completed: number;
   failed: number;
   cancelled: number;
+  skipped?: number;
   maxParallel?: number;
+  stageCount?: number;
   startedAt: string | null;
   finishedAt: string | null;
   createdAt?: string;
@@ -32,6 +34,7 @@ interface BatchRunItem {
   cardName: string;
   status: string;
   errorMessage: string | null;
+  blockedReason?: string | null;
 }
 
 interface AgentInfo {
@@ -170,10 +173,13 @@ export function ActiveBatchRunsBanner({
       if (!errorItems[runId] && itemsEndpoint) {
         try {
           const res = await api<{ entries: BatchRunItem[] }>(
-            `${itemsEndpoint(runId)}?status=failed&limit=50`,
+            `${itemsEndpoint(runId)}?limit=200`,
           );
           if (mountedRef.current) {
-            setErrorItems((prev) => ({ ...prev, [runId]: res.entries }));
+            setErrorItems((prev) => ({
+              ...prev,
+              [runId]: res.entries.filter((item) => item.status === 'failed' || item.status === 'skipped'),
+            }));
           }
         } catch {
           /* ignore */
@@ -202,15 +208,17 @@ export function ActiveBatchRunsBanner({
         const statusCls = isActive ? styles.cardActive : run.status === 'completed' ? styles.cardCompleted : run.status === 'failed' ? styles.cardFailed : styles.cardCancelled;
         const failedItemsList = errorItems[run.id];
         const isMinimized = !expandedRuns.has(run.id);
-        const finished = run.completed + run.failed + run.cancelled;
+        const skipped = run.skipped ?? 0;
+        const finished = run.completed + run.failed + run.cancelled + skipped;
         const pct = run.total > 0 ? Math.round((finished / run.total) * 100) : 0;
+        const issueCount = run.failed + skipped;
 
         // Build per-item grid data if available
         const perItemData = runItemsMap[run.id];
         const gridItems = perItemData?.map((it) => ({
           id: it.id,
           label: it.cardName,
-          status: it.status as 'queued' | 'processing' | 'completed' | 'failed' | 'cancelled',
+          status: it.status as 'queued' | 'processing' | 'completed' | 'failed' | 'cancelled' | 'skipped',
         }));
 
         if (isMinimized) {
@@ -328,6 +336,14 @@ export function ActiveBatchRunsBanner({
               {run.prompt}
             </div>
 
+            {(run.stageCount ?? 0) > 0 && (
+              <div className={styles.metaRow}>
+                <span className={styles.metaChip}>
+                  {run.stageCount} layer{run.stageCount === 1 ? '' : 's'}
+                </span>
+              </div>
+            )}
+
             <div className={styles.progressSection}>
               <BatchProgressGrid
                 items={gridItems}
@@ -337,6 +353,7 @@ export function ActiveBatchRunsBanner({
                   completed: run.completed,
                   failed: run.failed,
                   cancelled: run.cancelled,
+                  skipped,
                 } : undefined}
                 total={run.total}
                 cellSize={8}
@@ -361,6 +378,9 @@ export function ActiveBatchRunsBanner({
                   {run.failed > 0 && (
                     <span className={styles.statFailed}>{run.failed} failed</span>
                   )}
+                  {skipped > 0 && (
+                    <span className={styles.statSkipped}>{skipped} skipped</span>
+                  )}
                 </span>
                 <span className={styles.statTotal}>
                   {finished}/{run.total}
@@ -378,23 +398,26 @@ export function ActiveBatchRunsBanner({
               </div>
             )}
 
-            {run.failed > 0 && itemsEndpoint && (
+            {issueCount > 0 && itemsEndpoint && (
               <>
                 <button
                   className={styles.errorToggle}
                   onClick={() => void toggleErrors(run.id)}
                 >
                   <AlertTriangle size={12} />
-                  {expandedErrorId === run.id ? 'Hide errors' : `Show ${run.failed} error${run.failed === 1 ? '' : 's'}`}
+                  {expandedErrorId === run.id ? 'Hide issues' : `Show ${issueCount} issue${issueCount === 1 ? '' : 's'}`}
                   {expandedErrorId === run.id ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                 </button>
                 {expandedErrorId === run.id && failedItemsList && (
                   <div className={styles.errorList}>
                     {failedItemsList.map((item) => (
-                      <div key={item.id} className={styles.errorItem}>
+                      <div
+                        key={item.id}
+                        className={`${styles.errorItem} ${item.status === 'skipped' ? styles.errorItemSkipped : ''}`}
+                      >
                         <span className={styles.errorItemName}>{item.cardName}</span>
-                        {item.errorMessage && (
-                          <pre className={styles.errorItemMsg}>{item.errorMessage}</pre>
+                        {(item.errorMessage || item.blockedReason) && (
+                          <pre className={styles.errorItemMsg}>{item.errorMessage || item.blockedReason}</pre>
                         )}
                       </div>
                     ))}

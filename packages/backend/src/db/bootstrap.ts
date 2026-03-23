@@ -150,6 +150,7 @@ function ensureDefaultBoard(
       color: column.color,
       position: column.position,
       assignAgentId: null,
+      assignAgentPrompt: null,
     });
   }
 

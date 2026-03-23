@@ -66,6 +66,8 @@ interface AgentBatchRun {
   completed: number;
   failed: number;
   cancelled: number;
+  skipped?: number;
+  stageCount?: number;
   startedAt: string | null;
   finishedAt: string | null;
   createdAt: string;
@@ -77,6 +79,7 @@ interface AgentBatchItem {
   cardName: string | null;
   status: string;
   errorMessage: string | null;
+  blockedReason?: string | null;
   attempts: number;
   maxAttempts: number;
 }
@@ -780,11 +783,11 @@ function BatchErrorPanel({ batch }: { batch: AgentBatchRun }) {
   useEffect(() => {
     const endpoint =
       batch.sourceType === 'board'
-        ? `/boards/${batch.sourceId}/batch-runs/${batch.id}/items?status=failed&limit=100`
-        : `/collections/${batch.sourceId}/agent-batch/runs/${batch.id}/items?status=failed&limit=100`;
+        ? `/boards/${batch.sourceId}/batch-runs/${batch.id}/items?limit=100`
+        : `/collections/${batch.sourceId}/agent-batch/runs/${batch.id}/items?limit=100`;
 
     api<{ entries: AgentBatchItem[] }>(endpoint)
-      .then((res) => setItems(res.entries))
+      .then((res) => setItems(res.entries.filter((item) => item.status === 'failed' || item.status === 'skipped')))
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [batch.id, batch.sourceType, batch.sourceId]);
@@ -797,8 +800,8 @@ function BatchErrorPanel({ batch }: { batch: AgentBatchRun }) {
       {items.map((item) => (
         <div key={item.id} className={styles.batchErrorItem}>
           <span className={styles.batchErrorName}>{item.cardName || item.cardId.slice(0, 8)}</span>
-          {item.errorMessage && (
-            <pre className={styles.batchErrorMessage}>{item.errorMessage}</pre>
+          {(item.errorMessage || item.blockedReason) && (
+            <pre className={styles.batchErrorMessage}>{item.errorMessage || item.blockedReason}</pre>
           )}
         </div>
       ))}
@@ -1384,7 +1387,9 @@ export function AgentMonitorPage() {
           <div className={styles.batchList}>
             {activeBatchRuns.map((batch) => {
               const remaining = batch.queued + batch.processing;
-              const progressPct = batch.total > 0 ? Math.round(((batch.completed + batch.failed + batch.cancelled) / batch.total) * 100) : 0;
+              const skipped = batch.skipped ?? 0;
+              const issueCount = batch.failed + skipped;
+              const progressPct = batch.total > 0 ? Math.round(((batch.completed + batch.failed + batch.cancelled + skipped) / batch.total) * 100) : 0;
               const agentInfo = agentAvatars[batch.agentId];
               return (
                 <div key={batch.id} className={styles.batchCard}>
@@ -1427,6 +1432,14 @@ export function AgentMonitorPage() {
                     {batch.prompt}
                   </div>
 
+                  {(batch.stageCount ?? 0) > 0 && (
+                    <div className={styles.batchMetaInfo}>
+                      <span className={styles.batchMetaChip}>
+                        {batch.stageCount} layer{batch.stageCount === 1 ? '' : 's'}
+                      </span>
+                    </div>
+                  )}
+
                   <div className={styles.batchProgress}>
                     <div className={styles.batchProgressBar}>
                       <div className={styles.batchProgressFill} style={{ width: `${progressPct}%` }} />
@@ -1440,8 +1453,9 @@ export function AgentMonitorPage() {
                         {batch.completed > 0 && <span className={styles.batchStatDone}>{batch.completed} done</span>}
                         {batch.processing > 0 && <span className={styles.batchStatProcessing}>{batch.processing} running</span>}
                         {batch.failed > 0 && <span className={styles.batchStatFailed}>{batch.failed} failed</span>}
+                        {skipped > 0 && <span className={styles.batchStatSkipped}>{skipped} skipped</span>}
                       </span>
-                      <span className={styles.batchStatTotal}>{batch.completed + batch.failed + batch.cancelled}/{batch.total}</span>
+                      <span className={styles.batchStatTotal}>{batch.completed + batch.failed + batch.cancelled + skipped}/{batch.total}</span>
                     </div>
                   </div>
 
@@ -1453,14 +1467,14 @@ export function AgentMonitorPage() {
                     </div>
                   )}
 
-                  {batch.failed > 0 && (
+                  {issueCount > 0 && (
                     <>
                       <button
                         className={styles.batchErrorToggle}
                         onClick={() => setExpandedBatchId((prev) => prev === batch.id ? null : batch.id)}
                       >
                         <AlertTriangle size={12} />
-                        {expandedBatchId === batch.id ? 'Hide errors' : `Show ${batch.failed} error${batch.failed === 1 ? '' : 's'}`}
+                        {expandedBatchId === batch.id ? 'Hide issues' : `Show ${issueCount} issue${issueCount === 1 ? '' : 's'}`}
                         {expandedBatchId === batch.id ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                       </button>
                       {expandedBatchId === batch.id && <BatchErrorPanel batch={batch} />}
@@ -1480,6 +1494,8 @@ export function AgentMonitorPage() {
 
             {recentBatchRuns.map((batch) => {
               const agentInfo = agentAvatars[batch.agentId];
+              const skipped = batch.skipped ?? 0;
+              const issueCount = batch.failed + skipped;
               const statusConfig: Record<string, { label: string; cls: string }> = {
                 completed: { label: 'Completed', cls: styles.statusCompleted },
                 failed: { label: 'Failed', cls: styles.statusError },
@@ -1508,21 +1524,33 @@ export function AgentMonitorPage() {
                       <ExternalLink size={10} />
                     </button>
                     <span className={`${styles.statusBadge} ${sc.cls}`}>{sc.label}</span>
-                    <span className={styles.batchStatTotal}>{batch.completed}/{batch.total} done{batch.failed > 0 ? `, ${batch.failed} failed` : ''}</span>
+                    <span className={styles.batchStatTotal}>
+                      {batch.completed}/{batch.total} done
+                      {batch.failed > 0 ? `, ${batch.failed} failed` : ''}
+                      {skipped > 0 ? `, ${skipped} skipped` : ''}
+                    </span>
                     {batch.startedAt && <span className={styles.runTime}>{formatTime(batch.startedAt)}</span>}
                   </div>
                   <div className={styles.batchPrompt} title={batch.prompt}>
                     {batch.prompt}
                   </div>
 
-                  {batch.failed > 0 && (
+                  {(batch.stageCount ?? 0) > 0 && (
+                    <div className={styles.batchMetaInfo}>
+                      <span className={styles.batchMetaChip}>
+                        {batch.stageCount} layer{batch.stageCount === 1 ? '' : 's'}
+                      </span>
+                    </div>
+                  )}
+
+                  {issueCount > 0 && (
                     <>
                       <button
                         className={styles.batchErrorToggle}
                         onClick={() => setExpandedBatchId((prev) => prev === batch.id ? null : batch.id)}
                       >
                         <AlertTriangle size={12} />
-                        {expandedBatchId === batch.id ? 'Hide errors' : `Show ${batch.failed} error${batch.failed === 1 ? '' : 's'}`}
+                        {expandedBatchId === batch.id ? 'Hide issues' : `Show ${issueCount} issue${issueCount === 1 ? '' : 's'}`}
                         {expandedBatchId === batch.id ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                       </button>
                       {expandedBatchId === batch.id && <BatchErrorPanel batch={batch} />}

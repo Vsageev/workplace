@@ -1,9 +1,17 @@
-import { useState, useEffect, useRef } from 'react';
-import { X, Bot, Play, Check, CheckCircle2, Minus, Plus, Zap, ChevronDown, Search, Tag, Save } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { X, Bot, Play, Check, CheckCircle2, Minus, Plus, Zap, ChevronDown, Search, Tag, Save, ListOrdered, Layers } from 'lucide-react';
 import { Button, Tooltip } from '../../ui';
 import { api, ApiError } from '../../lib/api';
 import { toast } from '../../stores/toast';
 import { AgentAvatar } from '../../components/AgentAvatar';
+import { BatchLayerPlanner } from '../../components/BatchLayerPlanner';
+import { ManualBatchCardSelector, type ManualBatchCardOption } from '../../components/ManualBatchCardSelector';
+import {
+  buildStagesFromLayerAssignments,
+  normalizeBatchLayerAssignments,
+  type BatchLayerAssignments,
+  type BatchPlanMode,
+} from '../../lib/agent-batch';
 import styles from './CollectionBatchRunPanel.module.css';
 
 interface AgentBatchConfig {
@@ -56,8 +64,13 @@ export function CollectionBatchRunPanel({
   const [agents, setAgents] = useState<AgentEntry[]>([]);
   const [agentId, setAgentId] = useState(initialConfig?.agentId ?? '');
   const [prompt, setPrompt] = useState(initialConfig?.prompt ?? '');
+  const [scopeMode, setScopeMode] = useState<'filters' | 'manual'>('filters');
   const [textFilter, setTextFilter] = useState(initialConfig?.cardFilters?.search ?? '');
   const [tagFilter, setTagFilter] = useState(initialConfig?.cardFilters?.tagId ?? '');
+  const [manualCards, setManualCards] = useState<ManualBatchCardOption[]>([]);
+  const [planMode, setPlanMode] = useState<BatchPlanMode>('ordered');
+  const [layerCount, setLayerCount] = useState(2);
+  const [layerAssignments, setLayerAssignments] = useState<BatchLayerAssignments>({});
   const [maxParallel, setMaxParallel] = useState(initialConfig?.maxParallel ?? 3);
   const [submitting, setSubmitting] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -96,8 +109,23 @@ export function CollectionBatchRunPanel({
     return () => document.removeEventListener('mousedown', onClickOutside);
   }, []);
 
+  useEffect(() => {
+    const maxLayers = Math.max(1, manualCards.length);
+    setLayerCount((prev) => Math.min(Math.max(prev, 1), maxLayers));
+  }, [manualCards.length]);
+
+  useEffect(() => {
+    setLayerAssignments((prev) => normalizeBatchLayerAssignments(manualCards, prev, layerCount));
+  }, [manualCards, layerCount]);
+
   // Fetch preview count when filters change
   useEffect(() => {
+    if (scopeMode !== 'filters') {
+      setPreviewLoading(false);
+      setPreviewCount(manualCards.length);
+      return;
+    }
+
     const timeout = setTimeout(() => {
       previewAbortRef.current?.abort();
       const abort = new AbortController();
@@ -122,7 +150,36 @@ export function CollectionBatchRunPanel({
       clearTimeout(timeout);
       previewAbortRef.current?.abort();
     };
-  }, [collectionId, textFilter, tagFilter]);
+  }, [collectionId, scopeMode, manualCards.length, textFilter, tagFilter]);
+
+  const configuredStages = useMemo(
+    () => (
+      scopeMode === 'manual' && planMode === 'layers'
+        ? buildStagesFromLayerAssignments(manualCards, layerAssignments, layerCount)
+        : []
+    ),
+    [scopeMode, planMode, manualCards, layerAssignments, layerCount],
+  );
+
+  const loadManualOptions = useCallback(async (query: string) => {
+    const params = new URLSearchParams({
+      collectionId,
+      limit: '20',
+    });
+    if (query.trim()) params.set('search', query.trim());
+
+    const res = await api<{ entries: Array<{ id: string; name: string; assignee: { firstName: string; lastName: string } | null }> }>(
+      `/cards?${params.toString()}`,
+    );
+
+    return res.entries.map((card) => ({
+      id: card.id,
+      name: card.name,
+      subtitle: card.assignee
+        ? `${card.assignee.firstName} ${card.assignee.lastName}`.trim()
+        : 'Unassigned',
+    }));
+  }, [collectionId]);
 
   async function handleSaveConfig() {
     setSaving(true);
@@ -152,6 +209,10 @@ export function CollectionBatchRunPanel({
 
   async function handleSubmit() {
     if (!agentId || !prompt.trim() || submitting) return;
+    if (scopeMode === 'manual' && manualCards.length === 0) {
+      toast.error('Add at least one card');
+      return;
+    }
 
     setSubmitting(true);
     setResult(null);
@@ -167,7 +228,9 @@ export function CollectionBatchRunPanel({
           agentId,
           prompt: prompt.trim(),
           maxParallel,
-          cardFilters,
+          cardIds: scopeMode === 'manual' ? manualCards.map((card) => card.id) : undefined,
+          cardFilters: scopeMode === 'filters' ? cardFilters : undefined,
+          stages: configuredStages.length > 0 ? configuredStages : undefined,
         }),
       });
       setResult(res);
@@ -184,13 +247,15 @@ export function CollectionBatchRunPanel({
   }
 
   const selectedAgent = agents.find((a) => a.id === agentId);
-  const canRun = !submitting && !!agentId && !!prompt.trim();
+  const canRun = !submitting && !!agentId && !!prompt.trim() && (scopeMode === 'manual' ? manualCards.length > 0 : true);
   const disabledReason = submitting
     ? 'Batch run is starting…'
     : !agentId
       ? 'Select an agent first'
       : !prompt.trim()
         ? 'Enter a prompt'
+        : scopeMode === 'manual' && manualCards.length === 0
+          ? 'Add at least one card'
         : undefined;
 
   return (
@@ -266,6 +331,29 @@ export function CollectionBatchRunPanel({
             </div>
           </div>
 
+          <div className={styles.section}>
+            <div className={styles.sectionHeader}>
+              <ListOrdered size={14} className={styles.sectionIcon} />
+              <span className={styles.sectionLabel}>Batch scope</span>
+            </div>
+            <div className={styles.tagChips}>
+              <button
+                type="button"
+                className={`${styles.tagChip} ${scopeMode === 'filters' ? styles.tagChipSelected : ''}`}
+                onClick={() => setScopeMode('filters')}
+              >
+                Filtered set
+              </button>
+              <button
+                type="button"
+                className={`${styles.tagChip} ${scopeMode === 'manual' ? styles.tagChipSelected : ''}`}
+                onClick={() => setScopeMode('manual')}
+              >
+                Manual order
+              </button>
+            </div>
+          </div>
+
           {/* Prompt */}
           <div className={styles.section}>
             <div className={styles.sectionHeader}>
@@ -282,58 +370,95 @@ export function CollectionBatchRunPanel({
             />
           </div>
 
-          {/* Card Filter */}
-          <div className={styles.section}>
-            <div className={styles.sectionHeader}>
-              <Search size={14} className={styles.sectionIcon} />
-              <span className={styles.sectionLabel}>Filter cards</span>
-            </div>
-            <input
-              className={styles.textFilterInput}
-              type="text"
-              placeholder="Filter by card name…"
-              value={textFilter}
-              onChange={(e) => setTextFilter(e.target.value)}
-              maxLength={200}
-            />
-          </div>
+          {scopeMode === 'filters' ? (
+            <>
+              {/* Card Filter */}
+              <div className={styles.section}>
+                <div className={styles.sectionHeader}>
+                  <Search size={14} className={styles.sectionIcon} />
+                  <span className={styles.sectionLabel}>Filter cards</span>
+                </div>
+                <input
+                  className={styles.textFilterInput}
+                  type="text"
+                  placeholder="Filter by card name…"
+                  value={textFilter}
+                  onChange={(e) => setTextFilter(e.target.value)}
+                  maxLength={200}
+                />
+              </div>
 
-          {/* Tag Filter */}
-          {tags.length > 0 && (
-            <div className={styles.section}>
-              <div className={styles.sectionHeader}>
-                <Tag size={14} className={styles.sectionIcon} />
-                <span className={styles.sectionLabel}>Tag filter</span>
-                {tagFilter && (
-                  <button
-                    className={styles.toggleAllBtn}
-                    onClick={() => setTagFilter('')}
-                    type="button"
-                  >
-                    Clear
-                  </button>
-                )}
+              {/* Tag Filter */}
+              {tags.length > 0 && (
+                <div className={styles.section}>
+                  <div className={styles.sectionHeader}>
+                    <Tag size={14} className={styles.sectionIcon} />
+                    <span className={styles.sectionLabel}>Tag filter</span>
+                    {tagFilter && (
+                      <button
+                        className={styles.toggleAllBtn}
+                        onClick={() => setTagFilter('')}
+                        type="button"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                  <div className={styles.tagChips}>
+                    {tags.map((tag) => {
+                      const selected = tagFilter === tag.id;
+                      return (
+                        <button
+                          key={tag.id}
+                          className={`${styles.tagChip} ${selected ? styles.tagChipSelected : ''}`}
+                          onClick={() => setTagFilter(selected ? '' : tag.id)}
+                          type="button"
+                        >
+                          <span
+                            className={styles.tagDot}
+                            style={{ background: tag.color }}
+                          />
+                          {tag.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              <div className={styles.section}>
+                <div className={styles.sectionHeader}>
+                  <ListOrdered size={14} className={styles.sectionIcon} />
+                  <span className={styles.sectionLabel}>Manual card order</span>
+                </div>
+                <ManualBatchCardSelector
+                  selectedCards={manualCards}
+                  onChange={setManualCards}
+                  loadOptions={loadManualOptions}
+                  searchPlaceholder="Search collection cards…"
+                  emptySearchLabel="No matching collection cards"
+                  emptySelectedLabel="Add cards to run them in this exact order"
+                />
               </div>
-              <div className={styles.tagChips}>
-                {tags.map((tag) => {
-                  const selected = tagFilter === tag.id;
-                  return (
-                    <button
-                      key={tag.id}
-                      className={`${styles.tagChip} ${selected ? styles.tagChipSelected : ''}`}
-                      onClick={() => setTagFilter(selected ? '' : tag.id)}
-                      type="button"
-                    >
-                      <span
-                        className={styles.tagDot}
-                        style={{ background: tag.color }}
-                      />
-                      {tag.name}
-                    </button>
-                  );
-                })}
+
+              <div className={styles.section}>
+                <div className={styles.sectionHeader}>
+                  <Layers size={14} className={styles.sectionIcon} />
+                  <span className={styles.sectionLabel}>Execution plan</span>
+                </div>
+                <BatchLayerPlanner
+                  selectedCards={manualCards}
+                  planMode={planMode}
+                  onPlanModeChange={setPlanMode}
+                  layerCount={layerCount}
+                  onLayerCountChange={setLayerCount}
+                  assignments={layerAssignments}
+                  onAssignmentsChange={setLayerAssignments}
+                />
               </div>
-            </div>
+            </>
           )}
 
           {/* Concurrency */}
@@ -383,19 +508,28 @@ export function CollectionBatchRunPanel({
                 {previewLoading ? '…' : previewCount} card{previewCount !== 1 ? 's' : ''}
               </span>
             )}
+            {scopeMode === 'manual' && manualCards.length > 0 && (
+              <span className={styles.footerCount}>
+                {planMode === 'layers' && configuredStages.length > 0
+                  ? `${configuredStages.length} layer${configuredStages.length === 1 ? '' : 's'}`
+                  : `First: ${manualCards[0]?.name}`}
+              </span>
+            )}
           </div>
           <div className={styles.footerActions}>
-            <Tooltip label="Save current settings as default" position="top">
-              <button
-                className={styles.saveConfigBtn}
-                onClick={() => void handleSaveConfig()}
-                disabled={saving}
-                type="button"
-              >
-                <Save size={14} />
-                {saving ? 'Saving…' : 'Save'}
-              </button>
-            </Tooltip>
+            {scopeMode === 'filters' && (
+              <Tooltip label="Save current settings as default" position="top">
+                <button
+                  className={styles.saveConfigBtn}
+                  onClick={() => void handleSaveConfig()}
+                  disabled={saving}
+                  type="button"
+                >
+                  <Save size={14} />
+                  {saving ? 'Saving…' : 'Save'}
+                </button>
+              </Tooltip>
+            )}
             {disabledReason ? (
               <Tooltip label={disabledReason} position="top">
                 <div style={{ cursor: 'not-allowed' }}>

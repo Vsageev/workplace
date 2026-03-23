@@ -1,7 +1,12 @@
 import { store } from '../db/index.js';
 import { listCards } from './cards.js';
 import { getAgent } from './agents.js';
-import { enqueueAgentBatchRun, type AgentBatchRunStatus } from './agent-batch-queue.js';
+import {
+  enqueueAgentBatchRun,
+  type AgentBatchCardDependencyInput,
+  type AgentBatchRunStatus,
+  type AgentBatchStageInput,
+} from './agent-batch-queue.js';
 
 export interface CollectionBatchCardFilters {
   search?: string;
@@ -15,7 +20,10 @@ export interface CollectionBatchOptions {
   agentId: string;
   prompt: string;
   maxParallel?: number;
+  cardIds?: string[];
   cardFilters?: CollectionBatchCardFilters;
+  stages?: AgentBatchStageInput[];
+  cardDependencies?: AgentBatchCardDependencyInput[];
 }
 
 export interface CollectionBatchResult {
@@ -33,20 +41,45 @@ export interface CollectionBatchResult {
 export async function runCollectionAgentBatch(
   options: CollectionBatchOptions,
 ): Promise<CollectionBatchResult> {
-  const { collectionId, agentId, prompt, maxParallel = 3, cardFilters = {} } = options;
+  const {
+    collectionId,
+    agentId,
+    prompt,
+    maxParallel = 3,
+    cardIds,
+    cardFilters = {},
+    stages,
+    cardDependencies,
+  } = options;
 
   const agent = getAgent(agentId);
   if (!agent) {
     throw new Error('Agent not found');
   }
 
-  // Fetch all matching cards without pagination limit
-  const { entries: cards } = await listCards({
-    collectionId,
-    ...cardFilters,
-    limit: 10000,
-    offset: 0,
-  });
+  let cards: any[] = [];
+
+  if (cardIds && cardIds.length > 0) {
+    const seen = new Set<string>();
+    cards = cardIds
+      .filter((cardId) => {
+        if (seen.has(cardId)) return false;
+        seen.add(cardId);
+        const card = store.getById('cards', cardId) as any;
+        return card?.collectionId === collectionId;
+      })
+      .map((cardId) => store.getById('cards', cardId) as any)
+      .filter(Boolean);
+  } else {
+    // Fetch all matching cards without pagination limit
+    const result = await listCards({
+      collectionId,
+      ...cardFilters,
+      limit: 10000,
+      offset: 0,
+    });
+    cards = result.entries;
+  }
 
   if (cards.length === 0) {
     return {
@@ -54,7 +87,7 @@ export async function runCollectionAgentBatch(
       status: null,
       total: 0,
       queued: 0,
-      message: 'No cards matched the filters',
+      message: 'No cards matched the batch scope',
     };
   }
 
@@ -66,6 +99,8 @@ export async function runCollectionAgentBatch(
     agentId,
     prompt,
     maxParallel,
+    stages,
+    cardDependencies,
     cards: cards.map((card: any) => ({
       id: card.id as string,
       name: card.name as string,

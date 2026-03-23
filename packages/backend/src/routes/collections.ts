@@ -50,7 +50,27 @@ const updateCollectionBody = z.object({
 });
 
 const batchRunStatusSchema = z.enum(['queued', 'running', 'completed', 'failed', 'cancelled', 'active']);
-const batchItemStatusSchema = z.enum(['queued', 'processing', 'completed', 'failed', 'cancelled']);
+const batchItemStatusSchema = z.enum([
+  'queued',
+  'processing',
+  'completed',
+  'failed',
+  'cancelled',
+  'skipped',
+]);
+const batchBlockingModeSchema = z.enum(['all_success', 'all_settled']);
+const batchStageSchema = z.object({
+  id: z.string().min(1).max(100).optional(),
+  cardIds: z.array(z.uuid()).min(1),
+  dependsOnStageIds: z.array(z.string().min(1).max(100)).optional(),
+  dependsOnStageIndexes: z.array(z.number().int().min(0)).optional(),
+  blockingMode: batchBlockingModeSchema.optional(),
+});
+const batchCardDependencySchema = z.object({
+  cardId: z.uuid(),
+  dependsOnCardIds: z.array(z.uuid()).min(1),
+  blockingMode: batchBlockingModeSchema.optional(),
+});
 
 export async function collectionRoutes(app: FastifyInstance) {
   const typedApp = app.withTypeProvider<ZodTypeProvider>();
@@ -218,7 +238,10 @@ export async function collectionRoutes(app: FastifyInstance) {
           agentId: z.string(),
           prompt: z.string().min(1).max(10000),
           maxParallel: z.number().int().min(1).max(20).optional(),
+          cardIds: z.array(z.uuid()).min(1).optional(),
           cardFilters: agentBatchCardFiltersSchema.optional(),
+          stages: z.array(batchStageSchema).min(1).optional(),
+          cardDependencies: z.array(batchCardDependencySchema).min(1).optional(),
         }),
       },
     },
@@ -228,14 +251,25 @@ export async function collectionRoutes(app: FastifyInstance) {
         return reply.notFound('Collection not found');
       }
 
-      const { agentId, prompt, maxParallel = 3, cardFilters = {} } = request.body;
+      const {
+        agentId,
+        prompt,
+        maxParallel = 3,
+        cardIds,
+        cardFilters = {},
+        stages,
+        cardDependencies,
+      } = request.body;
 
       const result = await runCollectionAgentBatch({
         collectionId: request.params.id,
         agentId,
         prompt,
         maxParallel,
+        cardIds,
         cardFilters,
+        stages,
+        cardDependencies,
       });
 
       return reply.status(202).send(result);

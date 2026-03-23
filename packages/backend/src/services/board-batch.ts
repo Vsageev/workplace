@@ -1,14 +1,22 @@
 import { store } from '../db/index.js';
 import { getAgent } from './agents.js';
-import { enqueueAgentBatchRun, type AgentBatchRunStatus } from './agent-batch-queue.js';
+import {
+  enqueueAgentBatchRun,
+  type AgentBatchCardDependencyInput,
+  type AgentBatchRunStatus,
+  type AgentBatchStageInput,
+} from './agent-batch-queue.js';
 
 export interface BoardBatchOptions {
   boardId: string;
   agentId: string;
   prompt: string;
+  cardIds?: string[];
   columnIds?: string[];
   textFilter?: string;
   maxParallel?: number;
+  stages?: AgentBatchStageInput[];
+  cardDependencies?: AgentBatchCardDependencyInput[];
 }
 
 export interface BoardBatchResult {
@@ -54,32 +62,62 @@ export function countBoardBatchCards(
  * Returns immediately after setting up the queue — runs happen in the background.
  */
 export async function runBoardAgentBatch(options: BoardBatchOptions): Promise<BoardBatchResult> {
-  const { boardId, agentId, prompt, columnIds, textFilter, maxParallel = 3 } = options;
+  const {
+    boardId,
+    agentId,
+    prompt,
+    cardIds,
+    columnIds,
+    textFilter,
+    maxParallel = 3,
+    stages,
+    cardDependencies,
+  } = options;
 
   const agent = getAgent(agentId);
   if (!agent) {
     throw new Error('Agent not found');
   }
 
-  // Get all board cards, optionally filtered by column
-  let boardCards = store.find('boardCards', (r: any) => r.boardId === boardId) as any[];
+  let cards: any[] = [];
 
-  if (columnIds && columnIds.length > 0) {
-    const columnSet = new Set(columnIds);
-    boardCards = boardCards.filter((bc: any) => columnSet.has(bc.columnId));
-  }
+  if (cardIds && cardIds.length > 0) {
+    const boardCards = store.find('boardCards', (r: any) => r.boardId === boardId) as any[];
+    const boardCardMap = new Map<string, any>();
+    for (const boardCard of boardCards) {
+      boardCardMap.set(boardCard.cardId as string, boardCard);
+    }
 
-  // Load card data for each board card
-  let cards = boardCards
-    .map((bc: any) => store.getById('cards', bc.cardId) as any)
-    .filter(Boolean);
+    const seen = new Set<string>();
+    cards = cardIds
+      .filter((cardId) => {
+        if (seen.has(cardId)) return false;
+        seen.add(cardId);
+        return boardCardMap.has(cardId);
+      })
+      .map((cardId) => store.getById('cards', cardId) as any)
+      .filter(Boolean);
+  } else {
+    // Get all board cards, optionally filtered by column
+    let boardCards = store.find('boardCards', (r: any) => r.boardId === boardId) as any[];
 
-  // Filter by card name text
-  if (textFilter && textFilter.trim()) {
-    const lower = textFilter.trim().toLowerCase();
-    cards = cards.filter((card: any) =>
-      (card.name as string).toLowerCase().includes(lower),
-    );
+    if (columnIds && columnIds.length > 0) {
+      const columnSet = new Set(columnIds);
+      boardCards = boardCards.filter((bc: any) => columnSet.has(bc.columnId));
+    }
+
+    // Load card data for each board card
+    cards = boardCards
+      .map((bc: any) => store.getById('cards', bc.cardId) as any)
+      .filter(Boolean);
+
+    // Filter by card name text
+    if (textFilter && textFilter.trim()) {
+      const lower = textFilter.trim().toLowerCase();
+      cards = cards.filter((card: any) =>
+        (card.name as string).toLowerCase().includes(lower),
+      );
+    }
   }
 
   if (cards.length === 0) {
@@ -100,6 +138,8 @@ export async function runBoardAgentBatch(options: BoardBatchOptions): Promise<Bo
     agentId,
     prompt,
     maxParallel,
+    stages,
+    cardDependencies,
     cards: cards.map((card: any) => ({
       id: card.id as string,
       name: card.name as string,

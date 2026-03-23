@@ -1,0 +1,252 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* ── Combobox search ── */
+
+.combobox {
+  position: relative;
+}
+
+.searchBox {
+  position: relative;
+}
+
+.searchIcon {
+  position: absolute;
+  top: 50%;
+  left: 10px;
+  transform: translateY(-50%);
+  color: var(--color-text-tertiary);
+  pointer-events: none;
+}
+
+.searchInput {
+  width: 100%;
+  height: 36px;
+  padding: 0 10px 0 32px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-card);
+  color: var(--color-text);
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.searchInput::placeholder {
+  color: var(--color-text-tertiary);
+}
+
+.searchInput:focus {
+  border-color: var(--color-text-secondary);
+}
+
+.dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  z-index: 10;
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.dropdownItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 8px;
+  border: none;
+  border-radius: 7px;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  transition: background 0.1s ease;
+}
+
+.dropdownItem:hover {
+  background: var(--color-surface);
+}
+
+.dropdownItemText {
+  min-width: 0;
+  flex: 1;
+}
+
+.dropdownItemName {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dropdownItemSub {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 1px;
+}
+
+.dropdownItemAdd {
+  flex-shrink: 0;
+  color: var(--color-text-tertiary);
+  transition: color 0.1s ease;
+}
+
+.dropdownItem:hover .dropdownItemAdd {
+  color: var(--color-text-secondary);
+}
+
+.dropdownEmpty {
+  padding: 16px 12px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
+
+/* ── Selected list ── */
+
+.listHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 2px;
+}
+
+.listLabel {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.clearBtn {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 0;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  transition: color 0.15s ease;
+}
+
+.clearBtn:hover {
+  color: var(--color-error);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 10px;
+  background: var(--color-surface);
+  transition: border-color 0.15s ease;
+}
+
+.card:hover {
+  border-color: var(--color-border);
+}
+
+.cardOrder {
+  min-width: 18px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-text-tertiary);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.cardBody {
+  flex: 1;
+  min-width: 0;
+}
+
+.cardName {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cardSub {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 1px;
+}
+
+.cardActions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.iconBtn {
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  transition: all 0.1s ease;
+}
+
+.iconBtn:hover:not(:disabled) {
+  background: var(--color-card);
+  color: var(--color-text-secondary);
+}
+
+.iconBtn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.removeBtn:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.06);
+  color: var(--color-error);
+}
+
+.emptyState {
+  padding: 20px 12px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  border: 1px dashed var(--color-border);
+  border-radius: 10px;
+}

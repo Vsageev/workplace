@@ -109,6 +109,7 @@ export interface BoardColumn {
   color: string;
   position: number;
   assignAgentId: string | null;
+  assignAgentPrompt?: string | null;
   createdAt: string;
   updatedAt: string;
 }

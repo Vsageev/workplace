@@ -1,13 +1,13 @@
 import { useMemo } from 'react';
 import styles from './BatchProgressGrid.module.css';
 
-type CellStatus = 'queued' | 'processing' | 'completed' | 'failed' | 'cancelled';
+type CellStatus = 'queued' | 'processing' | 'completed' | 'failed' | 'cancelled' | 'skipped';
 
 interface BatchProgressGridProps {
   /** Individual items with status — used when per-item data is available */
   items?: { id: string; label?: string; status: CellStatus }[];
   /** Summary counts — used when only aggregate data is available */
-  counts?: { queued: number; processing: number; completed: number; failed: number; cancelled: number };
+  counts?: { queued: number; processing: number; completed: number; failed: number; cancelled: number; skipped?: number };
   /** Total (required when using counts) */
   total?: number;
   /** Cell size in px (default 10) */
@@ -16,12 +16,13 @@ interface BatchProgressGridProps {
   showLegend?: boolean;
 }
 
-const STATUS_ORDER: CellStatus[] = ['completed', 'processing', 'failed', 'queued', 'cancelled'];
+const STATUS_ORDER: CellStatus[] = ['completed', 'processing', 'failed', 'skipped', 'queued', 'cancelled'];
 
 const STATUS_META: Record<CellStatus, { label: string; color: string }> = {
   completed: { label: 'Done', color: '#10b981' },
   processing: { label: 'Running', color: '#7c3aed' },
   failed: { label: 'Failed', color: '#ef4444' },
+  skipped: { label: 'Skipped', color: '#f59e0b' },
   queued: { label: 'Queued', color: 'var(--color-border)' },
   cancelled: { label: 'Cancelled', color: 'var(--color-text-tertiary)' },
 };
@@ -59,12 +60,12 @@ export function BatchProgressGrid({
   const cellGap = cells.length > 200 ? 2 : 3;
 
   const legendCounts = useMemo(() => {
-    const c = { queued: 0, processing: 0, completed: 0, failed: 0, cancelled: 0 };
+    const c = { queued: 0, processing: 0, completed: 0, failed: 0, cancelled: 0, skipped: 0 };
     for (const cell of cells) c[cell.status]++;
     return c;
   }, [cells]);
 
-  const finished = legendCounts.completed + legendCounts.failed + legendCounts.cancelled;
+  const finished = legendCounts.completed + legendCounts.failed + legendCounts.cancelled + legendCounts.skipped;
 
   return (
     <div className={styles.wrap}>

@@ -24,6 +24,45 @@ const AGENT_CHAT_QUEUE_COLLECTION = 'agentChatQueue';
 const AGENT_CHAT_QUEUE_RETRY_BASE_MS = 1000;
 const AGENT_CHAT_QUEUE_RETRY_MAX_MS = 30000;
 const AGENT_CHAT_QUEUE_DEFAULT_MAX_ATTEMPTS = 4;
+const OPENWORK_CHILD_ENV_BLOCKLIST = new Set([
+  'BACKUP_CRON',
+  'BACKUP_DIR',
+  'BACKUP_ENABLED',
+  'BACKUP_RETENTION_DAYS',
+  'BODY_LIMIT_BYTES',
+  'CORS_ORIGIN',
+  'DATA_DIR',
+  'EMAIL_SYNC_CRON',
+  'EMAIL_SYNC_ENABLED',
+  'HOST',
+  'INSTAGRAM_APP_SECRET',
+  'INSTAGRAM_WEBHOOK_BASE_URL',
+  'JWT_ACCESS_EXPIRES_IN',
+  'JWT_REFRESH_EXPIRES_IN',
+  'JWT_SECRET',
+  'MAX_CONCURRENT_AGENTS',
+  'PORT',
+  'PROJECTS_DIR',
+  'PROJECT_PORT',
+  'RATE_LIMIT_AGENT_PROMPT_MAX',
+  'RATE_LIMIT_AGENT_PROMPT_WINDOW_S',
+  'RATE_LIMIT_API_MAX',
+  'RATE_LIMIT_API_WINDOW_MS',
+  'RATE_LIMIT_AUTH_MAX',
+  'RATE_LIMIT_AUTH_WINDOW_MS',
+  'RATE_LIMIT_GLOBAL_MAX',
+  'RATE_LIMIT_GLOBAL_WINDOW_MS',
+  'SECRET_ENCRYPTION_KEY',
+  'TELEGRAM_MANAGED_BOT_TOKEN',
+  'TELEGRAM_WEBHOOK_BASE_URL',
+  'TLS_CERT_PATH',
+  'TLS_KEY_PATH',
+  'TRUST_PROXY',
+  'UPLOAD_DIR',
+  'WHATSAPP_WEBHOOK_BASE_URL',
+  'WORKSPACE_API_KEY',
+  'WORKSPACE_API_URL',
+]);
 
 interface AgentChatErrorOptions {
   code: string;
@@ -1280,13 +1319,14 @@ function buildChildEnv(
   agent: { apiKeyId: string; workspaceApiKey: string | null },
 ): Record<string, string | undefined> {
   const childEnv: Record<string, string | undefined> = { ...process.env };
-
-  // Prevent "nested session" errors when the backend itself runs inside Claude Code
+  for (const key of OPENWORK_CHILD_ENV_BLOCKLIST) {
+    if (key in childEnv) {
+      delete childEnv[key];
+    }
+  }
   delete childEnv.CLAUDECODE;
   delete childEnv.CLAUDE_CODE_ENTRYPOINT;
   delete childEnv.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS;
-  delete childEnv.WORKSPACE_API_URL;
-  delete childEnv.WORKSPACE_API_KEY;
 
   if (agent.apiKeyId) {
     const apiKey = store.getById('apiKeys', agent.apiKeyId);
@@ -1866,6 +1906,7 @@ async function runAgentProcess(options: AgentProcessOptions): Promise<string> {
   // Allocate a random port so the agent's project never conflicts with others
   const projectPort = await allocatePort();
   childEnv.PROJECT_PORT = String(projectPort);
+  childEnv.PWD = workDir;
 
   // Record the agent run first to get runId for log directory
   const agentRun = createAgentRun({
@@ -3371,16 +3412,12 @@ export function executeCardTask(
 
   const prompt = customPrompt
     ? `${triggerContext}` +
-      `You are running a batch task on a card.\n` +
-      `This is a task assignment run, not a chat conversation. Do not call /api/agents/:id/chat/messages.\n` +
-      `Use OpenWork API endpoints for all platform state changes. Do not edit platform JSON data files directly (boards.json, cards.json, tasks.json, collections.json, agents.json, users.json, etc.).\n\n` +
+      `You are running a batch task on a card.\n\n` +
       `**Card:** ${card.name}\n` +
       `${descriptionLine}\n\n` +
       `**Task:**\n${customPrompt}`
     : `${triggerContext}` +
-      `You have been assigned the following card.\n` +
-      `This is a task assignment run, not a chat conversation. Do not call /api/agents/:id/chat/messages.\n` +
-      `Use OpenWork API endpoints for all platform state changes. Do not edit platform JSON data files directly (boards.json, cards.json, tasks.json, collections.json, agents.json, users.json, etc.).\n\n` +
+      `You have been assigned the following card.\n\n` +
       `**Card:** ${card.name}\n` +
       `${descriptionLine}\n\n` +
       `Complete this task.`;

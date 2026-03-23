@@ -1,4 +1,5 @@
 import { store } from '../db/index.js';
+import { ApiError } from '../utils/api-errors.js';
 import { getAgent } from './agents.js';
 import { executeCardTask } from './agent-chat.js';
 import { killAgentRun } from './agent-runs.js';
@@ -15,8 +16,15 @@ const AGENT_BATCH_PROCESSING_STALE_MS = 2 * 60 * 1000;
 
 export type AgentBatchSourceType = 'board' | 'collection';
 export type AgentBatchRunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
-export type AgentBatchItemStatus = 'queued' | 'processing' | 'completed' | 'failed' | 'cancelled';
+export type AgentBatchItemStatus =
+  | 'queued'
+  | 'processing'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+  | 'skipped';
 export type AgentBatchRunFilterStatus = AgentBatchRunStatus | 'active';
+export type AgentBatchBlockingMode = 'all_success' | 'all_settled';
 
 interface QueueDrainTimer {
   timer: ReturnType<typeof setTimeout>;
@@ -30,6 +38,20 @@ export interface AgentBatchCardSnapshot {
   collectionId: string;
 }
 
+export interface AgentBatchStageInput {
+  id?: string;
+  cardIds: string[];
+  dependsOnStageIds?: string[];
+  dependsOnStageIndexes?: number[];
+  blockingMode?: AgentBatchBlockingMode;
+}
+
+export interface AgentBatchCardDependencyInput {
+  cardId: string;
+  dependsOnCardIds: string[];
+  blockingMode?: AgentBatchBlockingMode;
+}
+
 export interface EnqueueAgentBatchRunOptions {
   sourceType: AgentBatchSourceType;
   sourceId: string;
@@ -38,6 +60,8 @@ export interface EnqueueAgentBatchRunOptions {
   prompt: string;
   maxParallel?: number;
   cards: AgentBatchCardSnapshot[];
+  stages?: AgentBatchStageInput[];
+  cardDependencies?: AgentBatchCardDependencyInput[];
 }
 
 export interface AgentBatchStartResult {
@@ -85,6 +109,256 @@ export interface ListAgentBatchRunItemsOptions {
   status?: AgentBatchItemStatus;
   limit?: number;
   offset?: number;
+}
+
+const TERMINAL_BATCH_ITEM_STATUSES = new Set<AgentBatchItemStatus>([
+  'completed',
+  'failed',
+  'cancelled',
+  'skipped',
+]);
+
+function normalizeBlockingMode(value: unknown): AgentBatchBlockingMode {
+  return value === 'all_settled' ? 'all_settled' : 'all_success';
+}
+
+function getItemDependencyIds(item: Record<string, unknown>): string[] {
+  if (!Array.isArray(item.dependsOnItemIds)) return [];
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of item.dependsOnItemIds) {
+    if (typeof value !== 'string' || !value || seen.has(value)) continue;
+    seen.add(value);
+    result.push(value);
+  }
+  return result;
+}
+
+function getItemBlockingMode(item: Record<string, unknown>): AgentBatchBlockingMode {
+  return normalizeBlockingMode(item.blockingMode);
+}
+
+function getItemLabel(item: Record<string, unknown> | null | undefined, fallbackId: string): string {
+  if (item && typeof item.cardName === 'string' && item.cardName.trim()) {
+    return item.cardName.trim();
+  }
+  return fallbackId;
+}
+
+function describeDependencyState(
+  item: Record<string, unknown>,
+  itemsById: Map<string, Record<string, unknown>>,
+): { kind: 'ready' | 'waiting' | 'blocked'; blockedReason: string | null } {
+  const dependencyIds = getItemDependencyIds(item);
+  if (dependencyIds.length === 0) {
+    return { kind: 'ready', blockedReason: null };
+  }
+
+  const waiting: string[] = [];
+  const blocked: string[] = [];
+  const blockingMode = getItemBlockingMode(item);
+
+  for (const dependencyId of dependencyIds) {
+    const dependency = itemsById.get(dependencyId);
+    if (!dependency) {
+      blocked.push(`missing dependency ${dependencyId}`);
+      continue;
+    }
+
+    const status = dependency.status as AgentBatchItemStatus | undefined;
+    if (blockingMode === 'all_settled') {
+      if (status && TERMINAL_BATCH_ITEM_STATUSES.has(status)) continue;
+      waiting.push(getItemLabel(dependency, dependencyId));
+      continue;
+    }
+
+    if (status === 'completed') continue;
+    if (status && TERMINAL_BATCH_ITEM_STATUSES.has(status)) {
+      blocked.push(getItemLabel(dependency, dependencyId));
+      continue;
+    }
+    waiting.push(getItemLabel(dependency, dependencyId));
+  }
+
+  if (blocked.length > 0) {
+    return {
+      kind: 'blocked',
+      blockedReason: `Blocked by dependency failure: ${blocked.join(', ')}`,
+    };
+  }
+  if (waiting.length > 0) {
+    return {
+      kind: 'waiting',
+      blockedReason: `Waiting on: ${waiting.join(', ')}`,
+    };
+  }
+  return { kind: 'ready', blockedReason: null };
+}
+
+interface ResolvedBatchDependencies {
+  dependsOnCardIdsByCardId: Map<string, string[]>;
+  blockingModeByCardId: Map<string, AgentBatchBlockingMode>;
+  stageIdByCardId: Map<string, string>;
+  stageCount: number;
+}
+
+function buildResolvedBatchDependencies(
+  cards: AgentBatchCardSnapshot[],
+  stages: AgentBatchStageInput[] = [],
+  cardDependencies: AgentBatchCardDependencyInput[] = [],
+): ResolvedBatchDependencies {
+  const cardIds = new Set(cards.map((card) => card.id));
+  const dependsOnCardIdsByCardId = new Map<string, Set<string>>();
+  const blockingModeByCardId = new Map<string, AgentBatchBlockingMode>();
+  const stageIdByCardId = new Map<string, string>();
+
+  const ensureCardKnown = (cardId: string, context: string) => {
+    if (!cardIds.has(cardId)) {
+      throw new Error(`${context}: unknown card ${cardId}`);
+    }
+  };
+
+  const setBlockingMode = (cardId: string, nextMode: AgentBatchBlockingMode) => {
+    const existing = blockingModeByCardId.get(cardId);
+    if (existing && existing !== nextMode) {
+      throw new Error(`Conflicting blocking modes for card ${cardId}`);
+    }
+    blockingModeByCardId.set(cardId, nextMode);
+  };
+
+  const addDependencies = (
+    cardId: string,
+    dependencyIds: string[],
+    blockingMode: AgentBatchBlockingMode,
+  ) => {
+    ensureCardKnown(cardId, 'Batch dependency');
+    const nextDependencies = dependsOnCardIdsByCardId.get(cardId) ?? new Set<string>();
+    for (const dependencyId of dependencyIds) {
+      ensureCardKnown(dependencyId, `Dependencies for ${cardId}`);
+      if (dependencyId === cardId) {
+        throw new Error(`Card ${cardId} cannot depend on itself`);
+      }
+      nextDependencies.add(dependencyId);
+    }
+    dependsOnCardIdsByCardId.set(cardId, nextDependencies);
+    if (nextDependencies.size > 0) {
+      setBlockingMode(cardId, blockingMode);
+    }
+  };
+
+  if (stages.length > 0) {
+    const stageIds = new Set<string>();
+    const normalizedStages = stages.map((stage, index) => {
+      const stageId = stage.id?.trim() || `stage-${index + 1}`;
+      if (stageIds.has(stageId)) {
+        throw new Error(`Duplicate batch stage id: ${stageId}`);
+      }
+      stageIds.add(stageId);
+
+      const stageCardIds: string[] = [];
+      const seenStageCardIds = new Set<string>();
+      for (const cardId of stage.cardIds) {
+        if (typeof cardId !== 'string' || !cardId) continue;
+        ensureCardKnown(cardId, `Stage ${stageId}`);
+        if (seenStageCardIds.has(cardId)) continue;
+        if (stageIdByCardId.has(cardId)) {
+          throw new Error(`Card ${cardId} is assigned to multiple stages`);
+        }
+        seenStageCardIds.add(cardId);
+        stageCardIds.push(cardId);
+        stageIdByCardId.set(cardId, stageId);
+      }
+
+      if (stageCardIds.length === 0) {
+        throw new Error(`Stage ${stageId} must include at least one card`);
+      }
+
+      return {
+        id: stageId,
+        cardIds: stageCardIds,
+        dependsOnStageIds: stage.dependsOnStageIds,
+        dependsOnStageIndexes: stage.dependsOnStageIndexes,
+        blockingMode: normalizeBlockingMode(stage.blockingMode),
+      };
+    });
+
+    const stageById = new Map(normalizedStages.map((stage) => [stage.id, stage]));
+
+    for (let index = 0; index < normalizedStages.length; index += 1) {
+      const stage = normalizedStages[index];
+      const explicitStageIds =
+        stage.dependsOnStageIds !== undefined
+          ? stage.dependsOnStageIds
+          : stage.dependsOnStageIndexes !== undefined
+            ? stage.dependsOnStageIndexes.map((stageIndex) => {
+                if (!Number.isInteger(stageIndex) || stageIndex < 0 || stageIndex >= normalizedStages.length) {
+                  throw new Error(`Stage ${stage.id} references invalid stage index ${stageIndex}`);
+                }
+                return normalizedStages[stageIndex].id;
+              })
+            : index > 0
+              ? [normalizedStages[index - 1].id]
+              : [];
+
+      const dependencyCardIds = new Set<string>();
+      for (const dependencyStageId of explicitStageIds) {
+        const dependencyStage = stageById.get(dependencyStageId);
+        if (!dependencyStage) {
+          throw new Error(`Stage ${stage.id} references unknown stage ${dependencyStageId}`);
+        }
+        if (dependencyStage.id === stage.id) {
+          throw new Error(`Stage ${stage.id} cannot depend on itself`);
+        }
+        for (const dependencyCardId of dependencyStage.cardIds) {
+          dependencyCardIds.add(dependencyCardId);
+        }
+      }
+
+      for (const cardId of stage.cardIds) {
+        addDependencies(cardId, [...dependencyCardIds], stage.blockingMode);
+      }
+    }
+  }
+
+  for (const dependency of cardDependencies) {
+    const cardId = dependency.cardId;
+    const blockingMode = normalizeBlockingMode(dependency.blockingMode);
+    addDependencies(cardId, dependency.dependsOnCardIds, blockingMode);
+  }
+
+  const cardGraph = new Map<string, string[]>();
+  for (const card of cards) {
+    cardGraph.set(card.id, [...(dependsOnCardIdsByCardId.get(card.id) ?? new Set<string>())]);
+  }
+
+  const state = new Map<string, 'visiting' | 'visited'>();
+  const visit = (cardId: string) => {
+    const current = state.get(cardId);
+    if (current === 'visiting') {
+      throw new Error(`Batch dependencies contain a cycle involving card ${cardId}`);
+    }
+    if (current === 'visited') return;
+    state.set(cardId, 'visiting');
+    for (const dependencyId of cardGraph.get(cardId) ?? []) {
+      visit(dependencyId);
+    }
+    state.set(cardId, 'visited');
+  };
+  for (const card of cards) {
+    visit(card.id);
+  }
+
+  return {
+    dependsOnCardIdsByCardId: new Map(
+      [...dependsOnCardIdsByCardId.entries()].map(([cardId, dependencyIds]) => [
+        cardId,
+        [...dependencyIds],
+      ]),
+    ),
+    blockingModeByCardId,
+    stageIdByCardId,
+    stageCount: stages.length,
+  };
 }
 
 const runProcessors = new Set<string>();
@@ -143,6 +417,7 @@ function countItemsByStatus(
     completed: 0,
     failed: 0,
     cancelled: 0,
+    skipped: 0,
   };
 
   for (const item of items) {
@@ -152,6 +427,7 @@ function countItemsByStatus(
     if (status === 'completed') result.completed += 1;
     if (status === 'failed') result.failed += 1;
     if (status === 'cancelled') result.cancelled += 1;
+    if (status === 'skipped') result.skipped += 1;
   }
 
   return result;
@@ -162,11 +438,11 @@ function computeRunStatus(
   counts: ReturnType<typeof countItemsByStatus>,
 ): AgentBatchRunStatus {
   const current = run.status as AgentBatchRunStatus | undefined;
-  const finished = counts.completed + counts.failed + counts.cancelled;
+  const finished = counts.completed + counts.failed + counts.cancelled + counts.skipped;
   if (current === 'cancelled' && counts.processing > 0) return 'cancelled';
   if (counts.total === 0 || finished >= counts.total) {
     if (current === 'cancelled') return 'cancelled';
-    if (counts.failed > 0) return 'failed';
+    if (counts.failed > 0 || counts.skipped > 0) return 'failed';
     if (counts.cancelled === counts.total) return 'cancelled';
     return 'completed';
   }
@@ -188,6 +464,7 @@ function refreshRunStats(runId: string): Record<string, unknown> | null {
     completed: counts.completed,
     failed: counts.failed,
     cancelled: counts.cancelled,
+    skipped: counts.skipped,
   };
 
   if (nextStatus === 'running') {
@@ -211,9 +488,15 @@ function getNextReadyDelayMs(runId: string): number | null {
   const queuedItems = listItemsForRun(runId).filter((item) => item.status === 'queued');
   if (queuedItems.length === 0) return null;
 
+  const itemsById = new Map(queuedItems.map((item) => [item.id as string, item]));
+  for (const item of listItemsForRun(runId)) {
+    itemsById.set(item.id as string, item);
+  }
+
   const now = Date.now();
   let earliest = Number.POSITIVE_INFINITY;
   for (const item of queuedItems) {
+    if (describeDependencyState(item, itemsById).kind !== 'ready') continue;
     const nextAttemptAtMs = parseIsoDateMs(item.nextAttemptAt);
     if (!Number.isFinite(nextAttemptAtMs)) return 0;
     if (nextAttemptAtMs <= now) return 0;
@@ -261,6 +544,15 @@ function markItemCompleted(itemId: string) {
 function markItemCancelled(itemId: string, errorMessage = 'Cancelled by user') {
   store.update(AGENT_BATCH_ITEM_COLLECTION, itemId, {
     status: 'cancelled',
+    completedAt: new Date().toISOString(),
+    nextAttemptAt: null,
+    errorMessage,
+  });
+}
+
+function markItemSkipped(itemId: string, errorMessage: string) {
+  store.update(AGENT_BATCH_ITEM_COLLECTION, itemId, {
+    status: 'skipped',
     completedAt: new Date().toISOString(),
     nextAttemptAt: null,
     errorMessage,
@@ -350,6 +642,24 @@ function reconcileProcessingItems(runId: string) {
         ? runRecord.errorMessage
         : 'Batch item failed';
     retryOrFailItem(item, errorMessage);
+  }
+}
+
+function skipBlockedQueuedItems(runId: string) {
+  while (true) {
+    const items = listItemsForRun(runId);
+    const itemsById = new Map(items.map((item) => [item.id as string, item]));
+    let skippedAny = false;
+
+    for (const item of items) {
+      if (item.status !== 'queued') continue;
+      const dependencyState = describeDependencyState(item, itemsById);
+      if (dependencyState.kind !== 'blocked' || !dependencyState.blockedReason) continue;
+      markItemSkipped(item.id as string, dependencyState.blockedReason);
+      skippedAny = true;
+    }
+
+    if (!skippedAny) return;
   }
 }
 
@@ -459,6 +769,7 @@ async function drainBatchRun(runId: string): Promise<void> {
       }
 
       reconcileProcessingItems(runId);
+      skipBlockedQueuedItems(runId);
       const refreshedRun = refreshRunStats(runId);
       if (!refreshedRun) {
         clearRunDrainTimer(runId);
@@ -489,8 +800,11 @@ async function drainBatchRun(runId: string): Promise<void> {
         return;
       }
 
-      const readyItems = listItemsForRun(runId).filter((item) => {
+      const allItems = listItemsForRun(runId);
+      const itemsById = new Map(allItems.map((item) => [item.id as string, item]));
+      const readyItems = allItems.filter((item) => {
         if (item.status !== 'queued') return false;
+        if (describeDependencyState(item, itemsById).kind !== 'ready') return false;
         const nextAttemptAtMs = parseIsoDateMs(item.nextAttemptAt);
         return !Number.isFinite(nextAttemptAtMs) || nextAttemptAtMs <= Date.now();
       });
@@ -617,14 +931,7 @@ export function initializeAgentBatchQueue(options: { preserveActiveProcessing?: 
 }
 
 export function enqueueAgentBatchRun(options: EnqueueAgentBatchRunOptions): AgentBatchStartResult {
-  const {
-    sourceType,
-    sourceId,
-    sourceName = null,
-    agentId,
-    prompt,
-    cards,
-  } = options;
+  const { sourceType, sourceId, sourceName = null, agentId, prompt, cards } = options;
   const maxParallel = normalizeMaxParallel(options.maxParallel);
   const trimmedPrompt = prompt.trim();
 
@@ -647,6 +954,18 @@ export function enqueueAgentBatchRun(options: EnqueueAgentBatchRunOptions): Agen
 
   pruneBatchHistory();
 
+  let resolvedDependencies: ResolvedBatchDependencies;
+  try {
+    resolvedDependencies = buildResolvedBatchDependencies(
+      cards,
+      options.stages,
+      options.cardDependencies,
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Invalid batch dependencies';
+    throw ApiError.badRequest('invalid_batch_dependencies', message);
+  }
+
   const run = store.insert(AGENT_BATCH_RUN_COLLECTION, {
     sourceType,
     sourceId,
@@ -664,6 +983,8 @@ export function enqueueAgentBatchRun(options: EnqueueAgentBatchRunOptions): Agen
     startedAt: null,
     finishedAt: null,
     errorMessage: null,
+    stageCount: resolvedDependencies.stageCount,
+    dependencyItemCount: resolvedDependencies.dependsOnCardIdsByCardId.size,
   });
 
   const nowIso = new Date().toISOString();
@@ -678,6 +999,9 @@ export function enqueueAgentBatchRun(options: EnqueueAgentBatchRunOptions): Agen
     cardCollectionId: card.collectionId,
     order: index,
     status: 'queued' as AgentBatchItemStatus,
+    dependsOnItemIds: [] as string[],
+    blockingMode: resolvedDependencies.blockingModeByCardId.get(card.id) ?? null,
+    stageId: resolvedDependencies.stageIdByCardId.get(card.id) ?? null,
     attempts: 0,
     maxAttempts: AGENT_BATCH_DEFAULT_MAX_ATTEMPTS,
     nextAttemptAt: nowIso,
@@ -686,7 +1010,22 @@ export function enqueueAgentBatchRun(options: EnqueueAgentBatchRunOptions): Agen
     errorMessage: null,
     agentRunId: null,
   }));
-  store.insertMany(AGENT_BATCH_ITEM_COLLECTION, itemsToInsert);
+  const insertedItems = store.insertMany(AGENT_BATCH_ITEM_COLLECTION, itemsToInsert);
+  const itemIdByCardId = new Map(
+    insertedItems.map((item) => [item.cardId as string, item.id as string]),
+  );
+  for (const item of insertedItems) {
+    const cardId = item.cardId as string;
+    const dependencyIds =
+      resolvedDependencies.dependsOnCardIdsByCardId.get(cardId)?.map(
+        (dependencyCardId) => itemIdByCardId.get(dependencyCardId) as string,
+      ) ?? [];
+    if (dependencyIds.length === 0) continue;
+    store.update(AGENT_BATCH_ITEM_COLLECTION, item.id as string, {
+      dependsOnItemIds: dependencyIds,
+      blockingMode: resolvedDependencies.blockingModeByCardId.get(cardId) ?? 'all_success',
+    });
+  }
 
   refreshRunStats(run.id as string);
   scheduleRunDrain(run.id as string, 0);
@@ -750,7 +1089,17 @@ export function listAgentBatchRunItems(
     return true;
   });
 
-  const entries = all.slice(offset, offset + limit);
+  const itemsById = new Map(listItemsForRun(runId).map((item) => [item.id as string, item]));
+  const entries = all.slice(offset, offset + limit).map((item) => {
+    const dependencyState = describeDependencyState(item, itemsById);
+    return {
+      ...item,
+      blockedReason:
+        item.status === 'queued' && dependencyState.kind !== 'ready'
+          ? dependencyState.blockedReason
+          : null,
+    };
+  });
   return { entries, total: all.length };
 }
 

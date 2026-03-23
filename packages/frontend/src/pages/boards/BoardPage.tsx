@@ -32,6 +32,7 @@ interface BoardColumn {
   color: string;
   position: number;
   assignAgentId: string | null;
+  assignAgentPrompt?: string | null;
   wipLimit: number | null;
 }
 
@@ -1508,6 +1509,14 @@ export function BoardPage() {
         <BoardBatchRunPanel
           boardId={board.id}
           columns={sortedColumns}
+          availableCards={board.cards
+            .filter((entry) => entry.card)
+            .map((entry) => ({
+              id: entry.cardId,
+              name: entry.card?.name ?? 'Untitled card',
+              columnId: entry.columnId,
+              columnName: sortedColumns.find((column) => column.id === entry.columnId)?.name ?? null,
+            }))}
           onClose={() => setShowBatchRunPanel(false)}
         />
       )}
@@ -1598,6 +1607,7 @@ const Column = memo(function Column({ column, cards, agents, users, tags, proces
   const navigate = useNavigate();
   const [isDragOver, setIsDragOver] = useState(false);
   const [showAgentMenu, setShowAgentMenu] = useState(false);
+  const [showAgentPicker, setShowAgentPicker] = useState(false);
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(column.name);
   const [showColorPicker, setShowColorPicker] = useState(false);
@@ -1628,6 +1638,7 @@ const Column = memo(function Column({ column, cards, agents, users, tags, proces
   const colorPickerRef = useRef<HTMLDivElement>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
+  const [agentPromptValue, setAgentPromptValue] = useState(column.assignAgentPrompt ?? '');
 
   useEffect(() => {
     if (!showAgentMenu) return;
@@ -1706,6 +1717,10 @@ const Column = memo(function Column({ column, cards, agents, users, tags, proces
       wipInputRef.current.select();
     }
   }, [showWipInput]);
+
+  useEffect(() => {
+    setAgentPromptValue(column.assignAgentPrompt ?? '');
+  }, [column.assignAgentPrompt]);
 
   const displayCards = useMemo(() => sortCards(cards, sortOption), [cards, sortOption]);
 
@@ -1798,6 +1813,15 @@ const Column = memo(function Column({ column, cards, agents, users, tags, proces
   }
 
   const assignedAgent = agents.find((a) => a.id === column.assignAgentId);
+  const trimmedAgentPrompt = agentPromptValue.trim();
+  const savedAgentPrompt = (column.assignAgentPrompt ?? '').trim();
+  const agentPromptDirty = trimmedAgentPrompt !== savedAgentPrompt;
+
+  function saveAgentPrompt() {
+    onUpdateColumn(column.id, {
+      assignAgentPrompt: trimmedAgentPrompt || null,
+    });
+  }
 
   function handleDragOver(e: React.DragEvent) {
     // Ignore column drags — only handle card drags in the card list
@@ -2043,7 +2067,13 @@ const Column = memo(function Column({ column, cards, agents, users, tags, proces
             <button
               className={[styles.automationBtn, assignedAgent ? styles.automationActive : ''].filter(Boolean).join(' ')}
               onClick={() => setShowAgentMenu(!showAgentMenu)}
-              title={assignedAgent ? `Auto-assign: ${assignedAgent.name}` : 'Set auto-assign agent'}
+              title={
+                assignedAgent
+                  ? column.assignAgentPrompt?.trim()
+                    ? `Auto-assign: ${assignedAgent.name} with extra prompt`
+                    : `Auto-assign: ${assignedAgent.name}`
+                  : 'Set auto-assign agent'
+              }
             >
               {assignedAgent ? (
                 <AgentAvatar icon={assignedAgent.avatarIcon} bgColor={assignedAgent.avatarBgColor} logoColor={assignedAgent.avatarLogoColor} size={16} />
@@ -2059,31 +2089,79 @@ const Column = memo(function Column({ column, cards, agents, users, tags, proces
                 placement="bottom-end"
               >
                 <div className={styles.automationMenuTitle}>Auto-assign agent</div>
-                {agents.length === 0 && (
-                  <div className={styles.automationMenuItem} style={{ color: 'var(--color-text-tertiary)' }}>
-                    No active agents
+                <button
+                  className={styles.automationMenuItem}
+                  onClick={() => {
+                    setShowAgentMenu(false);
+                    setShowAgentPicker(true);
+                  }}
+                  disabled={agents.length === 0}
+                >
+                  {assignedAgent ? (
+                    <>
+                      <AgentAvatar icon={assignedAgent.avatarIcon} bgColor={assignedAgent.avatarBgColor} logoColor={assignedAgent.avatarLogoColor} size={16} />
+                      <span className={styles.automationMenuItemLabel}>
+                        Change worker
+                        <span className={styles.automationMenuItemMeta}>{assignedAgent.name}</span>
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <Bot size={14} />
+                      <span className={styles.automationMenuItemLabel}>
+                        Choose worker
+                        <span className={styles.automationMenuItemMeta}>
+                          {agents.length === 0 ? 'No active agents' : 'Pick who should receive cards from this column'}
+                        </span>
+                      </span>
+                    </>
+                  )}
+                </button>
+                <div className={styles.automationDivider} />
+                <div className={styles.automationMenuSectionTitle}>
+                  <AlignLeft size={12} />
+                  Additional prompt
+                </div>
+                <div className={styles.automationPromptWrap}>
+                  <textarea
+                    className={styles.automationPromptInput}
+                    value={agentPromptValue}
+                    onChange={(e) => setAgentPromptValue(e.target.value)}
+                    placeholder="Optional extra instructions for this column's auto-assignment"
+                    rows={4}
+                  />
+                  <div className={styles.automationPromptHint}>
+                    Saved on the column and appended whenever this automation auto-assigns a card.
                   </div>
-                )}
-                {agents.map((agent) => (
-                  <button
-                    key={agent.id}
-                    className={[styles.automationMenuItem, column.assignAgentId === agent.id ? styles.automationMenuItemActive : ''].filter(Boolean).join(' ')}
-                    onClick={() => {
-                      onUpdateColumn(column.id, { assignAgentId: agent.id });
-                      setShowAgentMenu(false);
-                    }}
-                  >
-                    <AgentAvatar icon={agent.avatarIcon} bgColor={agent.avatarBgColor} logoColor={agent.avatarLogoColor} size={16} />
-                    {agent.name}
-                  </button>
-                ))}
+                  <div className={styles.automationPromptActions}>
+                    <button
+                      className={styles.automationPromptSave}
+                      onClick={saveAgentPrompt}
+                      disabled={!agentPromptDirty}
+                    >
+                      Save prompt
+                    </button>
+                    {savedAgentPrompt && (
+                      <button
+                        className={styles.automationPromptClear}
+                        onClick={() => {
+                          setAgentPromptValue('');
+                          onUpdateColumn(column.id, { assignAgentPrompt: null });
+                        }}
+                      >
+                        Clear prompt
+                      </button>
+                    )}
+                  </div>
+                </div>
                 {column.assignAgentId && (
                   <>
                     <div className={styles.automationDivider} />
                     <button
                       className={styles.automationMenuItem}
                       onClick={() => {
-                        onUpdateColumn(column.id, { assignAgentId: null });
+                        setAgentPromptValue('');
+                        onUpdateColumn(column.id, { assignAgentId: null, assignAgentPrompt: null });
                         setShowAgentMenu(false);
                       }}
                     >
@@ -2094,6 +2172,42 @@ const Column = memo(function Column({ column, cards, agents, users, tags, proces
               </AnchoredOverlay>
             )}
           </div>
+          {showAgentPicker && (
+            <Modal onClose={() => setShowAgentPicker(false)} size="sm" ariaLabel="Choose auto-assign worker">
+              <div className={styles.createModal}>
+                <div className={styles.createModalTitle}>Choose auto-assign worker</div>
+                <div className={styles.automationPickerSubtitle}>
+                  Cards moved into <strong>{column.name}</strong> will be auto-assigned to this worker.
+                </div>
+                <div className={styles.automationPickerList}>
+                  {agents.length === 0 ? (
+                    <div className={styles.automationPickerEmpty}>No active agents available.</div>
+                  ) : (
+                    agents.map((agent) => (
+                      <button
+                        key={agent.id}
+                        className={[
+                          styles.automationPickerItem,
+                          column.assignAgentId === agent.id ? styles.automationPickerItemActive : '',
+                        ].filter(Boolean).join(' ')}
+                        onClick={() => {
+                          onUpdateColumn(column.id, { assignAgentId: agent.id });
+                          setShowAgentPicker(false);
+                        }}
+                      >
+                        <AgentAvatar icon={agent.avatarIcon} bgColor={agent.avatarBgColor} logoColor={agent.avatarLogoColor} size={20} />
+                        <span className={styles.automationPickerName}>{agent.name}</span>
+                        {column.assignAgentId === agent.id && <Check size={14} className={styles.automationPickerCheck} />}
+                      </button>
+                    ))
+                  )}
+                </div>
+                <div className={styles.createModalActions}>
+                  <Button variant="ghost" onClick={() => setShowAgentPicker(false)}>Close</Button>
+                </div>
+              </div>
+            </Modal>
+          )}
           <div className={styles.automationWrap} ref={sortMenuRef}>
             <button
               className={[styles.automationBtn, sortOption !== 'position' ? styles.automationActive : ''].filter(Boolean).join(' ')}

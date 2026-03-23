@@ -1,0 +1,4 @@
+{
+  "name": "openwork-board-operations",
+  "description": "Use OpenWork board and card APIs when work is tied to a board card or when the agent should create, place, move, or comment on tasks on a board"
+}
