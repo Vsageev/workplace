@@ -333,7 +333,8 @@ interface ManagedExistingImage {
   fileName: string;
 }
 
-interface EditingMessageState {
+interface EditingChatMessageState {
+  kind: 'message';
   agentId: string;
   conversationId: string;
   id: string;
@@ -343,20 +344,31 @@ interface EditingMessageState {
   isSubmitting: boolean;
 }
 
+interface EditingQueueComposerState {
+  kind: 'queue';
+  queueItemId: string;
+  initialValue: string;
+  value: string;
+  isSubmitting: boolean;
+}
+
+type ComposerEditingState = EditingChatMessageState | EditingQueueComposerState;
+
+type ReplyComposerEditingProp =
+  | (EditingChatMessageState & {
+      onChange: (value: string) => void;
+      onCancel: () => void;
+      onSubmit: (files: File[], keepStoragePaths: string[]) => Promise<void>;
+    })
+  | (EditingQueueComposerState & {
+      onChange: (value: string) => void;
+      onCancel: () => void;
+      onSubmit: () => Promise<void>;
+    });
+
 interface ReplyComposerProps {
   streaming: boolean;
-  editingMessage?: {
-    agentId: string;
-    conversationId: string;
-    id: string;
-    initialValue: string;
-    value: string;
-    existingImages: ManagedExistingImage[];
-    isSubmitting: boolean;
-    onChange: (value: string) => void;
-    onCancel: () => void;
-    onSubmit: (files: File[], keepStoragePaths: string[]) => Promise<void>;
-  } | null;
+  editingMessage?: ReplyComposerEditingProp | null;
   onSendAttachments: (caption: string, files: File[]) => Promise<void>;
   onSendText: (prompt: string) => Promise<void>;
 }
@@ -449,30 +461,37 @@ export const ReplyComposer = memo(function ReplyComposer({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const isEditing = editingMessage !== null;
+  const isEditingChatMessage = editingMessage?.kind === 'message';
+  const isEditingQueueItem = editingMessage?.kind === 'queue';
   const editingSubmitting = isEditing && editingMessage.isSubmitting;
   const composerValue = isEditing ? editingMessage.value : input;
   const draftStagedImages = draftStagedAttachments.filter(
     (attachment): attachment is DraftAttachment & { kind: 'image'; previewUrl: string } =>
       attachment.kind === 'image' && Boolean(attachment.previewUrl),
   );
-  const stagedImages = isEditing ? editStagedImages : draftStagedImages;
-  const existingImages = isEditing ? retainedEditImages : [];
-  const totalAttachmentCount = isEditing
+  const stagedImages = isEditingChatMessage ? editStagedImages : draftStagedImages;
+  const existingImages = isEditingChatMessage ? retainedEditImages : [];
+  const totalAttachmentCount = isEditingChatMessage
     ? stagedImages.length + existingImages.length
-    : draftStagedAttachments.length;
+    : isEditing
+      ? 0
+      : draftStagedAttachments.length;
   const trimmedComposerValue = isEditing ? editingMessage.value.trim() : input.trim();
-  const existingImagesChanged = isEditing
+  const existingImagesChanged = isEditingChatMessage
     ? editingMessage.existingImages.length !== retainedEditImages.length ||
       editingMessage.existingImages.some(
         (image, index) => retainedEditImages[index]?.storagePath !== image.storagePath,
       )
     : false;
-  const canSubmitEdit = isEditing
+  const canSubmitEdit = isEditingChatMessage
     ? (trimmedComposerValue !== editingMessage.initialValue.trim() ||
         stagedImages.length > 0 ||
         existingImagesChanged) &&
       (trimmedComposerValue.length > 0 || totalAttachmentCount > 0)
-    : false;
+    : isEditingQueueItem
+      ? trimmedComposerValue !== editingMessage.initialValue.trim() &&
+        trimmedComposerValue.length > 0
+      : false;
 
   const clearImageSet = useCallback((setImages: Dispatch<SetStateAction<StagedImage[]>>) => {
     setImages((prev) => {
@@ -506,9 +525,18 @@ export const ReplyComposer = memo(function ReplyComposer({
   );
 
   useEffect(() => {
-    setRetainedEditImages(editingMessage?.existingImages ?? []);
+    if (editingMessage?.kind === 'message') {
+      setRetainedEditImages(editingMessage.existingImages);
+    } else {
+      setRetainedEditImages([]);
+    }
     clearEditStagedImages();
-  }, [clearEditStagedImages, editingMessage?.existingImages, editingMessage?.id]);
+  }, [
+    clearEditStagedImages,
+    editingMessage?.kind === 'message' ? editingMessage.id : null,
+    editingMessage?.kind === 'queue' ? editingMessage.queueItemId : null,
+    editingMessage?.kind === 'message' ? editingMessage.existingImages : null,
+  ]);
 
   useEffect(() => {
     if (isEditing) return;
@@ -534,7 +562,7 @@ export const ReplyComposer = memo(function ReplyComposer({
     (files: File[]) => {
       const images = files.filter(isImageFile);
       if (images.length === 0) return;
-      if (isEditing) {
+      if (isEditingChatMessage) {
         setEditStagedImages((prev) => {
           const remaining = MAX_STAGED_ATTACHMENTS - prev.length - retainedEditImages.length;
           if (remaining <= 0) return prev;
@@ -546,6 +574,7 @@ export const ReplyComposer = memo(function ReplyComposer({
         });
         return;
       }
+      if (isEditingQueueItem) return;
       setDraftStagedAttachments((prev) => {
         const remaining = MAX_STAGED_ATTACHMENTS - prev.length;
         if (remaining <= 0) return prev;
@@ -557,7 +586,7 @@ export const ReplyComposer = memo(function ReplyComposer({
         return [...prev, ...toAdd];
       });
     },
-    [isEditing, retainedEditImages.length],
+    [isEditingChatMessage, isEditingQueueItem, retainedEditImages.length],
   );
 
   const stageFiles = useCallback((files: File[]) => {
@@ -585,7 +614,7 @@ export const ReplyComposer = memo(function ReplyComposer({
 
   const removeStagedImage = useCallback(
     (index: number) => {
-      if (!isEditing) {
+      if (!isEditingChatMessage) {
         removeDraftAttachment(index);
         return;
       }
@@ -596,7 +625,7 @@ export const ReplyComposer = memo(function ReplyComposer({
         return next;
       });
     },
-    [isEditing, removeDraftAttachment],
+    [isEditingChatMessage, removeDraftAttachment],
   );
 
   const removeExistingImage = useCallback((storagePath: string) => {
@@ -606,7 +635,7 @@ export const ReplyComposer = memo(function ReplyComposer({
   const handleSend = useCallback(async () => {
     if (uploading || editingSubmitting) return;
 
-    if (isEditing) {
+    if (isEditingChatMessage) {
       const nextValue = editingMessage.value.trim();
       const hasImages = editStagedImages.length > 0;
       const keptStoragePaths = retainedEditImages.map((image) => image.storagePath);
@@ -617,6 +646,19 @@ export const ReplyComposer = memo(function ReplyComposer({
           keptStoragePaths,
         );
         clearEditStagedImages();
+      } catch {
+        // Parent state already surfaces the failure; keep the draft intact for retry.
+      } finally {
+        inputRef.current?.focus();
+      }
+      return;
+    }
+
+    if (isEditingQueueItem) {
+      const nextValue = editingMessage.value.trim();
+      if (!nextValue) return;
+      try {
+        await editingMessage.onSubmit();
       } catch {
         // Parent state already surfaces the failure; keep the draft intact for retry.
       } finally {
@@ -666,7 +708,8 @@ export const ReplyComposer = memo(function ReplyComposer({
     editStagedImages,
     editingMessage,
     input,
-    isEditing,
+    isEditingChatMessage,
+    isEditingQueueItem,
     onSendAttachments,
     onSendText,
     streaming,
@@ -714,13 +757,13 @@ export const ReplyComposer = memo(function ReplyComposer({
       setDraggingOver(false);
       const files = Array.from(e.dataTransfer.files ?? []);
       if (files.length === 0) return;
-      if (isEditing) {
+      if (isEditingChatMessage) {
         stageImages(files);
-      } else {
+      } else if (!isEditing) {
         stageFiles(files);
       }
     },
-    [isEditing, stageFiles, stageImages],
+    [isEditing, isEditingChatMessage, stageFiles, stageImages],
   );
 
   const handleImageSelect = useCallback(
@@ -756,14 +799,18 @@ export const ReplyComposer = memo(function ReplyComposer({
     >
       {(uploading || editingSubmitting) && (
         <div className={styles.uploadingIndicator}>
-          {editingSubmitting ? 'Saving edit…' : 'Uploading attachments…'}
+          {editingSubmitting
+            ? isEditingQueueItem
+              ? 'Saving queued message…'
+              : 'Saving edit…'
+            : 'Uploading attachments…'}
         </div>
       )}
       {isEditing && (
         <div className={styles.composerEditBar}>
           <div className={styles.composerEditMeta}>
-            <Pencil size={13} />
-            Editing message
+            {isEditingQueueItem ? <Clock size={13} /> : <Pencil size={13} />}
+            {isEditingQueueItem ? 'Editing queued message' : 'Editing message'}
           </div>
           <button
             className={styles.composerEditCancel}
@@ -776,7 +823,7 @@ export const ReplyComposer = memo(function ReplyComposer({
       )}
       {(existingImages.length > 0 ||
         (!isEditing && draftStagedAttachments.length > 0) ||
-        (isEditing && stagedImages.length > 0)) && (
+        (isEditingChatMessage && stagedImages.length > 0)) && (
         <div className={styles.stagedImagesRow}>
           {existingImages.map((img) => (
             <div key={img.storagePath} className={styles.stagedImagePreview}>
@@ -796,7 +843,7 @@ export const ReplyComposer = memo(function ReplyComposer({
               </button>
             </div>
           ))}
-          {isEditing
+          {isEditingChatMessage
             ? stagedImages.map((img, i) => (
                 <div key={img.previewUrl} className={styles.stagedImagePreview}>
                   <img src={img.previewUrl} alt="Preview" className={styles.stagedImageThumb} />
@@ -875,6 +922,7 @@ export const ReplyComposer = memo(function ReplyComposer({
               disabled={
                 uploading ||
                 editingSubmitting ||
+                isEditingQueueItem ||
                 (!isEditing && streaming) ||
                 totalAttachmentCount >= MAX_STAGED_ATTACHMENTS
               }
@@ -913,13 +961,15 @@ export const ReplyComposer = memo(function ReplyComposer({
           ref={inputRef}
           className={styles.replyInput}
           placeholder={
-            isEditing
+            isEditingChatMessage
               ? 'Edit your message…'
-              : totalAttachmentCount > 0
-                ? 'Add a note… (optional)'
-                : streaming
-                  ? 'Type to queue a message…'
-                  : 'Type a message…'
+              : isEditingQueueItem
+                ? 'Edit queued message…'
+                : totalAttachmentCount > 0
+                  ? 'Add a note… (optional)'
+                  : streaming
+                    ? 'Type to queue a message…'
+                    : 'Type a message…'
           }
           value={composerValue}
           onChange={(e) =>
@@ -940,8 +990,20 @@ export const ReplyComposer = memo(function ReplyComposer({
               ? !canSubmitEdit
               : !composerValue.trim() && draftStagedAttachments.length === 0)
           }
-          aria-label={isEditing ? 'Save edited message' : 'Send message'}
-          title={isEditing ? 'Save edited message' : 'Send message'}
+          aria-label={
+            isEditingChatMessage
+              ? 'Save edited message'
+              : isEditingQueueItem
+                ? 'Save queued message'
+                : 'Send message'
+          }
+          title={
+            isEditingChatMessage
+              ? 'Save edited message'
+              : isEditingQueueItem
+                ? 'Save queued message'
+                : 'Send message'
+          }
         >
           <Send size={18} />
         </button>
@@ -1945,7 +2007,7 @@ export function AgentsPage() {
     };
   }, [chatLoading]);
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [editingMessage, setEditingMessage] = useState<EditingMessageState | null>(null);
+  const [editingMessage, setEditingMessage] = useState<ComposerEditingState | null>(null);
   const [pendingConversationKeys, setPendingConversationKeys] = useState<Set<string>>(new Set());
   const [runHandoffKeys, setRunHandoffKeys] = useState<Set<string>>(new Set());
   const [stoppingRun, setStoppingRun] = useState(false);
@@ -1983,11 +2045,11 @@ export function AgentsPage() {
   // ── Chat / Files tab ──
   const [chatTab, setChatTab] = useState<'chat' | 'files'>('chat');
 
-  // ── Queue panel ──
-  const [queuePanelOpen, setQueuePanelOpen] = useState(false);
+  // ── Queued chat items ──
   const [queueItems, setQueueItems] = useState<QueueItem[]>([]);
-  const [editingQueueItemId, setEditingQueueItemId] = useState<string | null>(null);
-  const [editingQueuePrompt, setEditingQueuePrompt] = useState('');
+  const [savingQueueItemId, setSavingQueueItemId] = useState<string | null>(null);
+  const [deletingQueueItemIds, setDeletingQueueItemIds] = useState<Set<string>>(new Set());
+  const [clearingQueuedItems, setClearingQueuedItems] = useState(false);
 
   // ── Skills manager (page-level) ──
   const [skillsManagerOpen, setSkillsManagerOpen] = useState(false);
@@ -2147,9 +2209,9 @@ export function AgentsPage() {
       setActiveAgentId(agentId);
       setActiveConvId(conversationId);
       setQueueItems([]);
-      setQueuePanelOpen(false);
-      setEditingQueueItemId(null);
-      setEditingQueuePrompt('');
+      setSavingQueueItemId(null);
+      setDeletingQueueItemIds(new Set());
+      setClearingQueuedItems(false);
       setEditingMessage(null);
       // Expand the active agent so the selected conversation is visible in the sidebar
       if (agentId) {
@@ -2716,54 +2778,79 @@ export function AgentsPage() {
     [fetchConversationRun, fetchConversations, fetchMessages, fetchQueueItems],
   );
 
-  async function handleSaveQueueItem(itemId: string) {
-    if (!activeAgentId || !activeConvId || !editingQueuePrompt.trim()) return;
-    try {
-      await api(`/agents/${activeAgentId}/chat/queue/${itemId}`, {
-        method: 'PATCH',
-        body: JSON.stringify({
-          conversationId: activeConvId,
-          prompt: editingQueuePrompt.trim(),
-        }),
-      });
-      setEditingQueueItemId(null);
-      setEditingQueuePrompt('');
-      await fetchQueueItems(activeAgentId, activeConvId);
-    } catch {
-      // silently fail
-    }
-  }
+  useEffect(() => {
+    setEditingMessage((prev) => {
+      if (prev?.kind !== 'queue') return prev;
+      if (queuedQueueItems.some((item) => item.id === prev.queueItemId)) return prev;
+      return null;
+    });
+  }, [queuedQueueItems]);
 
   async function handleDeleteQueueItem(itemId: string) {
-    if (!activeAgentId || !activeConvId) return;
+    const agentId = activeAgentId;
+    const conversationId = activeConvId;
+    if (!agentId || !conversationId) return;
+    setDeletingQueueItemIds((prev) => {
+      const next = new Set(prev);
+      next.add(itemId);
+      return next;
+    });
     try {
-      await api(`/agents/${activeAgentId}/chat/queue/${itemId}`, {
+      await api(`/agents/${agentId}/chat/queue/${itemId}`, {
         method: 'DELETE',
-        body: JSON.stringify({ conversationId: activeConvId }),
+        body: JSON.stringify({ conversationId }),
       });
-      await fetchQueueItems(activeAgentId, activeConvId);
-    } catch {
-      // silently fail
+      setEditingMessage((prev) =>
+        prev?.kind === 'queue' && prev.queueItemId === itemId ? null : prev,
+      );
+      setActiveConversationQueueItems(agentId, conversationId, (prev) =>
+        prev.filter((item) => item.id !== itemId),
+      );
+      setChatError(null);
+      await syncActiveConversation(agentId, conversationId, { silent: true });
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : 'Failed to remove queued message';
+      setChatError(message);
+      toast.error(message);
+    } finally {
+      setDeletingQueueItemIds((prev) => {
+        if (!prev.has(itemId)) return prev;
+        const next = new Set(prev);
+        next.delete(itemId);
+        return next;
+      });
     }
   }
 
   async function handleClearQueue() {
-    if (!activeAgentId || !activeConvId || queuedQueueItems.length === 0) return;
+    const agentId = activeAgentId;
+    const conversationId = activeConvId;
+    const queuedItemIds = queuedQueueItems.map((item) => item.id);
+    if (!agentId || !conversationId || queuedItemIds.length === 0) return;
+    setClearingQueuedItems(true);
     try {
       await Promise.all(
-        queuedQueueItems.map((item) =>
-          api(`/agents/${activeAgentId}/chat/queue/${item.id}`, {
+        queuedItemIds.map((itemId) =>
+          api(`/agents/${agentId}/chat/queue/${itemId}`, {
             method: 'DELETE',
-            body: JSON.stringify({ conversationId: activeConvId }),
+            body: JSON.stringify({ conversationId }),
           }),
         ),
       );
-      setActiveConversationQueueItems(activeAgentId, activeConvId, (prev) =>
-        prev.filter((item) => !queuedQueueItems.some((queuedItem) => queuedItem.id === item.id)),
+      setEditingMessage((prev) =>
+        prev?.kind === 'queue' && queuedItemIds.includes(prev.queueItemId) ? null : prev,
       );
-      await fetchConversations(activeAgentId);
-    } catch {
-      // silently fail
+      setActiveConversationQueueItems(agentId, conversationId, (prev) =>
+        prev.filter((item) => !queuedItemIds.includes(item.id)),
+      );
+      setChatError(null);
+      await syncActiveConversation(agentId, conversationId, { silent: true });
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : 'Failed to clear queued messages';
+      setChatError(message);
+      toast.error(message);
+    } finally {
+      setClearingQueuedItems(false);
     }
   }
 
@@ -3557,6 +3644,7 @@ export function AgentsPage() {
     if (editingMessage?.isSubmitting) return;
     if (!isEditableChatMessage(msg) || !activeAgentId || !activeConvId) return;
     setEditingMessage({
+      kind: 'message',
       agentId: activeAgentId,
       conversationId: activeConvId,
       id: msg.id,
@@ -3572,7 +3660,7 @@ export function AgentsPage() {
   }
 
   async function submitEditedMessage(files: File[], keepStoragePaths: string[]) {
-    if (!editingMessage || editingMessage.isSubmitting) return;
+    if (!editingMessage || editingMessage.kind !== 'message' || editingMessage.isSubmitting) return;
     if (!ensureAgentCliAvailable(editingMessage.agentId)) return;
 
     const trimmedContent = editingMessage.value.trim();
@@ -3586,7 +3674,7 @@ export function AgentsPage() {
     };
 
     setEditingMessage((prev) => {
-      if (!prev) return prev;
+      if (!prev || prev.kind !== 'message') return prev;
       if (
         prev.agentId !== sentAgentId ||
         prev.conversationId !== sentConvId ||
@@ -3636,7 +3724,7 @@ export function AgentsPage() {
         setActiveConversationMessages(sentAgentId, sentConvId, response.entries);
       }
       setEditingMessage((prev) => {
-        if (!prev) return prev;
+        if (!prev || prev.kind !== 'message') return prev;
         if (
           prev.agentId !== sentAgentId ||
           prev.conversationId !== sentConvId ||
@@ -3657,7 +3745,7 @@ export function AgentsPage() {
       throw err;
     } finally {
       setEditingMessage((prev) => {
-        if (!prev) return prev;
+        if (!prev || prev.kind !== 'message') return prev;
         if (
           prev.agentId !== sentAgentId ||
           prev.conversationId !== sentConvId ||
@@ -3668,6 +3756,50 @@ export function AgentsPage() {
         return { ...prev, isSubmitting: false };
       });
       setConversationPending(sentAgentId, sentConvId, false);
+    }
+  }
+
+  async function submitEditedQueueItem() {
+    if (!editingMessage || editingMessage.kind !== 'queue' || editingMessage.isSubmitting) return;
+    const agentId = activeAgentId;
+    const conversationId = activeConvId;
+    const itemId = editingMessage.queueItemId;
+    const nextPrompt = editingMessage.value.trim();
+    if (!agentId || !conversationId || !nextPrompt) return;
+
+    setEditingMessage((prev) =>
+      prev?.kind === 'queue' && prev.queueItemId === itemId
+        ? { ...prev, isSubmitting: true }
+        : prev,
+    );
+    setSavingQueueItemId(itemId);
+    try {
+      const updatedItem = await api<QueueItem>(`/agents/${agentId}/chat/queue/${itemId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          conversationId,
+          prompt: nextPrompt,
+        }),
+      });
+      setActiveConversationQueueItems(agentId, conversationId, (prev) =>
+        prev.map((item) => (item.id === itemId ? { ...item, ...updatedItem } : item)),
+      );
+      setEditingMessage((prev) =>
+        prev?.kind === 'queue' && prev.queueItemId === itemId ? null : prev,
+      );
+      setChatError(null);
+      await syncActiveConversation(agentId, conversationId, { silent: true });
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : 'Failed to update queued message';
+      setChatError(message);
+      toast.error(message);
+      throw err;
+    } finally {
+      setSavingQueueItemId((current) => (current === itemId ? null : current));
+      setEditingMessage((prev) => {
+        if (prev?.kind !== 'queue' || prev.queueItemId !== itemId) return prev;
+        return { ...prev, isSubmitting: false };
+      });
     }
   }
 
@@ -5256,109 +5388,152 @@ export function AgentsPage() {
                           </div>
                         </div>
                       ))}
-                    </div>
-                  )}
 
-                  {/* Queue panel */}
-                  {queuedQueueItems.length > 0 && (
-                    <div className={styles.queuePanel}>
-                      <div className={styles.queuePanelHeader}>
-                        <button
-                          className={styles.queuePanelToggle}
-                          onClick={() => setQueuePanelOpen((v) => !v)}
-                        >
-                          <Clock size={13} />
-                          <span>
-                            {queuedQueueItems.length} message
-                            {queuedQueueItems.length === 1 ? '' : 's'} in queue
-                          </span>
-                          <ChevronRight
-                            size={14}
-                            className={`${styles.queuePanelChevron} ${queuePanelOpen ? styles.queuePanelChevronOpen : ''}`}
-                          />
-                        </button>
-                        <button
-                          className={styles.queueClearAllBtn}
-                          onClick={() => void handleClearQueue()}
-                          title="Clear all queued messages"
-                        >
-                          <Trash2 size={12} />
-                          Clear all
-                        </button>
-                      </div>
-                      {queuePanelOpen && (
-                        <div className={styles.queuePanelItems}>
-                          {queuedQueueItems.map((item, idx) => (
-                            <div key={item.id} className={styles.queueItem}>
-                              <span className={styles.queueItemIndex}>{idx + 1}</span>
-                              {editingQueueItemId === item.id ? (
-                                <div className={styles.queueItemEditWrap}>
-                                  <textarea
-                                    className={styles.queueItemEditInput}
-                                    value={editingQueuePrompt}
-                                    onChange={(e) => setEditingQueuePrompt(e.target.value)}
-                                    rows={2}
-                                    autoFocus
-                                    onKeyDown={(e) => {
-                                      if (e.key === 'Escape') {
-                                        setEditingQueueItemId(null);
-                                        setEditingQueuePrompt('');
-                                      }
-                                      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-                                        void handleSaveQueueItem(item.id);
-                                      }
-                                    }}
-                                  />
-                                  <div className={styles.queueItemEditActions}>
+                      {queuedQueueItems.length > 0 && (
+                        <div className={`${styles.messageRow} ${styles.messageRowUser}`}>
+                          <div className={styles.messageContent}>
+                            <div className={styles.inlineQueueSummary}>
+                              <span className={styles.inlineQueueSummaryLabel}>
+                                <Clock size={12} aria-hidden />
+                                {queueItemsLabel(queuedQueueItems.length)} — sends when the current
+                                run finishes
+                              </span>
+                              <Tooltip
+                                label={
+                                  clearingQueuedItems
+                                    ? 'Removing queued messages'
+                                    : 'Remove all queued messages from this chat'
+                                }
+                              >
+                                <span
+                                  className={
+                                    clearingQueuedItems
+                                      ? `${styles.queuedIconBtnWrap} ${styles.queuedIconBtnWrapNotAllowed}`
+                                      : styles.queuedIconBtnWrap
+                                  }
+                                >
+                                  <button
+                                    type="button"
+                                    className={styles.inlineQueueClearAllBtn}
+                                    onClick={() => void handleClearQueue()}
+                                    disabled={clearingQueuedItems}
+                                    style={
+                                      clearingQueuedItems
+                                        ? { pointerEvents: 'none' }
+                                        : undefined
+                                    }
+                                    aria-label="Remove all queued messages"
+                                  >
+                                    Clear all
+                                  </button>
+                                </span>
+                              </Tooltip>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {queuedQueueItems.map((item, idx) => {
+                        const isSavingQueuedItem = savingQueueItemId === item.id;
+                        const isDeletingQueuedItem = deletingQueueItemIds.has(item.id);
+                        const isQueuedItemBusy =
+                          isSavingQueuedItem || isDeletingQueuedItem || clearingQueuedItems;
+
+                        return (
+                          <div
+                            key={item.id}
+                            className={`${styles.messageRow} ${styles.messageRowUser} ${styles.queuedMessageRow}`}
+                          >
+                            <div className={styles.messageContent}>
+                              <div className={`${styles.messageBubble} ${styles.messageBubbleUser}`}>
+                                <div className={styles.messagePlainText}>{item.prompt}</div>
+                              </div>
+                              <div className={`${styles.messageMeta} ${styles.messageMetaUser}`}>
+                                <span
+                                  className={`${styles.messageExecutionState} ${styles.messageExecutionStateQueued}`}
+                                >
+                                  <Clock size={11} aria-hidden />
+                                  Queued #{idx + 1}
+                                </span>
+                                <span>
+                                  {isDeletingQueuedItem
+                                    ? 'Removing…'
+                                    : isSavingQueuedItem
+                                      ? 'Saving…'
+                                      : new Date(item.createdAt).toLocaleTimeString([], {
+                                          hour: '2-digit',
+                                          minute: '2-digit',
+                                        })}
+                                </span>
+                                <Tooltip
+                                  label={
+                                    isQueuedItemBusy ? 'Please wait' : 'Edit queued message'
+                                  }
+                                >
+                                  <span
+                                    className={
+                                      isQueuedItemBusy
+                                        ? `${styles.queuedIconBtnWrap} ${styles.queuedIconBtnWrapNotAllowed}`
+                                        : styles.queuedIconBtnWrap
+                                    }
+                                  >
                                     <button
-                                      className={styles.queueItemSaveBtn}
-                                      onClick={() => void handleSaveQueueItem(item.id)}
-                                      title="Save"
-                                    >
-                                      <Check size={13} />
-                                    </button>
-                                    <button
-                                      className={styles.queueItemCancelBtn}
+                                      type="button"
+                                      className={styles.editMsgBtn}
                                       onClick={() => {
-                                        setEditingQueueItemId(null);
-                                        setEditingQueuePrompt('');
+                                        setEditingMessage({
+                                          kind: 'queue',
+                                          queueItemId: item.id,
+                                          initialValue: item.prompt,
+                                          value: item.prompt,
+                                          isSubmitting: false,
+                                        });
                                       }}
-                                      title="Cancel"
-                                    >
-                                      <X size={13} />
-                                    </button>
-                                  </div>
-                                </div>
-                              ) : (
-                                <>
-                                  <span className={styles.queueItemPrompt} title={item.prompt}>
-                                    {item.prompt}
-                                  </span>
-                                  <div className={styles.queueItemActions}>
-                                    <button
-                                      className={styles.queueItemEditBtn}
-                                      onClick={() => {
-                                        setEditingQueueItemId(item.id);
-                                        setEditingQueuePrompt(item.prompt);
-                                      }}
-                                      title="Edit"
+                                      disabled={isQueuedItemBusy || editingMessage?.isSubmitting}
+                                      style={
+                                        isQueuedItemBusy || editingMessage?.isSubmitting
+                                          ? { pointerEvents: 'none' }
+                                          : undefined
+                                      }
+                                      aria-label="Edit queued message"
                                     >
                                       <Pencil size={12} />
                                     </button>
+                                  </span>
+                                </Tooltip>
+                                <Tooltip
+                                  label={
+                                    isQueuedItemBusy ? 'Please wait' : 'Remove from queue'
+                                  }
+                                >
+                                  <span
+                                    className={
+                                      isQueuedItemBusy
+                                        ? `${styles.queuedIconBtnWrap} ${styles.queuedIconBtnWrapNotAllowed}`
+                                        : styles.queuedIconBtnWrap
+                                    }
+                                  >
                                     <button
-                                      className={styles.queueItemDeleteBtn}
+                                      type="button"
+                                      className={`${styles.copyBtn} ${styles.queueRemoveBtn}`}
                                       onClick={() => void handleDeleteQueueItem(item.id)}
-                                      title="Remove from queue"
+                                      disabled={isQueuedItemBusy}
+                                      style={
+                                        isQueuedItemBusy
+                                          ? { pointerEvents: 'none' }
+                                          : undefined
+                                      }
+                                      aria-label="Remove queued message"
                                     >
                                       <Trash2 size={12} />
                                     </button>
-                                  </div>
-                                </>
-                              )}
+                                  </span>
+                                </Tooltip>
+                              </div>
                             </div>
-                          ))}
-                        </div>
-                      )}
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
 
@@ -5366,13 +5541,25 @@ export function AgentsPage() {
                     streaming={streaming}
                     editingMessage={
                       editingMessage
-                        ? {
-                            ...editingMessage,
-                            onChange: (value: string) =>
-                              setEditingMessage((prev) => (prev ? { ...prev, value } : prev)),
-                            onCancel: cancelEditingMessage,
-                            onSubmit: submitEditedMessage,
-                          }
+                        ? editingMessage.kind === 'message'
+                          ? {
+                              ...editingMessage,
+                              onChange: (value: string) =>
+                                setEditingMessage((prev) =>
+                                  prev?.kind === 'message' ? { ...prev, value } : prev,
+                                ),
+                              onCancel: cancelEditingMessage,
+                              onSubmit: submitEditedMessage,
+                            }
+                          : {
+                              ...editingMessage,
+                              onChange: (value: string) =>
+                                setEditingMessage((prev) =>
+                                  prev?.kind === 'queue' ? { ...prev, value } : prev,
+                                ),
+                              onCancel: cancelEditingMessage,
+                              onSubmit: submitEditedQueueItem,
+                            }
                         : null
                     }
                     onSendAttachments={sendAttachmentMessage}

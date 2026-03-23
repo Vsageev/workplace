@@ -9,8 +9,9 @@ import { NavigationProgress } from '../components/NavigationProgress';
 import { useUnreadBadgeTitle } from '../hooks/useDocumentTitle';
 import { useUnreadCount } from '../hooks/useUnreadCount';
 import { useActiveRunsCount } from '../hooks/useActiveRunsCount';
+import { useAgentRunNotifications } from '../hooks/useAgentRunNotifications';
 import { api } from '../lib/api';
-import { toast } from '../stores/toast';
+import { getNotificationPreferences, toast } from '../stores/toast';
 import styles from './AppLayout.module.css';
 
 const PAGE_TITLES: Record<string, string> = {
@@ -55,6 +56,7 @@ export function AppLayout() {
   const unreadCount = useUnreadCount();
   const activeRunsCount = useActiveRunsCount();
   useUnreadBadgeTitle(unreadCount ?? 0);
+  useAgentRunNotifications(location.pathname);
 
   // Show a toast when new unread messages arrive and the user isn't on the inbox page.
   // prevUnreadRef starts as null (meaning "not yet initialized"). The first resolved value
@@ -67,7 +69,7 @@ export function AppLayout() {
     prevUnreadRef.current = unreadCount;
     // prev === null means this is the initial baseline fetch — don't notify
     if (prev === null || location.pathname === '/inbox') return;
-    if (unreadCount > prev) {
+    if (unreadCount > prev && getNotificationPreferences().inboxMessages) {
       const newCount = unreadCount - prev;
       toast.info(
         newCount === 1 ? 'New message in Inbox' : `${newCount} new messages in Inbox`,
@@ -75,29 +77,6 @@ export function AppLayout() {
       );
     }
   }, [unreadCount, location.pathname, navigate]);
-
-  // Notify when agent runs complete (count drops from a known positive value to lower)
-  const prevActiveRunsRef = useRef<number | null>(null);
-  useEffect(() => {
-    if (activeRunsCount === null) return;
-    const prev = prevActiveRunsRef.current;
-    prevActiveRunsRef.current = activeRunsCount;
-    if (prev === null || location.pathname === '/monitor') return;
-    if (prev > 0 && activeRunsCount < prev) {
-      const finished = prev - activeRunsCount;
-      if (activeRunsCount === 0) {
-        toast.success(
-          finished === 1 ? 'Agent run completed' : `${finished} agent runs completed`,
-          { action: { label: 'View', onClick: () => navigate('/monitor') }, link: '/monitor' },
-        );
-      } else {
-        toast.info(
-          `${finished} agent run${finished > 1 ? 's' : ''} finished, ${activeRunsCount} still running`,
-          { action: { label: 'Monitor', onClick: () => navigate('/monitor') }, link: '/monitor' },
-        );
-      }
-    }
-  }, [activeRunsCount, location.pathname, navigate]);
 
   const toggleSidebarCollapse = useCallback(() => {
     if (isMobile) return;

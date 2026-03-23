@@ -1688,187 +1688,82 @@
   background: color-mix(in srgb, var(--color-text) 6%, transparent);
 }
 
-/* ── Queue panel ── */
-.queuePanel {
-  border-top: 1px solid var(--color-border);
-  background: var(--color-bg-secondary, var(--color-bg-subtle, #f8f8fa));
-  flex-shrink: 0;
-  padding: 8px 12px;
-}
-
-.queuePanelHeader {
+/* ── Inline queued messages (same bubbles as user messages; light queue hints in meta) ── */
+.inlineQueueSummary {
   display: flex;
   align-items: center;
-  gap: 8px;
-}
-
-.queueClearAllBtn {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  background: none;
-  border: 1px solid var(--color-border);
-  border-radius: 5px;
-  padding: 2px 8px;
-  cursor: pointer;
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--color-text-secondary);
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.queueClearAllBtn:hover {
-  color: var(--color-danger, #e53e3e);
-  border-color: var(--color-danger, #e53e3e);
-}
-
-.queueItem {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 6px 4px;
-  border-radius: 6px;
-  font-size: 13px;
-  line-height: 1.4;
-}
-
-.queuePanelToggle {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--space-2);
   width: 100%;
-  background: none;
+  margin-top: var(--space-1);
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--color-text-tertiary);
+}
+
+.inlineQueueSummaryLabel {
+  display: inline;
+  text-align: right;
+}
+
+.inlineQueueSummaryLabel svg {
+  display: inline;
+  vertical-align: -0.15em;
+  margin-right: 4px;
+}
+
+.inlineQueueClearAllBtn {
+  flex-shrink: 0;
   border: none;
-  padding: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  padding: 2px 6px;
   cursor: pointer;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 500;
+  color: var(--color-text-tertiary);
+  transition: color var(--transition-fast);
+}
+
+.inlineQueueClearAllBtn:hover:not(:disabled) {
   color: var(--color-text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
 }
 
-.queuePanelToggle:hover {
-  color: var(--color-text);
+.inlineQueueClearAllBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
-.queuePanelChevron {
-  margin-left: auto;
-  transition: transform 0.15s ease;
-}
-
-.queuePanelChevronOpen {
-  transform: rotate(90deg);
-}
-
-.queuePanelItems {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-top: 6px;
-}
-
-.queueItemIndex {
-  flex-shrink: 0;
-  width: 18px;
-  height: 18px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  background: var(--color-bg-hover, rgba(0, 0, 0, 0.06));
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--color-text-secondary);
-  margin-top: 1px;
-}
-
-.queueItemPrompt {
-  flex: 1;
-  min-width: 0;
-  white-space: pre-wrap;
-  word-break: break-word;
-  color: var(--color-text);
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.queueItemActions {
-  display: flex;
-  gap: 2px;
-  flex-shrink: 0;
+.queuedMessageRow .editMsgBtn:not(:disabled),
+.queuedMessageRow .copyBtn.queueRemoveBtn:not(:disabled) {
   opacity: 0;
-  transition: opacity 0.1s;
+  transition:
+    opacity var(--transition-fast),
+    color var(--transition-fast);
 }
 
-.queueItem:hover .queueItemActions {
+.queuedMessageRow .messageContent:hover .editMsgBtn:not(:disabled),
+.queuedMessageRow .messageContent:hover .copyBtn.queueRemoveBtn:not(:disabled) {
   opacity: 1;
 }
 
-.queueItemEditWrap {
-  flex: 1;
-  min-width: 0;
+.queuedMessageRow .editMsgBtn:disabled,
+.queuedMessageRow .copyBtn.queueRemoveBtn:disabled {
+  opacity: 0.55;
 }
 
-.queueItemEditInput {
-  width: 100%;
-  min-height: 50px;
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
-  padding: 6px 8px;
-  font-size: 13px;
-  font-family: inherit;
-  resize: vertical;
-  background: var(--color-bg);
-  color: var(--color-text);
+.queueRemoveBtn:hover:not(:disabled) {
+  color: var(--color-error);
 }
 
-.queueItemEditInput:focus {
-  outline: none;
-  border-color: var(--color-primary, #3b82f6);
+.queuedIconBtnWrap {
+  display: inline-flex;
+  vertical-align: middle;
 }
 
-.queueItemEditActions {
-  display: flex;
-  gap: 4px;
-  margin-top: 4px;
-}
-
-.queueItemSaveBtn,
-.queueItemCancelBtn,
-.queueItemEditBtn,
-.queueItemDeleteBtn {
-  background: none;
-  border: none;
-  padding: 3px;
-  cursor: pointer;
-  border-radius: 4px;
-  color: var(--color-text-secondary);
-  display: flex;
-  align-items: center;
-}
-
-.queueItemSaveBtn:hover {
-  background: var(--color-bg-hover, rgba(0, 0, 0, 0.06));
-  color: var(--color-success, #22c55e);
-}
-
-.queueItemCancelBtn:hover {
-  background: var(--color-bg-hover, rgba(0, 0, 0, 0.06));
-  color: var(--color-text);
-}
-
-.queueItemEditBtn:hover {
-  background: var(--color-bg-hover, rgba(0, 0, 0, 0.06));
-  color: var(--color-text);
-}
-
-.queueItemDeleteBtn:hover {
-  background: var(--color-bg-hover, rgba(0, 0, 0, 0.06));
-  color: var(--color-danger, #e53e3e);
+.queuedIconBtnWrapNotAllowed {
+  cursor: not-allowed;
 }
 
 /* ── Empty / loading states ── */

@@ -55,6 +55,25 @@ function scheduleAutoDismiss(id: number, delay: number) {
 }
 
 const NOTIFICATIONS_ENABLED_KEY = 'notifications-enabled';
+const NOTIFICATION_PREF_KEYS = {
+  inboxMessages: 'notification-pref-inbox-messages',
+  cardWorkCompleted: 'notification-pref-card-work-completed',
+  chatRunsCompleted: 'notification-pref-chat-runs-completed',
+  agentRunFailures: 'notification-pref-agent-run-failures',
+} as const;
+
+export interface NotificationPreferences {
+  inboxMessages: boolean;
+  cardWorkCompleted: boolean;
+  chatRunsCompleted: boolean;
+  agentRunFailures: boolean;
+}
+
+function readNotificationPreference(
+  key: (typeof NOTIFICATION_PREF_KEYS)[keyof typeof NOTIFICATION_PREF_KEYS],
+): boolean {
+  return localStorage.getItem(key) !== 'false';
+}
 
 export function areNotificationsEnabled(): boolean {
   return localStorage.getItem(NOTIFICATIONS_ENABLED_KEY) !== 'false';
@@ -62,6 +81,22 @@ export function areNotificationsEnabled(): boolean {
 
 export function setNotificationsEnabled(enabled: boolean) {
   localStorage.setItem(NOTIFICATIONS_ENABLED_KEY, String(enabled));
+}
+
+export function getNotificationPreferences(): NotificationPreferences {
+  return {
+    inboxMessages: readNotificationPreference(NOTIFICATION_PREF_KEYS.inboxMessages),
+    cardWorkCompleted: readNotificationPreference(NOTIFICATION_PREF_KEYS.cardWorkCompleted),
+    chatRunsCompleted: readNotificationPreference(NOTIFICATION_PREF_KEYS.chatRunsCompleted),
+    agentRunFailures: readNotificationPreference(NOTIFICATION_PREF_KEYS.agentRunFailures),
+  };
+}
+
+export function setNotificationPreference<K extends keyof NotificationPreferences>(
+  key: K,
+  enabled: NotificationPreferences[K],
+) {
+  localStorage.setItem(NOTIFICATION_PREF_KEYS[key], String(enabled));
 }
 
 export function showToast(message: string, variantOrOpts: ToastVariant | ShowToastOptions = 'info', duration = 5000) {

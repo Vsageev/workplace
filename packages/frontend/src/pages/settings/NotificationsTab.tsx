@@ -1,6 +1,12 @@
 import { useState } from 'react';
-import { Bell, BellOff, Trash2 } from 'lucide-react';
-import { areNotificationsEnabled, setNotificationsEnabled, clearNotificationHistory } from '../../stores/toast';
+import { Bell, BellOff, Bot, CheckCircle2, MessageSquare, Trash2, TriangleAlert } from 'lucide-react';
+import {
+  areNotificationsEnabled,
+  clearNotificationHistory,
+  getNotificationPreferences,
+  setNotificationPreference,
+  setNotificationsEnabled,
+} from '../../stores/toast';
 import styles from './AppearanceTab.module.css';
 
 function Toggle({ checked, onChange, id }: { checked: boolean; onChange: (val: boolean) => void; id: string }) {
@@ -19,10 +25,16 @@ function Toggle({ checked, onChange, id }: { checked: boolean; onChange: (val: b
 
 export function NotificationsTab() {
   const [enabled, setEnabled] = useState(() => areNotificationsEnabled());
+  const [preferences, setPreferences] = useState(() => getNotificationPreferences());
 
   function handleToggle(val: boolean) {
     setEnabled(val);
     setNotificationsEnabled(val);
+  }
+
+  function handlePreferenceToggle(key: keyof typeof preferences, value: boolean) {
+    setPreferences((prev) => ({ ...prev, [key]: value }));
+    setNotificationPreference(key, value);
   }
 
   function handleClearHistory() {
@@ -52,6 +64,65 @@ export function NotificationsTab() {
               </span>
             </label>
             <Toggle id="notifications-enabled-pref" checked={enabled} onChange={handleToggle} />
+          </div>
+        </div>
+      </div>
+
+      <div className={styles.sectionDivider} />
+
+      <div className={styles.section}>
+        <div>
+          <h3 className={styles.sectionTitle}>Activity alerts</h3>
+          <p className={styles.sectionDesc}>Choose which background events should interrupt you.</p>
+        </div>
+        <div className={styles.prefList}>
+          <div className={styles.prefRow}>
+            <CheckCircle2 size={16} className={styles.prefIcon} />
+            <label className={styles.prefLabel} htmlFor="notifications-card-work-pref">
+              <span className={styles.prefLabelText}>Card work finished</span>
+              <span className={styles.prefLabelDesc}>Notify when an agent finishes work on an assigned card</span>
+            </label>
+            <Toggle
+              id="notifications-card-work-pref"
+              checked={preferences.cardWorkCompleted}
+              onChange={(value) => handlePreferenceToggle('cardWorkCompleted', value)}
+            />
+          </div>
+          <div className={styles.prefRow}>
+            <Bot size={16} className={styles.prefIcon} />
+            <label className={styles.prefLabel} htmlFor="notifications-chat-runs-pref">
+              <span className={styles.prefLabelText}>Chat and scheduled runs</span>
+              <span className={styles.prefLabelDesc}>Notify when non-card agent runs finish in the background</span>
+            </label>
+            <Toggle
+              id="notifications-chat-runs-pref"
+              checked={preferences.chatRunsCompleted}
+              onChange={(value) => handlePreferenceToggle('chatRunsCompleted', value)}
+            />
+          </div>
+          <div className={styles.prefRow}>
+            <TriangleAlert size={16} className={styles.prefIcon} />
+            <label className={styles.prefLabel} htmlFor="notifications-failures-pref">
+              <span className={styles.prefLabelText}>Agent failures</span>
+              <span className={styles.prefLabelDesc}>Notify when an agent run ends with an error</span>
+            </label>
+            <Toggle
+              id="notifications-failures-pref"
+              checked={preferences.agentRunFailures}
+              onChange={(value) => handlePreferenceToggle('agentRunFailures', value)}
+            />
+          </div>
+          <div className={styles.prefRow}>
+            <MessageSquare size={16} className={styles.prefIcon} />
+            <label className={styles.prefLabel} htmlFor="notifications-inbox-pref">
+              <span className={styles.prefLabelText}>Inbox messages</span>
+              <span className={styles.prefLabelDesc}>Notify when new unread Inbox messages arrive</span>
+            </label>
+            <Toggle
+              id="notifications-inbox-pref"
+              checked={preferences.inboxMessages}
+              onChange={(value) => handlePreferenceToggle('inboxMessages', value)}
+            />
           </div>
         </div>
       </div>
