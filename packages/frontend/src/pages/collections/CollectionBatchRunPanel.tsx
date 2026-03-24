@@ -4,13 +4,10 @@ import { Button, Tooltip } from '../../ui';
 import { api, ApiError } from '../../lib/api';
 import { toast } from '../../stores/toast';
 import { AgentAvatar } from '../../components/AgentAvatar';
-import { BatchLayerPlanner } from '../../components/BatchLayerPlanner';
-import { ManualBatchCardSelector, type ManualBatchCardOption } from '../../components/ManualBatchCardSelector';
+import { BatchLayerPlanner, type BatchPlanCard } from '../../components/BatchLayerPlanner';
 import {
-  buildStagesFromLayerAssignments,
-  normalizeBatchLayerAssignments,
-  type BatchLayerAssignments,
-  type BatchPlanMode,
+  buildStagesFromLayers,
+  type BatchLayer,
 } from '../../lib/agent-batch';
 import styles from './CollectionBatchRunPanel.module.css';
 
@@ -67,10 +64,7 @@ export function CollectionBatchRunPanel({
   const [scopeMode, setScopeMode] = useState<'filters' | 'manual'>('filters');
   const [textFilter, setTextFilter] = useState(initialConfig?.cardFilters?.search ?? '');
   const [tagFilter, setTagFilter] = useState(initialConfig?.cardFilters?.tagId ?? '');
-  const [manualCards, setManualCards] = useState<ManualBatchCardOption[]>([]);
-  const [planMode, setPlanMode] = useState<BatchPlanMode>('ordered');
-  const [layerCount, setLayerCount] = useState(2);
-  const [layerAssignments, setLayerAssignments] = useState<BatchLayerAssignments>({});
+  const [manualLayers, setManualLayers] = useState<BatchLayer[]>([{ cards: [] }]);
   const [maxParallel, setMaxParallel] = useState(initialConfig?.maxParallel ?? 3);
   const [submitting, setSubmitting] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -109,20 +103,16 @@ export function CollectionBatchRunPanel({
     return () => document.removeEventListener('mousedown', onClickOutside);
   }, []);
 
-  useEffect(() => {
-    const maxLayers = Math.max(1, manualCards.length);
-    setLayerCount((prev) => Math.min(Math.max(prev, 1), maxLayers));
-  }, [manualCards.length]);
-
-  useEffect(() => {
-    setLayerAssignments((prev) => normalizeBatchLayerAssignments(manualCards, prev, layerCount));
-  }, [manualCards, layerCount]);
+  const manualCardCount = useMemo(
+    () => manualLayers.reduce((s, l) => s + l.cards.length, 0),
+    [manualLayers],
+  );
 
   // Fetch preview count when filters change
   useEffect(() => {
     if (scopeMode !== 'filters') {
       setPreviewLoading(false);
-      setPreviewCount(manualCards.length);
+      setPreviewCount(manualCardCount);
       return;
     }
 
@@ -150,18 +140,14 @@ export function CollectionBatchRunPanel({
       clearTimeout(timeout);
       previewAbortRef.current?.abort();
     };
-  }, [collectionId, scopeMode, manualCards.length, textFilter, tagFilter]);
+  }, [collectionId, scopeMode, manualCardCount, textFilter, tagFilter]);
 
   const configuredStages = useMemo(
-    () => (
-      scopeMode === 'manual' && planMode === 'layers'
-        ? buildStagesFromLayerAssignments(manualCards, layerAssignments, layerCount)
-        : []
-    ),
-    [scopeMode, planMode, manualCards, layerAssignments, layerCount],
+    () => scopeMode === 'manual' ? buildStagesFromLayers(manualLayers) : [],
+    [scopeMode, manualLayers],
   );
 
-  const loadManualOptions = useCallback(async (query: string) => {
+  const loadManualOptions = useCallback(async (query: string): Promise<BatchPlanCard[]> => {
     const params = new URLSearchParams({
       collectionId,
       limit: '20',
@@ -209,7 +195,7 @@ export function CollectionBatchRunPanel({
 
   async function handleSubmit() {
     if (!agentId || !prompt.trim() || submitting) return;
-    if (scopeMode === 'manual' && manualCards.length === 0) {
+    if (scopeMode === 'manual' && manualCardCount === 0) {
       toast.error('Add at least one card');
       return;
     }
@@ -228,7 +214,7 @@ export function CollectionBatchRunPanel({
           agentId,
           prompt: prompt.trim(),
           maxParallel,
-          cardIds: scopeMode === 'manual' ? manualCards.map((card) => card.id) : undefined,
+          cardIds: scopeMode === 'manual' ? manualLayers.flatMap((l) => l.cards.map((c) => c.id)) : undefined,
           cardFilters: scopeMode === 'filters' ? cardFilters : undefined,
           stages: configuredStages.length > 0 ? configuredStages : undefined,
         }),
@@ -247,14 +233,14 @@ export function CollectionBatchRunPanel({
   }
 
   const selectedAgent = agents.find((a) => a.id === agentId);
-  const canRun = !submitting && !!agentId && !!prompt.trim() && (scopeMode === 'manual' ? manualCards.length > 0 : true);
+  const canRun = !submitting && !!agentId && !!prompt.trim() && (scopeMode === 'manual' ? manualCardCount > 0 : true);
   const disabledReason = submitting
     ? 'Batch run is starting…'
     : !agentId
       ? 'Select an agent first'
       : !prompt.trim()
         ? 'Enter a prompt'
-        : scopeMode === 'manual' && manualCards.length === 0
+        : scopeMode === 'manual' && manualCardCount === 0
           ? 'Add at least one card'
         : undefined;
 
@@ -427,38 +413,19 @@ export function CollectionBatchRunPanel({
               )}
             </>
           ) : (
-            <>
-              <div className={styles.section}>
-                <div className={styles.sectionHeader}>
-                  <ListOrdered size={14} className={styles.sectionIcon} />
-                  <span className={styles.sectionLabel}>Manual card order</span>
-                </div>
-                <ManualBatchCardSelector
-                  selectedCards={manualCards}
-                  onChange={setManualCards}
-                  loadOptions={loadManualOptions}
-                  searchPlaceholder="Search collection cards…"
-                  emptySearchLabel="No matching collection cards"
-                  emptySelectedLabel="Add cards to run them in this exact order"
-                />
+            <div className={styles.section}>
+              <div className={styles.sectionHeader}>
+                <Layers size={14} className={styles.sectionIcon} />
+                <span className={styles.sectionLabel}>Cards &amp; layers</span>
               </div>
-
-              <div className={styles.section}>
-                <div className={styles.sectionHeader}>
-                  <Layers size={14} className={styles.sectionIcon} />
-                  <span className={styles.sectionLabel}>Execution plan</span>
-                </div>
-                <BatchLayerPlanner
-                  selectedCards={manualCards}
-                  planMode={planMode}
-                  onPlanModeChange={setPlanMode}
-                  layerCount={layerCount}
-                  onLayerCountChange={setLayerCount}
-                  assignments={layerAssignments}
-                  onAssignmentsChange={setLayerAssignments}
-                />
-              </div>
-            </>
+              <BatchLayerPlanner
+                layers={manualLayers}
+                onChange={setManualLayers}
+                loadOptions={loadManualOptions}
+                searchPlaceholder="Search collection cards..."
+                emptySearchLabel="No matching collection cards"
+              />
+            </div>
           )}
 
           {/* Concurrency */}
@@ -508,11 +475,11 @@ export function CollectionBatchRunPanel({
                 {previewLoading ? '…' : previewCount} card{previewCount !== 1 ? 's' : ''}
               </span>
             )}
-            {scopeMode === 'manual' && manualCards.length > 0 && (
+            {scopeMode === 'manual' && manualCardCount > 0 && (
               <span className={styles.footerCount}>
-                {planMode === 'layers' && configuredStages.length > 0
-                  ? `${configuredStages.length} layer${configuredStages.length === 1 ? '' : 's'}`
-                  : `First: ${manualCards[0]?.name}`}
+                {configuredStages.length > 1
+                  ? `${configuredStages.length} layers`
+                  : `${manualCardCount} card${manualCardCount !== 1 ? 's' : ''}`}
               </span>
             )}
           </div>

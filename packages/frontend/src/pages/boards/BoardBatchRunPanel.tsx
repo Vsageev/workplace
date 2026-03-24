@@ -4,13 +4,10 @@ import { Button, Tooltip } from '../../ui';
 import { api } from '../../lib/api';
 import { toast } from '../../stores/toast';
 import { AgentAvatar } from '../../components/AgentAvatar';
-import { BatchLayerPlanner } from '../../components/BatchLayerPlanner';
-import { ManualBatchCardSelector, type ManualBatchCardOption } from '../../components/ManualBatchCardSelector';
+import { BatchLayerPlanner, type BatchPlanCard } from '../../components/BatchLayerPlanner';
 import {
-  buildStagesFromLayerAssignments,
-  normalizeBatchLayerAssignments,
-  type BatchLayerAssignments,
-  type BatchPlanMode,
+  buildStagesFromLayers,
+  type BatchLayer,
 } from '../../lib/agent-batch';
 import styles from './BoardBatchRunPanel.module.css';
 
@@ -58,10 +55,7 @@ export function BoardBatchRunPanel({ boardId, columns, availableCards, onClose }
     () => new Set(columns.map((c) => c.id)),
   );
   const [textFilter, setTextFilter] = useState('');
-  const [manualCards, setManualCards] = useState<ManualBatchCardOption[]>([]);
-  const [planMode, setPlanMode] = useState<BatchPlanMode>('ordered');
-  const [layerCount, setLayerCount] = useState(2);
-  const [layerAssignments, setLayerAssignments] = useState<BatchLayerAssignments>({});
+  const [manualLayers, setManualLayers] = useState<BatchLayer[]>([{ cards: [] }]);
   const [maxParallel, setMaxParallel] = useState(3);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<BatchResult | null>(null);
@@ -99,20 +93,16 @@ export function BoardBatchRunPanel({ boardId, columns, availableCards, onClose }
     return () => document.removeEventListener('mousedown', onClickOutside);
   }, []);
 
-  useEffect(() => {
-    const maxLayers = Math.max(1, manualCards.length);
-    setLayerCount((prev) => Math.min(Math.max(prev, 1), maxLayers));
-  }, [manualCards.length]);
-
-  useEffect(() => {
-    setLayerAssignments((prev) => normalizeBatchLayerAssignments(manualCards, prev, layerCount));
-  }, [manualCards, layerCount]);
+  const manualCardCount = useMemo(
+    () => manualLayers.reduce((s, l) => s + l.cards.length, 0),
+    [manualLayers],
+  );
 
   // Fetch preview count when filters change (debounced for text filter)
   useEffect(() => {
     if (scopeMode !== 'filters') {
       setPreviewLoading(false);
-      setPreviewCount(manualCards.length);
+      setPreviewCount(manualCardCount);
       return;
     }
 
@@ -151,18 +141,14 @@ export function BoardBatchRunPanel({ boardId, columns, availableCards, onClose }
       clearTimeout(timeout);
       previewAbortRef.current?.abort();
     };
-  }, [boardId, scopeMode, manualCards.length, selectedColumnIds, textFilter, columns.length]);
+  }, [boardId, scopeMode, manualCardCount, selectedColumnIds, textFilter, columns.length]);
 
   const configuredStages = useMemo(
-    () => (
-      scopeMode === 'manual' && planMode === 'layers'
-        ? buildStagesFromLayerAssignments(manualCards, layerAssignments, layerCount)
-        : []
-    ),
-    [scopeMode, planMode, manualCards, layerAssignments, layerCount],
+    () => scopeMode === 'manual' ? buildStagesFromLayers(manualLayers) : [],
+    [scopeMode, manualLayers],
   );
 
-  const loadManualOptions = useCallback(async (query: string) => {
+  const loadManualOptions = useCallback(async (query: string): Promise<BatchPlanCard[]> => {
     const needle = query.toLowerCase();
     return availableCards
       .filter((card) => {
@@ -202,7 +188,7 @@ export function BoardBatchRunPanel({ boardId, columns, availableCards, onClose }
     if (!agentId || !prompt.trim() || submitting) return;
 
     if (scopeMode === 'manual') {
-      if (manualCards.length === 0) {
+      if (manualCardCount === 0) {
         toast.error('Add at least one card');
         return;
       }
@@ -227,7 +213,7 @@ export function BoardBatchRunPanel({ boardId, columns, availableCards, onClose }
         body: JSON.stringify({
           agentId,
           prompt: prompt.trim(),
-          cardIds: scopeMode === 'manual' ? manualCards.map((card) => card.id) : undefined,
+          cardIds: scopeMode === 'manual' ? manualLayers.flatMap((l) => l.cards.map((c) => c.id)) : undefined,
           columnIds:
             scopeMode === 'filters' && selectedColumnIds.size < columns.length
               ? Array.from(selectedColumnIds)
@@ -256,14 +242,14 @@ export function BoardBatchRunPanel({ boardId, columns, availableCards, onClose }
   const canRun = !submitting
     && !!agentId
     && !!prompt.trim()
-    && (scopeMode === 'manual' ? manualCards.length > 0 : selectedColumnIds.size > 0);
+    && (scopeMode === 'manual' ? manualCardCount > 0 : selectedColumnIds.size > 0);
   const disabledReason = submitting
     ? 'Batch run is starting…'
     : !agentId
       ? 'Select an agent first'
       : !prompt.trim()
         ? 'Enter a prompt'
-        : scopeMode === 'manual' && manualCards.length === 0
+        : scopeMode === 'manual' && manualCardCount === 0
           ? 'Add at least one card'
           : scopeMode === 'filters' && selectedColumnIds.size === 0
           ? 'Select at least one column'
@@ -441,38 +427,19 @@ export function BoardBatchRunPanel({ boardId, columns, availableCards, onClose }
               </div>
             </>
           ) : (
-            <>
-              <div className={styles.section}>
-                <div className={styles.sectionHeader}>
-                  <ListOrdered size={14} className={styles.sectionIcon} />
-                  <span className={styles.sectionLabel}>Manual card order</span>
-                </div>
-                <ManualBatchCardSelector
-                  selectedCards={manualCards}
-                  onChange={setManualCards}
-                  loadOptions={loadManualOptions}
-                  searchPlaceholder="Search board cards or columns…"
-                  emptySearchLabel="No board cards available"
-                  emptySelectedLabel="Add cards to run them in this exact order"
-                />
+            <div className={styles.section}>
+              <div className={styles.sectionHeader}>
+                <Layers size={14} className={styles.sectionIcon} />
+                <span className={styles.sectionLabel}>Cards &amp; layers</span>
               </div>
-
-              <div className={styles.section}>
-                <div className={styles.sectionHeader}>
-                  <Layers size={14} className={styles.sectionIcon} />
-                  <span className={styles.sectionLabel}>Execution plan</span>
-                </div>
-                <BatchLayerPlanner
-                  selectedCards={manualCards}
-                  planMode={planMode}
-                  onPlanModeChange={setPlanMode}
-                  layerCount={layerCount}
-                  onLayerCountChange={setLayerCount}
-                  assignments={layerAssignments}
-                  onAssignmentsChange={setLayerAssignments}
-                />
-              </div>
-            </>
+              <BatchLayerPlanner
+                layers={manualLayers}
+                onChange={setManualLayers}
+                loadOptions={loadManualOptions}
+                searchPlaceholder="Search board cards or columns..."
+                emptySearchLabel="No board cards available"
+              />
+            </div>
           )}
 
           {/* Concurrency */}
@@ -527,11 +494,11 @@ export function BoardBatchRunPanel({ boardId, columns, availableCards, onClose }
                 {selectedColumnIds.size} column{selectedColumnIds.size !== 1 ? 's' : ''}
               </span>
             )}
-            {scopeMode === 'manual' && manualCards.length > 0 && (
+            {scopeMode === 'manual' && manualCardCount > 0 && (
               <span className={styles.footerColumns}>
-                {planMode === 'layers' && configuredStages.length > 0
-                  ? `${configuredStages.length} layer${configuredStages.length === 1 ? '' : 's'}`
-                  : `First: ${manualCards[0]?.name}`}
+                {configuredStages.length > 1
+                  ? `${configuredStages.length} layers`
+                  : `${manualCardCount} card${manualCardCount !== 1 ? 's' : ''}`}
               </span>
             )}
           </div>
