@@ -5268,6 +5268,16 @@ export function AgentsPage() {
                                       )}
                                     </div>
                                     <div className={styles.errorNoticeActions}>
+                                      {item.runId && item.status !== 'cancelled' && (
+                                        <button
+                                          className={styles.messageMonitorBtn}
+                                          onClick={() => openMonitorRun(item.runId!)}
+                                          title="Open failed run in monitor"
+                                        >
+                                          <ExternalLink size={12} />
+                                          Monitor
+                                        </button>
+                                      )}
                                       {item.status !== 'cancelled' && (
                                         <button
                                           className={styles.errorRetryBtn}
@@ -5367,6 +5377,16 @@ export function AgentsPage() {
                                 )}
                               </div>
                               <div className={styles.errorNoticeActions}>
+                                {item.runId && item.status !== 'cancelled' && (
+                                  <button
+                                    className={styles.messageMonitorBtn}
+                                    onClick={() => openMonitorRun(item.runId!)}
+                                    title="Open failed run in monitor"
+                                  >
+                                    <ExternalLink size={12} />
+                                    Monitor
+                                  </button>
+                                )}
                                 {item.status !== 'cancelled' && (
                                   <button
                                     className={styles.errorRetryBtn}

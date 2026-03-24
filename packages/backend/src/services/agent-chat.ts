@@ -125,6 +125,26 @@ function isPermanentQueueError(errorMessage: string): boolean {
   return PERMANENT_QUEUE_ERROR_PATTERNS.some((pattern) => pattern.test(errorMessage));
 }
 
+const CHAT_ERROR_SUMMARY_MAX_LENGTH = 240;
+
+function summarizeQueueErrorForChat(errorMessage: string): string {
+  const trimmed = errorMessage.trim();
+  if (!trimmed) return 'Run failed';
+
+  const firstNonEmptyLine =
+    trimmed
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find((line) => line.length > 0) ?? trimmed;
+
+  const compactLine = firstNonEmptyLine.replace(/\s+/g, ' ').trim();
+  if (compactLine.length <= CHAT_ERROR_SUMMARY_MAX_LENGTH) {
+    return compactLine;
+  }
+
+  return `${compactLine.slice(0, CHAT_ERROR_SUMMARY_MAX_LENGTH - 1).trimEnd()}…`;
+}
+
 /**
  * Global concurrency gate — tracks how many agent processes are running
  * across all conversations. When at capacity, new spawns are deferred
@@ -1677,6 +1697,26 @@ function listConversationQueueItems(
     );
 }
 
+function sanitizeQueueItemForChat(item: Record<string, unknown>): Record<string, unknown> {
+  if (typeof item.errorMessage !== 'string' || !item.errorMessage) {
+    return item;
+  }
+
+  if (item.status !== 'failed' && item.status !== 'queued') {
+    return item;
+  }
+
+  const summarizedError = summarizeQueueErrorForChat(item.errorMessage);
+  if (summarizedError === item.errorMessage) {
+    return item;
+  }
+
+  return {
+    ...item,
+    errorMessage: summarizedError,
+  };
+}
+
 function getQueueItemMode(item: Record<string, unknown>): QueueExecutionMode {
   return (item.mode as QueueExecutionMode | undefined) ?? 'append_prompt';
 }
@@ -2615,13 +2655,15 @@ function retryOrFailQueueItem(
   errorMessage: string,
   attemptsUsed: number,
 ) {
+  const chatErrorSummary = summarizeQueueErrorForChat(errorMessage);
+
   if (isPermanentQueueError(errorMessage)) {
     store.update(AGENT_CHAT_QUEUE_COLLECTION, queueItemId, {
       status: 'failed',
       completedAt: new Date().toISOString(),
       nextAttemptAt: null,
       runId: null,
-      errorMessage,
+      errorMessage: chatErrorSummary,
     });
     return;
   }
@@ -2649,7 +2691,7 @@ function retryOrFailQueueItem(
       completedAt: null,
       errorMessage: rateLimited
         ? `Rate limited — retrying (attempt ${attemptsUsed}/${maxAttempts})`
-        : errorMessage,
+        : chatErrorSummary,
       runId: null,
       nextAttemptAt: new Date(Date.now() + retryDelayMs).toISOString(),
       usedFallback: false,
@@ -2660,7 +2702,7 @@ function retryOrFailQueueItem(
 
   const displayError = rateLimited
     ? `Rate limited by external API after ${maxAttempts} retries. Please try again later.`
-    : errorMessage;
+    : chatErrorSummary;
 
   store.update(AGENT_CHAT_QUEUE_COLLECTION, queueItemId, {
     status: 'failed',
@@ -3175,7 +3217,7 @@ export function getConversationQueueItems(agentId: string, conversationId: strin
 }
 
 export function getConversationExecutionItems(agentId: string, conversationId: string) {
-  return listConversationQueueItems(agentId, conversationId);
+  return listConversationQueueItems(agentId, conversationId).map(sanitizeQueueItemForChat);
 }
 
 export function updateQueueItem(
