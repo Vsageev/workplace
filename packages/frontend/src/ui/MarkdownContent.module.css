@@ -120,6 +120,39 @@
 
 /* ── Code ──────────────────────────────────────────────── */
 
+.codeBlockWrapper {
+  position: relative;
+}
+
+.codeBlockWrapper:hover .copyButton {
+  opacity: 1;
+}
+
+.copyButton {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--transition-fast), background var(--transition-fast), color var(--transition-fast);
+}
+
+.copyButton:hover {
+  background: var(--color-border);
+  color: var(--color-text);
+}
+
 .markdown code {
   font-family: 'SF Mono', 'Fira Code', monospace;
   font-size: 0.9em;

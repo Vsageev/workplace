@@ -1,5 +1,5 @@
-import type { ClassAttributes, ComponentProps, HTMLAttributes, MouseEvent, ReactNode } from 'react';
-import { useEffect, useState } from 'react';
+import type { ClassAttributes, ComponentProps, HTMLAttributes, MouseEvent } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import type { ExtraProps } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -14,18 +14,54 @@ interface MarkdownContentProps {
   className?: string;
 }
 
-function CodeBlock({ className, children, ...props }: ClassAttributes<HTMLElement> & HTMLAttributes<HTMLElement> & ExtraProps) {
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = useCallback(() => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }, [text]);
+
+  return (
+    <button className={styles.copyButton} onClick={handleCopy} title="Copy to clipboard" type="button">
+      {copied ? (
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M13.5 4.5L6 12L2.5 8.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+      ) : (
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.2"/><path d="M10.5 5.5V3a1.5 1.5 0 00-1.5-1.5H3A1.5 1.5 0 001.5 3v6A1.5 1.5 0 003 10.5h2.5" stroke="currentColor" strokeWidth="1.2"/></svg>
+      )}
+    </button>
+  );
+}
+
+function CodeBlock({ className, children, node, ...props }: ClassAttributes<HTMLElement> & HTMLAttributes<HTMLElement> & ExtraProps) {
   const match = /language-(\w+)/.exec(className || '');
   const code = String(children).replace(/\n$/, '');
+  // Inline code — no wrapper needed
+  const isInline = node?.position?.start.line === node?.position?.end.line && !match;
+  if (isInline) {
+    return <code className={className} {...props}>{children}</code>;
+  }
+  // Block code (fenced) — with or without language
   if (match) {
     return (
-      <SyntaxHighlighter style={oneDark} language={match[1]} PreTag="div">
-        {code}
-      </SyntaxHighlighter>
+      <div className={styles.codeBlockWrapper}>
+        <CopyButton text={code} />
+        <SyntaxHighlighter style={oneDark} language={match[1]} PreTag="div">
+          {code}
+        </SyntaxHighlighter>
+      </div>
     );
   }
-  return <code className={className} {...props}>{children}</code>;
+  return (
+    <div className={styles.codeBlockWrapper}>
+      <CopyButton text={code} />
+      <code className={className} {...props}>{children}</code>
+    </div>
+  );
 }
+
 
 function getInternalStoragePath(src: string | undefined): string | null {
   if (!src) return null;

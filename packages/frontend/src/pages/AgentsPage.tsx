@@ -163,6 +163,9 @@ interface Agent {
   modelId: string | null;
   thinkingLevel: 'low' | 'medium' | 'high' | null;
   preset: string;
+  presetParameters: Record<string, string>;
+  repositoryRoot: string | null;
+  workspacePath: string;
   status: 'active' | 'inactive' | 'error';
   apiKeyId: string;
   apiKeyName: string;
@@ -6331,6 +6334,30 @@ export function AgentsPage() {
                           </option>
                         ))}
                       </select>
+                    </div>
+                  </div>
+                  {settingsAgent.repositoryRoot && (
+                    <div className={styles.settingsGridItem}>
+                      <div className={styles.settingsGridLabel}>
+                        <Folder size={13} />
+                        Repository folder
+                      </div>
+                      <div className={styles.settingsGridValue}>
+                        <code className={`${styles.settingsCode} ${styles.settingsPathCode}`}>
+                          {settingsAgent.repositoryRoot}
+                        </code>
+                      </div>
+                    </div>
+                  )}
+                  <div className={styles.settingsGridItem}>
+                    <div className={styles.settingsGridLabel}>
+                      <FolderOpen size={13} />
+                      Agent workspace
+                    </div>
+                    <div className={styles.settingsGridValue}>
+                      <code className={`${styles.settingsCode} ${styles.settingsPathCode}`}>
+                        {settingsAgent.workspacePath}
+                      </code>
                     </div>
                   </div>
                 </div>

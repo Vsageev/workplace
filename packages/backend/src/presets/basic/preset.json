@@ -5,12 +5,12 @@
   "parameters": [
     {
       "key": "workingDirectory",
-      "label": "Working directory",
-      "description": "Optional directory this agent should treat as its default workspace.",
+      "label": "Repository folder",
+      "description": "Optional repository root. If set, the agent workspace is created inside that repo at .openwork/agents/<agent-name-slug>.",
       "placeholder": "/Users/name/project",
       "type": "directory",
       "required": false,
-      "contentTemplate": "- The project you are working on is `{{value}}`.\n - Use other paths only if the task requires it; ask first when avoidable.",
+      "contentTemplate": "- The project repository root is `{{value}}`.\n- Use other paths only if the task requires it; ask first when avoidable.",
       "emptyContentTemplate": "- Work in the current folder by default for commands and file operations.\n- Use other paths only if the task requires it; ask first when avoidable."
     }
   ],

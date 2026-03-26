@@ -2471,6 +2471,12 @@
   color: var(--color-text-secondary);
 }
 
+.settingsPathCode {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .settingsEmpty {
   font-size: 13px;
   color: var(--color-text-tertiary);

@@ -4,15 +4,20 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { store } from '../db/index.js';
-import { env } from '../config/env.js';
 import { createApiKey, deleteApiKey, validateApiKey } from './api-keys.js';
 import { deleteAgentEnvVarsByAgentId } from './agent-env-vars.js';
 import { stopAllAgentCronJobs } from './agent-cron.js';
 import type { CronJob } from './agent-cron.js';
 import { hashPassword } from './auth.js';
+import {
+  deriveAgentWorkspacePath,
+  getLegacyAgentWorkspacePath,
+  getLegacyAgentsDir,
+  normalizeRepositoryRoot,
+  resolveAgentWorkspacePath,
+  resolveAgentWorkspacePathFromRecord,
+} from './agent-workspaces.js';
 import { attachSkillToAgent } from './skills.js';
-
-const AGENTS_DIR = path.resolve(env.DATA_DIR, 'agents');
 
 // ---------------------------------------------------------------------------
 // Preset definitions (loaded from packages/backend/src/presets/)
@@ -519,6 +524,9 @@ export interface AgentRecord {
   modelId: string | null;
   thinkingLevel: 'low' | 'medium' | 'high' | null;
   preset: string;
+  presetParameters: Record<string, string>;
+  repositoryRoot: string | null;
+  workspacePath: string;
   status: 'active' | 'inactive' | 'error';
   apiKeyId: string;
   apiKeyName: string;
@@ -546,13 +554,14 @@ export type PublicAgentRecord = Omit<AgentRecord, 'workspaceApiKey' | 'workspace
 // ---------------------------------------------------------------------------
 
 function ensureAgentsDir() {
-  if (!fs.existsSync(AGENTS_DIR)) {
-    fs.mkdirSync(AGENTS_DIR, { recursive: true });
+  const legacyAgentsDir = getLegacyAgentsDir();
+  if (!fs.existsSync(legacyAgentsDir)) {
+    fs.mkdirSync(legacyAgentsDir, { recursive: true });
   }
 }
 
 function agentDir(agentId: string): string {
-  return path.join(AGENTS_DIR, agentId);
+  return resolveAgentWorkspacePath(agentId);
 }
 
 function normalizePresetModelKey(model: string): string {
@@ -627,6 +636,14 @@ function syncPresetModelScopedFiles(
 }
 
 function asAgent(rec: Record<string, unknown>): AgentRecord {
+  const presetParameters =
+    rec.presetParameters && typeof rec.presetParameters === 'object' && !Array.isArray(rec.presetParameters)
+      ? Object.fromEntries(
+          Object.entries(rec.presetParameters as Record<string, unknown>)
+            .filter((entry): entry is [string, string] => typeof entry[0] === 'string' && typeof entry[1] === 'string'),
+        )
+      : {};
+
   return {
     ...rec,
     model: typeof rec.model === 'string' ? normalizeModelValue(rec.model) : '',
@@ -634,6 +651,11 @@ function asAgent(rec: Record<string, unknown>): AgentRecord {
     thinkingLevel: ['low', 'medium', 'high'].includes(rec.thinkingLevel as string)
       ? (rec.thinkingLevel as AgentRecord['thinkingLevel'])
       : null,
+    presetParameters,
+    repositoryRoot: normalizeRepositoryRoot(
+      typeof rec.repositoryRoot === 'string' ? rec.repositoryRoot : null,
+    ),
+    workspacePath: resolveAgentWorkspacePathFromRecord(rec),
     skipPermissions: Boolean(rec.skipPermissions),
     cronJobs: Array.isArray(rec.cronJobs) ? rec.cronJobs : [],
     skillIds: Array.isArray(rec.skillIds) ? rec.skillIds : [],
@@ -836,6 +858,11 @@ export async function createAgent(params: CreateAgentParams): Promise<AgentRecor
   );
 
   const agentId = randomUUID();
+  const repositoryRoot = normalizeRepositoryRoot(presetParameters.workingDirectory);
+  const workspacePath = repositoryRoot
+    ? deriveAgentWorkspacePath(repositoryRoot, params.name)
+    : getLegacyAgentWorkspacePath(agentId);
+  let workspaceInitialized = false;
   let serviceUserId: string | null = null;
   let wsKeyId: string | null = null;
   const normalizedModel = normalizeModelValue(params.model);
@@ -864,6 +891,9 @@ export async function createAgent(params: CreateAgentParams): Promise<AgentRecor
       modelId: params.modelId ?? null,
       thinkingLevel: params.thinkingLevel ?? null,
       preset: params.preset,
+      presetParameters,
+      repositoryRoot,
+      workspacePath,
       status: 'active',
       apiKeyId: params.apiKeyId,
       apiKeyName: params.apiKeyName,
@@ -882,8 +912,19 @@ export async function createAgent(params: CreateAgentParams): Promise<AgentRecor
 
     // Step 4: Scaffold workspace folder
     ensureAgentsDir();
-    const dir = agentDir(record.id as string);
+    const dir = resolveAgentWorkspacePathFromRecord(record);
+    if (fs.existsSync(dir)) {
+      const stats = fs.statSync(dir);
+      if (!stats.isDirectory()) {
+        throw new Error(`Agent workspace path is not a directory: ${dir}`);
+      }
+      const existingEntries = fs.readdirSync(dir);
+      if (existingEntries.length > 0) {
+        throw new Error(`Agent workspace already exists: ${dir}`);
+      }
+    }
     fs.mkdirSync(dir, { recursive: true });
+    workspaceInitialized = true;
 
     const applicableFiles = getPresetApplicableFiles(preset, normalizedModel);
     const templateVars = buildPresetTemplateVars(preset, {
@@ -932,8 +973,8 @@ export async function createAgent(params: CreateAgentParams): Promise<AgentRecor
     if (agentId) {
       store.delete('agents', agentId);
     }
-    const dir = agentDir(agentId);
-    if (fs.existsSync(dir)) {
+    const dir = workspacePath;
+    if (workspaceInitialized && fs.existsSync(dir)) {
       fs.rmSync(dir, { recursive: true, force: true });
     }
     throw error;
@@ -1032,6 +1073,7 @@ export async function updateAgent(
 export async function deleteAgent(id: string): Promise<boolean> {
   const agent = store.getById('agents', id);
   if (!agent) return false;
+  const workspaceDir = resolveAgentWorkspacePathFromRecord(agent, id);
 
   // Stop any running cron tasks for this agent
   stopAllAgentCronJobs(id);
@@ -1083,9 +1125,8 @@ export async function deleteAgent(id: string): Promise<boolean> {
   deleteAgentEnvVarsByAgentId(id);
 
   // Remove workspace folder
-  const dir = agentDir(id);
-  if (fs.existsSync(dir)) {
-    fs.rmSync(dir, { recursive: true, force: true });
+  if (fs.existsSync(workspaceDir)) {
+    fs.rmSync(workspaceDir, { recursive: true, force: true });
   }
 
   return true;
@@ -1209,7 +1250,7 @@ export async function ensureAgentServiceAccounts(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Workspace file operations (scoped to data/agents/{agentId}/)
+// Workspace file operations (scoped to the resolved agent workspace root)
 // ---------------------------------------------------------------------------
 
 export interface AgentFileEntry {

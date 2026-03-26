@@ -12,13 +12,13 @@ import {
   prepareAgentWorkspaceAccess,
   resolveCliExecutable,
 } from './agents.js';
+import { resolveAgentWorkspacePath } from './agent-workspaces.js';
 import { listAgentEnvVars, listRuntimeAgentEnvVarBindings } from './agent-env-vars.js';
 import { createAgentRun, completeAgentRun } from './agent-runs.js';
 import { getFallbackModelConfig } from './project-settings.js';
 
 const STORAGE_DIR = path.resolve(env.DATA_DIR, 'storage');
 
-const AGENTS_DIR = path.resolve(env.DATA_DIR, 'agents');
 export const RUNS_DIR = path.resolve(env.DATA_DIR, 'agent-runs');
 const AGENT_CHAT_QUEUE_COLLECTION = 'agentChatQueue';
 const AGENT_CHAT_QUEUE_RETRY_BASE_MS = 1000;
@@ -1932,7 +1932,7 @@ async function runAgentProcess(options: AgentProcessOptions): Promise<string> {
   // Wait for a global concurrency slot before spawning
   await waitForConcurrencySlot();
 
-  const workDir = path.join(AGENTS_DIR, options.agentId);
+  const workDir = resolveAgentWorkspacePath(options.agentId);
   const { bin, args, stdinData } = buildCliCommand({
     model: options.agent.model,
     modelId: options.agent.modelId,

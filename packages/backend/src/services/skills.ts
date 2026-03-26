@@ -4,9 +4,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { store } from '../db/index.js';
 import { env } from '../config/env.js';
+import { resolveAgentWorkspacePath } from './agent-workspaces.js';
 
 const SKILLS_DIR = path.resolve(env.DATA_DIR, 'skills');
-const AGENTS_DIR = path.resolve(env.DATA_DIR, 'agents');
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BUILTIN_SKILLS_DIR = path.resolve(__dirname, '../presets/skills');
@@ -50,7 +50,7 @@ function skillDir(skillId: string): string {
 }
 
 function agentDir(agentId: string): string {
-  return path.join(AGENTS_DIR, agentId);
+  return resolveAgentWorkspacePath(agentId);
 }
 
 function slugify(name: string): string {
